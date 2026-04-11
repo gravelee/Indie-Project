@@ -6,42 +6,19 @@ var facing: String = "south"
 
 @onready var sprite: AnimatedSprite2D = $"../CanvasLayer/PlayerSprite"
 
+# Called: Game.
 func _ready() -> void:
+	
 	_load_animations()
 
+# Called: Game.
 func _physics_process(delta: float) -> void:
+	
 	_handle_movement(delta)
 	#print("pos: ", position, "  cam_angle: ", camera_angle)
 
-func _handle_movement(delta: float) -> void:
-	
-	var input = Vector2.ZERO
 
-	if Input.is_key_pressed(KEY_W):	input.y -= 1
-	if Input.is_key_pressed(KEY_S):	input.y += 1
-	if Input.is_key_pressed(KEY_A):	input.x -= 1
-	if Input.is_key_pressed(KEY_D):	input.x += 1
-
-	if input.length() > 0:
-		input = input.normalized()
-
-		# Update facing based on screen-space input
-		if abs(input.x) >= abs(input.y):
-			facing = "east" if input.x > 0 else "west"
-		else:
-			facing = "south" if input.y > 0 else "north"
-			
-		# Rotate input vector by camera angle so WASD always
-		# moves relative to screen orientation not world.
-		input = input.rotated(deg_to_rad(-camera_angle))
-
-		sprite.play("walking_" + facing)
-	else:
-		sprite.play("idle_neutral_" + facing)
-
-	velocity = input * speed
-	move_and_slide()
-
+# Called: _ready().
 func _load_animations() -> void:
 	
 	var frames = SpriteFrames.new()
@@ -76,3 +53,33 @@ func _load_animations() -> void:
 			frames.add_frame(anim_name, atlas)
 	
 	sprite.play("idle_neutral_south")
+
+# Called: _physics_process().
+func _handle_movement(delta: float) -> void:
+	
+	var input = Vector2.ZERO
+
+	if Input.is_key_pressed(KEY_W):	input.y -= 1
+	if Input.is_key_pressed(KEY_S):	input.y += 1
+	if Input.is_key_pressed(KEY_A):	input.x -= 1
+	if Input.is_key_pressed(KEY_D):	input.x += 1
+
+	if input.length() > 0:
+		input = input.normalized()
+
+		# Update facing based on screen-space input
+		if abs(input.x) >= abs(input.y):
+			facing = "east" if input.x > 0 else "west"
+		else:
+			facing = "south" if input.y > 0 else "north"
+			
+		# Rotate input vector by camera angle so WASD always
+		# moves relative to screen orientation not world.
+		input = input.rotated(deg_to_rad(-camera_angle))
+
+		sprite.play("walking_" + facing)
+	else:
+		sprite.play("idle_neutral_" + facing)
+
+	velocity = input * speed
+	move_and_slide()
