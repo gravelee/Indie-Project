@@ -2,7 +2,6 @@
 
 [ext_resource type="Script" path="res://game.gd" id="1_g0iqw"]
 [ext_resource type="Script" path="res://player.gd" id="2_5kj8r"]
-[ext_resource type="Texture2D" uid="uid://cnqq3pbnbwy6e" path="res://icon.svg" id="2_qhwh6"]
 [ext_resource type="Texture2D" uid="uid://cnybx6c7qhop2" path="res://leaf32.png" id="2_rwyni"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_2fc67"]
@@ -204,6 +203,9 @@ sources/0 = SubResource("TileSetAtlasSource_2fc67")
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_istfd"]
 size = Vector2(50, 50)
 
+[sub_resource type="SpriteFrames" id="SpriteFrames_20tf3"]
+animations = []
+
 [node name="Node2D (root - Project)" type="Node2D"]
 script = ExtResource("1_g0iqw")
 
@@ -223,5 +225,6 @@ shape = SubResource("RectangleShape2D_istfd")
 
 [node name="CanvasLayer" type="CanvasLayer" parent="."]
 
-[node name="PlayerSprite" type="Sprite2D" parent="CanvasLayer"]
-texture = ExtResource("2_qhwh6")
+[node name="PlayerSprite" type="AnimatedSprite2D" parent="CanvasLayer"]
+sprite_frames = SubResource("SpriteFrames_20tf3")
+animation = &""
