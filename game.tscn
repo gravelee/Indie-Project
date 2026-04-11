@@ -1,0 +1,227 @@
+[gd_scene load_steps=8 format=3 uid="uid://h1jsjr5fgk23"]
+
+[ext_resource type="Script" path="res://game.gd" id="1_g0iqw"]
+[ext_resource type="Script" path="res://player.gd" id="2_5kj8r"]
+[ext_resource type="Texture2D" uid="uid://cnqq3pbnbwy6e" path="res://icon.svg" id="2_qhwh6"]
+[ext_resource type="Texture2D" uid="uid://cnybx6c7qhop2" path="res://leaf32.png" id="2_rwyni"]
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_2fc67"]
+texture = ExtResource("2_rwyni")
+texture_region_size = Vector2i(32, 32)
+0:0/next_alternative_id = 3
+0:0/0 = 0
+1:0/next_alternative_id = 3
+1:0/0 = 0
+2:0/next_alternative_id = 3
+2:0/0 = 0
+3:0/next_alternative_id = 3
+3:0/0 = 0
+4:0/next_alternative_id = 3
+4:0/0 = 0
+5:0/next_alternative_id = 3
+5:0/0 = 0
+6:0/next_alternative_id = 3
+6:0/0 = 0
+7:0/next_alternative_id = 3
+7:0/0 = 0
+8:0/next_alternative_id = 3
+8:0/0 = 0
+9:0/next_alternative_id = 3
+9:0/0 = 0
+10:0/next_alternative_id = 3
+10:0/0 = 0
+11:0/next_alternative_id = 3
+11:0/0 = 0
+12:0/next_alternative_id = 3
+12:0/0 = 0
+13:0/next_alternative_id = 3
+13:0/0 = 0
+14:0/next_alternative_id = 3
+14:0/0 = 0
+15:0/next_alternative_id = 3
+15:0/0 = 0
+16:0/next_alternative_id = 3
+16:0/0 = 0
+17:0/next_alternative_id = 3
+17:0/0 = 0
+18:0/next_alternative_id = 3
+18:0/0 = 0
+19:0/next_alternative_id = 3
+19:0/0 = 0
+20:0/next_alternative_id = 3
+20:0/0 = 0
+21:0/next_alternative_id = 3
+21:0/0 = 0
+22:0/next_alternative_id = 3
+22:0/0 = 0
+23:0/next_alternative_id = 3
+23:0/0 = 0
+0:1/next_alternative_id = 3
+0:1/0 = 0
+1:1/next_alternative_id = 3
+1:1/0 = 0
+2:1/next_alternative_id = 3
+2:1/0 = 0
+3:1/next_alternative_id = 3
+3:1/0 = 0
+4:1/next_alternative_id = 3
+4:1/0 = 0
+5:1/next_alternative_id = 3
+5:1/0 = 0
+6:1/next_alternative_id = 3
+6:1/0 = 0
+7:1/next_alternative_id = 3
+7:1/0 = 0
+8:1/next_alternative_id = 3
+8:1/0 = 0
+9:1/next_alternative_id = 3
+9:1/0 = 0
+10:1/next_alternative_id = 3
+10:1/0 = 0
+11:1/next_alternative_id = 3
+11:1/0 = 0
+12:1/next_alternative_id = 3
+12:1/0 = 0
+13:1/next_alternative_id = 3
+13:1/0 = 0
+14:1/next_alternative_id = 3
+14:1/0 = 0
+15:1/next_alternative_id = 3
+15:1/0 = 0
+16:1/next_alternative_id = 3
+16:1/0 = 0
+17:1/next_alternative_id = 3
+17:1/0 = 0
+18:1/next_alternative_id = 3
+18:1/0 = 0
+19:1/next_alternative_id = 3
+19:1/0 = 0
+20:1/next_alternative_id = 3
+20:1/0 = 0
+21:1/next_alternative_id = 3
+21:1/0 = 0
+22:1/next_alternative_id = 3
+22:1/0 = 0
+23:1/next_alternative_id = 3
+23:1/0 = 0
+0:2/next_alternative_id = 3
+0:2/0 = 0
+1:2/next_alternative_id = 3
+1:2/0 = 0
+2:2/next_alternative_id = 3
+2:2/0 = 0
+3:2/next_alternative_id = 3
+3:2/0 = 0
+4:2/next_alternative_id = 3
+4:2/0 = 0
+5:2/next_alternative_id = 3
+5:2/0 = 0
+6:2/next_alternative_id = 3
+6:2/0 = 0
+7:2/next_alternative_id = 3
+7:2/0 = 0
+8:2/next_alternative_id = 3
+8:2/0 = 0
+9:2/next_alternative_id = 3
+9:2/0 = 0
+10:2/next_alternative_id = 3
+10:2/0 = 0
+11:2/next_alternative_id = 3
+11:2/0 = 0
+12:2/next_alternative_id = 3
+12:2/0 = 0
+13:2/next_alternative_id = 3
+13:2/0 = 0
+14:2/next_alternative_id = 3
+14:2/0 = 0
+15:2/next_alternative_id = 3
+15:2/0 = 0
+16:2/next_alternative_id = 3
+16:2/0 = 0
+17:2/next_alternative_id = 3
+17:2/0 = 0
+19:2/next_alternative_id = 3
+19:2/0 = 0
+20:2/next_alternative_id = 3
+20:2/0 = 0
+21:2/next_alternative_id = 3
+21:2/0 = 0
+22:2/next_alternative_id = 3
+22:2/0 = 0
+23:2/next_alternative_id = 3
+23:2/0 = 0
+0:3/next_alternative_id = 3
+0:3/0 = 0
+1:3/next_alternative_id = 3
+1:3/0 = 0
+2:3/next_alternative_id = 3
+2:3/0 = 0
+3:3/next_alternative_id = 3
+3:3/0 = 0
+4:3/next_alternative_id = 3
+4:3/0 = 0
+5:3/next_alternative_id = 3
+5:3/0 = 0
+6:3/next_alternative_id = 3
+6:3/0 = 0
+7:3/next_alternative_id = 3
+7:3/0 = 0
+8:3/next_alternative_id = 3
+8:3/0 = 0
+9:3/next_alternative_id = 3
+9:3/0 = 0
+10:3/next_alternative_id = 3
+10:3/0 = 0
+11:3/next_alternative_id = 3
+11:3/0 = 0
+12:3/next_alternative_id = 3
+12:3/0 = 0
+13:3/next_alternative_id = 3
+13:3/0 = 0
+14:3/next_alternative_id = 3
+14:3/0 = 0
+15:3/next_alternative_id = 3
+15:3/0 = 0
+16:3/next_alternative_id = 3
+16:3/0 = 0
+17:3/next_alternative_id = 3
+17:3/0 = 0
+19:3/next_alternative_id = 3
+19:3/0 = 0
+20:3/next_alternative_id = 3
+20:3/0 = 0
+21:3/next_alternative_id = 3
+21:3/0 = 0
+22:3/next_alternative_id = 3
+22:3/0 = 0
+23:3/next_alternative_id = 3
+23:3/0 = 0
+
+[sub_resource type="TileSet" id="TileSet_kbbpf"]
+tile_size = Vector2i(32, 32)
+sources/0 = SubResource("TileSetAtlasSource_2fc67")
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_istfd"]
+size = Vector2(50, 50)
+
+[node name="Node2D (root - Project)" type="Node2D"]
+script = ExtResource("1_g0iqw")
+
+[node name="World" type="TileMap" parent="."]
+tile_set = SubResource("TileSet_kbbpf")
+format = 2
+
+[node name="Camera" type="Camera2D" parent="."]
+ignore_rotation = false
+
+[node name="Player" type="CharacterBody2D" parent="."]
+z_index = 1
+script = ExtResource("2_5kj8r")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Player"]
+shape = SubResource("RectangleShape2D_istfd")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="PlayerSprite" type="Sprite2D" parent="CanvasLayer"]
+texture = ExtResource("2_qhwh6")
