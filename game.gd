@@ -15,7 +15,9 @@ extends Node2D
 #   |-- Camera2D           <- follows player, can rotate
 #   |-- CharacterBody2D    <- player physics + movement  (player.gd)
 #   |-- AnimatedSprite2D   <- player visual sprite
-#   +-- StaticBody2D ...   <- one per bush (bush.gd), added at load time
+#   |-- StaticBody2D ...   <- one per bush (bush.gd), added at load time
+#   +-- CanvasLayer
+#         +-- Node2D       <- HUD bars (hud.gd)
 # =============================================================================
 
 
@@ -30,6 +32,10 @@ const Z_DEPTH_SCALE := 32
 # Godot's minimum z_index. Pins terrain below all sprites, even when
 # a sprite's depth goes negative (which happens at certain camera angles).
 const TERRAIN_Z := -4096
+
+# Melee attack reach and forward arc half-angle (degrees either side of facing).
+const ATTACK_RADIUS    := 96.0
+const ATTACK_QUARTER_CONE := 45.0
 
 # Sprites beyond this distance from the player are outside the viewport and hidden.
 # Viewport half-diagonal at 1920x1080: sqrt(960^2 + 540^2) = 1101px, plus one sprite buffer (96px).
@@ -60,8 +66,9 @@ var tilemap           : TileMap
 var camera            : Camera2D
 var player            : CharacterBody2D
 var player_sprite     : AnimatedSprite2D
-var rotatable_sprites : Array = []   # every sprite that counter-rotates with the camera
-									 # add to this when spawning any entity (bush, tree, npc...)
+var hud               : Node2D
+var rotatable_sprites : Array      = []   # every sprite that counter-rotates with the camera
+var obstacle_map : Dictionary = {}   # Vector2i(tile_x, tile_y) → any attackable StaticBody2D
 
 
 # =============================================================================
@@ -74,6 +81,7 @@ func _ready() -> void:
 	_build_scene()
 	_load_terrain()
 	_load_entities()
+	hud.player_stats = player.stats
 
 
 # LOOP
@@ -139,6 +147,16 @@ func _build_scene() -> void:
 
 	player.sprite = player_sprite
 	player.load_animations()
+	player.attacked.connect(_on_player_attacked)
+
+	# ── HUD ────────────────────────────────────────────────────────────────────
+	# CanvasLayer keeps the bars on screen regardless of camera position/rotation.
+	var hud_layer := CanvasLayer.new()
+	hud_layer.layer = 10
+	add_child(hud_layer)
+	hud = Node2D.new()
+	hud.set_script(load("res://hud.gd"))
+	hud_layer.add_child(hud)
 
 
 # Called: _build_scene().
@@ -222,12 +240,44 @@ func _load_entities() -> void:
 # Called: _load_entities().
 func _spawn_bush(world_pos: Vector2) -> void:
 
-	var bush := StaticBody2D.new()
+	var bush     := StaticBody2D.new()
+	var tile_key := Vector2i(int(world_pos.x) / TILE_SIZE, int(world_pos.y) / TILE_SIZE)
 	bush.set_script(load("res://bush.gd"))
 	bush.position = world_pos
 	add_child(bush)   # triggers bush._ready() which creates its sprite + collision
-	bush.tree_exiting.connect(func(): rotatable_sprites.erase(bush.sprite))
+	bush.tree_exiting.connect(func():
+		rotatable_sprites.erase(bush.sprite)
+		obstacle_map.erase(tile_key)
+	)
 	rotatable_sprites.append(bush.sprite)
+	obstacle_map[tile_key] = bush
+
+
+# Called: player.attacked signal.
+func _on_player_attacked(world_pos: Vector2, facing_dir: Vector2) -> void:
+
+	# Spatial hash lookup — only tiles within ATTACK_RADIUS are checked.
+	# O(search_area) not O(n_obstacles); search_area is a fixed ~49 tiles.
+	var search_r    := ceili(ATTACK_RADIUS / TILE_SIZE)
+	var player_tile := Vector2i(int(world_pos.x) / TILE_SIZE, int(world_pos.y) / TILE_SIZE)
+
+	for dr in range(-search_r, search_r + 1):
+		for dc in range(-search_r, search_r + 1):
+			var key      := Vector2i(player_tile.x + dr, player_tile.y + dc)
+			if not obstacle_map.has(key):
+				continue
+			var obstacle := obstacle_map[key] as StaticBody2D
+			if not obstacle.alive:
+				continue
+			var to_obs : Vector2 = obstacle.position - world_pos
+			if to_obs.length() > ATTACK_RADIUS:
+				continue
+			# Angle check — obstacle must be within the forward arc.
+			if to_obs.length() > 0:
+				var deg := rad_to_deg(facing_dir.angle_to(to_obs.normalized()))
+				if absf(deg) > ATTACK_QUARTER_CONE:
+					continue
+			obstacle.take_hit()
 
 
 # =============================================================================

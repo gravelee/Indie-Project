@@ -16,7 +16,14 @@ extends CharacterBody2D
 #   - Set z_index                 (game.gd does that)
 # =============================================================================
 
-const SPRITE_SIZE	:= 96
+const SPRITE_SIZE := 96
+const TILE_SIZE   := 32
+
+
+# ── Signals ────────────────────────────────────────────────────────────────────
+
+signal attacked(world_pos: Vector2, facing_dir: Vector2)   # emitted when forward_slash starts
+
 
 # ── Base stats ─────────────────────────────────────────────────────────────────
 
@@ -242,7 +249,22 @@ func _input(event: InputEvent) -> void:
 # Called: _input().
 func _try_attack() -> void:
 
-	# Damage and hit detection wired up when combat is implemented.
 	if state in ONE_SHOT_STATES or state in ["death", "dead"]:
 		return
 	_set_state("forward_slash")
+	attacked.emit(position, _facing_world_dir())
+
+
+# Called: _try_attack().
+func _facing_world_dir() -> Vector2:
+
+	# Converts the screen-space facing cardinal into a world-space unit vector,
+	# accounting for the current camera rotation.
+	var screen_dir : Vector2
+	match facing:
+		"south": screen_dir = Vector2( 0,  1)
+		"north": screen_dir = Vector2( 0, -1)
+		"east":  screen_dir = Vector2( 1,  0)
+		"west":  screen_dir = Vector2(-1,  0)
+		_:       screen_dir = Vector2( 0,  1)
+	return screen_dir.rotated(deg_to_rad(-camera_angle))
