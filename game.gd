@@ -1,107 +1,309 @@
 extends Node2D
 
-# Camera rotation
-var world_angle: float = 0.0
-var rmb_held: bool = false
-var rmb_last_mouse: Vector2 = Vector2.ZERO
+# =============================================================================
+# GAME.GD  —  main controller
+#
+# Responsibilities:
+#   - Build the entire scene tree in code (no visual editor needed)
+#   - Load the map from txt files
+#   - Rotate the camera when RMB is dragged
+#   - Update draw order (z-sort) every frame so sprites overlap correctly
+#
+# Scene tree we build here:
+#   Game (Node2D)          ← this script
+#   ├── TileMap            ← terrain tiles (ground)
+#   ├── Camera2D           ← follows player, can rotate
+#   ├── CharacterBody2D    ← player physics + movement  (player.gd)
+#   ├── AnimatedSprite2D   ← player visual sprite
+#   └── StaticBody2D ...   ← one per bush  (bush.gd), added at load time
+# =============================================================================
 
-@onready var world: TileMap = $World
-@onready var camera: Camera2D = $Camera
-@onready var player: CharacterBody2D = $Player
 
-const TILE_SIZE = 32
+# ── Constants ─────────────────────────────────────────────────────────────────
 
-# Called: Game.
+const TILE_SIZE := 32
+
+# Pixel depths on a 100×100 map reach ~4525. Dividing by this keeps
+# values inside Godot's hard z_index limit of ±4096.
+const Z_DEPTH_SCALE := 2
+
+# Godot's minimum z_index. Pins terrain below all sprites, even when
+# a sprite's depth goes negative (which happens at certain camera angles).
+const TERRAIN_Z := -4096
+
+
+# ── Camera rotation state ──────────────────────────────────────────────────────
+
+var world_angle : float  = 0.0   # degrees; positive = world rotates clockwise
+var rmb_held    : bool   = false
+var last_mouse  : Vector2 = Vector2.ZERO
+
+# _angle_dirty is set to true whenever world_angle changes.
+# Functions that only need to run on rotation check this flag
+# instead of recalculating every frame.
+# Starts as true so the first frame always runs a full update.
+var _angle_dirty : bool  = true
+
+# Cached trig values for the current world_angle.
+# Recomputed only when _angle_dirty is true.
+# sin(0°) = 0.0, cos(0°) = 1.0 match the initial world_angle of 0.
+var cached_sin_a : float = 0.0
+var cached_cos_a : float = 1.0
+
+
+# ── Node references (all created in _build_scene) ─────────────────────────────
+
+var tilemap       : TileMap
+var camera        : Camera2D
+var player        : CharacterBody2D
+var player_sprite : AnimatedSprite2D
+var rotatable_sprites : Array = []         # every sprite that counter-rotates with the camera
+										   # add to this when spawning any entity (bush, tree, npc…)
+
+
+# =============================================================================
+# LIFECYCLE
+# =============================================================================
+
+# INIT
 func _ready() -> void:
 	
+	_build_scene()
 	_load_terrain()
 	_load_entities()
-	
-	var screen_size = get_viewport().get_visible_rect().size
-	$CanvasLayer/PlayerSprite.position = screen_size / 2.0
 
-# Called: Game.
+
+# LOOP
 func _input(event: InputEvent) -> void:
 	
-	if event is InputEventMouseButton:
-		if event.button_index == MOUSE_BUTTON_RIGHT:
-			rmb_held = event.pressed
-			if not rmb_held:
-				rmb_last_mouse = Vector2.ZERO
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
+		rmb_held = event.pressed
+		if not rmb_held:
+			last_mouse = Vector2.ZERO
 
-# Called: Game.
-func _process(delta: float) -> void:
+
+# LOOP
+func _process(_delta: float) -> void:
+
+	_rotate_camera()
+	_update_sprites()
+	_update_z_sort()
+	_angle_dirty = false
+
+
+# =============================================================================
+# SCENE CONSTRUCTION
+# Builds every node in code so we never need the visual editor.
+# =============================================================================
+
+# Called: _ready().
+func _build_scene() -> void:
+
+	# ── Terrain tilemap ────────────────────────────────────────────────────────
+	# TERRAIN_Z keeps tiles always behind every sprite, even at negative depths.
+	tilemap = TileMap.new()
+	tilemap.z_index = TERRAIN_Z
+	tilemap.tile_set = _create_tileset()
+	add_child(tilemap)
+
+	# ── Camera ─────────────────────────────────────────────────────────────────
+	# ignore_rotation = false means the camera itself can tilt,
+	# which rotates the entire view when we change camera.rotation_degrees.
+	camera = Camera2D.new()
+	camera.ignore_rotation = false
+	add_child(camera)
+
+	# ── Player physics body ────────────────────────────────────────────────────
+	# CharacterBody2D handles movement and collision.
+	# The visible sprite is a separate node (see below) so it can be
+	# z-sorted alongside bushes independently of the physics body.
+	player = CharacterBody2D.new()
+	player.set_script(load("res://player.gd"))
+	var col_shape := CollisionShape2D.new()
+	var shape      := CircleShape2D.new()
+	shape.radius   = 33.0
+	col_shape.shape = shape
+	player.add_child(col_shape)
+	add_child(player)
+
+	# ── Player visual sprite ───────────────────────────────────────────────────
+	# Kept separate from the physics body so z_index sorting works correctly.
+	# z_as_relative = false means this node's z_index is an absolute value,
+	# compared directly against bush sprites on the same scale.
+	player_sprite = AnimatedSprite2D.new()
+	player_sprite.z_as_relative = false
+	add_child(player_sprite)
+
+	# Give the player script a reference to its sprite so it can play animations.
+	player.sprite = player_sprite
+	player.load_animations()
+
+
+# Called: _build_scene().
+func _create_tileset() -> TileSet:
 	
-	_handle_camera_rotation()
-	player.camera_angle = world_angle
-	camera.global_position = player.global_position
-	#print("FPS: ", Engine.get_frames_per_second(), "  angle: ", world_angle)
+	var tileset := TileSet.new()
+	tileset.tile_size = Vector2i(TILE_SIZE, TILE_SIZE)
 
+	var texture : Texture2D = load("res://assets/tilemaps/leaf/leaf.png")
+	var source  := TileSetAtlasSource.new()
+	source.texture = texture
+	source.texture_region_size = Vector2i(TILE_SIZE, TILE_SIZE)
+
+	# Register every tile in the atlas so set_cell() can place them.
+	var cols := texture.get_width()  / TILE_SIZE
+	var rows := texture.get_height() / TILE_SIZE
+	for row in range(rows):
+		for col in range(cols):
+			source.create_tile(Vector2i(col, row))
+
+	tileset.add_source(source, 0)   # source id 0 matches the set_cell() calls below
+	return tileset
+
+
+# =============================================================================
+# MAP LOADING
+# Both txt files are grids of comma-separated numbers.
+# =============================================================================
 
 # Called: _ready().
 func _load_terrain() -> void:
 	
-	var file = FileAccess.open("res://level_01_terrain.txt", FileAccess.READ)
-	
+	var file := FileAccess.open("res://assets/maps/level_01/level_01_terrain.txt", FileAccess.READ)
 	if file == null:
-		print("Could not open terrain file: ", FileAccess.get_open_error())
+		push_error("Cannot open terrain file.")
 		return
-		
-	var rows = []
-	
+
+	var row := 0
 	while not file.eof_reached():
-		var line = file.get_line().strip_edges()
+		var line := file.get_line().strip_edges()
 		if line == "":
 			continue
-		var cols = line.split(",")
-		rows.append(cols)
+		var cols := line.split(",")
+		for col in range(cols.size()):
+			var tile_id    := int(cols[col])
+			var atlas_col  := tile_id % 24
+			var atlas_row  := tile_id / 24
+			tilemap.set_cell(0, Vector2i(col, row), 0, Vector2i(atlas_col, atlas_row))
+		row += 1
+
 	file.close()
 
-	# Transpose — same as pygame (grid[x][y])
-	for y in range(rows.size()):
-		for x in range(rows[y].size()):
-			var tile_id = int(rows[y][x])
-			world.set_cell(0, Vector2i(x, y), 0, Vector2i(tile_id % 24, tile_id / 24))
 
 # Called: _ready().
 func _load_entities() -> void:
 	
-	var file = FileAccess.open("res://level_01_other.txt", FileAccess.READ)
-	
+	var file := FileAccess.open("res://assets/maps/level_01/level_01_other.txt", FileAccess.READ)
 	if file == null:
+		push_error("Cannot open entities file.")
 		return
 
-	var rows = []
-	
+	var row := 0
 	while not file.eof_reached():
-		var line = file.get_line().strip_edges()
+		var line := file.get_line().strip_edges()
 		if line == "":
 			continue
-		rows.append(line.split(","))
+		var cols := line.split(",")
+		for col in range(cols.size()):
+			var tile_id   := int(cols[col])
+			var world_pos := Vector2(col * TILE_SIZE, row * TILE_SIZE)
+
+			if tile_id == 1:       # 1 = player spawn point
+				player.position = world_pos
+			elif tile_id == 101:   # 101 = bush
+				_spawn_bush(world_pos)
+		row += 1
+
 	file.close()
 
-	for y in range(rows.size()):
-		for x in range(rows[y].size()):
-			var tile_id = int(rows[y][x])
-			if tile_id == 1:  # Player spawn
-				player.position = Vector2(x * 32 + 16, y * 32 + 16)
+
+# Called: _load_entities().
+func _spawn_bush(world_pos: Vector2) -> void:
+	
+	var bush := StaticBody2D.new()
+	bush.set_script(load("res://bush.gd"))
+	bush.position = world_pos
+	add_child(bush)   # triggers bush._ready() which creates its sprite + collision
+
+	# Remove from the list automatically when the bush dies (queue_free).
+	bush.tree_exiting.connect(func(): rotatable_sprites.erase(bush.sprite))
+	rotatable_sprites.append(bush.sprite)
+
+
+# =============================================================================
+# PER-FRAME UPDATES
+# =============================================================================
 
 # Called: _process().
-func _handle_camera_rotation() -> void:
+func _rotate_camera() -> void:
+	
+	# Drag RMB left/right to rotate the world view.
 	
 	if not rmb_held:
 		return
 
-	var mouse_pos = get_viewport().get_mouse_position()
-	
-	if rmb_last_mouse == Vector2.ZERO:
-		rmb_last_mouse = mouse_pos
+	var mouse := get_viewport().get_mouse_position()
+
+	if last_mouse == Vector2.ZERO:
+		last_mouse = mouse
 		return
 
-	var delta_x = mouse_pos.x - rmb_last_mouse.x
-
+	var delta_x := mouse.x - last_mouse.x
 	if abs(delta_x) >= 1.0:
-		world_angle = fmod(world_angle + delta_x * 0.5, 360.0)
-		camera.rotation_degrees = -world_angle
+		world_angle  = fmod(world_angle + delta_x * 0.5, 360.0)
+		_angle_dirty = true
 
-	rmb_last_mouse = mouse_pos
+	last_mouse = mouse
+
+
+# Called: _process().
+func _update_sprites() -> void:
+
+	# Always: keep sprite and camera locked to the physics body position.
+	player_sprite.global_position = player.global_position
+	camera.global_position        = player.global_position
+
+	# Only on rotation: update angles (no need to set the same value every frame).
+	if _angle_dirty:
+		player_sprite.rotation_degrees = -world_angle
+		camera.rotation_degrees        = -world_angle
+		player.camera_angle            = world_angle
+
+
+# =============================================================================
+# Z-SORT  —  who draws on top of whom
+#
+# In a top-down view, things that appear lower on screen should draw on top.
+# When the camera is not rotated, "lower on screen" = higher world Y.
+# When the camera rotates, "lower on screen" changes — it becomes a mix of
+# X and Y depending on the angle.
+#
+# The formula  depth = x*sin(angle) + y*cos(angle)  computes exactly that:
+# it projects each world position onto the current screen-down direction.
+# This is the same formula used in the original Python camera.py.
+#
+# We divide by Z_DEPTH_SCALE to keep values inside Godot's z_index limit of ±4096
+# (a 100×100 tile map at 32px/tile can produce depths up to ~4500 otherwise).
+# =============================================================================
+
+# Called: _process().
+func _update_z_sort() -> void:
+
+	# Only on rotation: recompute trig, rotate all entity sprites, update bush depths.
+	if _angle_dirty:
+		var rad      := deg_to_rad(world_angle)
+		cached_sin_a  = sin(rad)
+		cached_cos_a  = cos(rad)
+		
+		# One loop: rotate every entity sprite and set its depth.
+		# sprite.get_parent() is the entity node (bush, tree...) which holds the position.
+		# To add a new entity type in the future: just append its sprite to rotatable_sprites.
+		for sprite in rotatable_sprites:
+			
+			var pos             := (sprite.get_parent() as Node2D).position
+			
+			sprite.rotation_degrees = -world_angle
+			sprite.z_index          = int((pos.x * cached_sin_a + pos.y * cached_cos_a) / Z_DEPTH_SCALE)
+
+	# Always: player moves every frame so depth must stay current.
+	player_sprite.z_index = int((player.position.x * cached_sin_a + player.position.y * cached_cos_a) / Z_DEPTH_SCALE)
