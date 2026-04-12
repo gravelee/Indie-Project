@@ -10,12 +10,12 @@ extends Node2D
 #   - Update draw order (z-sort) every frame so sprites overlap correctly
 #
 # Scene tree we build here:
-#   Game (Node2D)          ← this script
-#   ├── TileMap            ← terrain tiles (ground)
-#   ├── Camera2D           ← follows player, can rotate
-#   ├── CharacterBody2D    ← player physics + movement  (player.gd)
-#   ├── AnimatedSprite2D   ← player visual sprite
-#   └── StaticBody2D ...   ← one per bush  (bush.gd), added at load time
+#   Game (Node2D)          <- this script
+#   |-- TileMap            <- terrain tiles (ground)
+#   |-- Camera2D           <- follows player, can rotate
+#   |-- CharacterBody2D    <- player physics + movement  (player.gd)
+#   |-- AnimatedSprite2D   <- player visual sprite
+#   +-- StaticBody2D ...   <- one per bush (bush.gd), added at load time
 # =============================================================================
 
 
@@ -23,14 +23,17 @@ extends Node2D
 
 const TILE_SIZE := 32
 
-# Pixel depths on a 100×100 map reach ~4525. Dividing by this keeps
-# values inside Godot's hard z_index limit of ±4096.
-const Z_DEPTH_SCALE := 2
+# Pixel depths on a 100x100 map reach ~4525. Dividing by this keeps
+# values inside Godot's hard z_index limit of +/-4096.
+const Z_DEPTH_SCALE := 32
 
 # Godot's minimum z_index. Pins terrain below all sprites, even when
 # a sprite's depth goes negative (which happens at certain camera angles).
 const TERRAIN_Z := -4096
 
+# Sprites beyond this distance from the player are outside the viewport and hidden.
+# Viewport half-diagonal at 1920x1080: sqrt(960^2 + 540^2) = 1101px, plus one sprite buffer (96px).
+# Stored squared to avoid a sqrt() per sprite per frame.
 
 # ── Camera rotation state ──────────────────────────────────────────────────────
 
@@ -46,19 +49,19 @@ var _angle_dirty : bool  = true
 
 # Cached trig values for the current world_angle.
 # Recomputed only when _angle_dirty is true.
-# sin(0°) = 0.0, cos(0°) = 1.0 match the initial world_angle of 0.
+# sin(0) = 0.0, cos(0) = 1.0 match the initial world_angle of 0.
 var cached_sin_a : float = 0.0
 var cached_cos_a : float = 1.0
 
 
 # ── Node references (all created in _build_scene) ─────────────────────────────
 
-var tilemap       : TileMap
-var camera        : Camera2D
-var player        : CharacterBody2D
-var player_sprite : AnimatedSprite2D
-var rotatable_sprites : Array = []         # every sprite that counter-rotates with the camera
-										   # add to this when spawning any entity (bush, tree, npc…)
+var tilemap           : TileMap
+var camera            : Camera2D
+var player            : CharacterBody2D
+var player_sprite     : AnimatedSprite2D
+var rotatable_sprites : Array = []   # every sprite that counter-rotates with the camera
+									 # add to this when spawning any entity (bush, tree, npc...)
 
 
 # =============================================================================
@@ -67,7 +70,7 @@ var rotatable_sprites : Array = []         # every sprite that counter-rotates w
 
 # INIT
 func _ready() -> void:
-	
+
 	_build_scene()
 	_load_terrain()
 	_load_entities()
@@ -75,7 +78,7 @@ func _ready() -> void:
 
 # LOOP
 func _input(event: InputEvent) -> void:
-	
+
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
 		rmb_held = event.pressed
 		if not rmb_held:
@@ -121,27 +124,26 @@ func _build_scene() -> void:
 	player.set_script(load("res://player.gd"))
 	var col_shape := CollisionShape2D.new()
 	var shape      := CircleShape2D.new()
-	shape.radius   = 33.0
+	shape.radius   = 30.0
 	col_shape.shape = shape
 	player.add_child(col_shape)
 	add_child(player)
 
 	# ── Player visual sprite ───────────────────────────────────────────────────
 	# Kept separate from the physics body so z_index sorting works correctly.
-	# z_as_relative = false means this node's z_index is an absolute value,
-	# compared directly against bush sprites on the same scale.
+	# z_as_relative = false means this node's z_index is absolute, compared
+	# directly against bush sprites on the same scale.
 	player_sprite = AnimatedSprite2D.new()
 	player_sprite.z_as_relative = false
 	add_child(player_sprite)
 
-	# Give the player script a reference to its sprite so it can play animations.
 	player.sprite = player_sprite
 	player.load_animations()
 
 
 # Called: _build_scene().
 func _create_tileset() -> TileSet:
-	
+
 	var tileset := TileSet.new()
 	tileset.tile_size = Vector2i(TILE_SIZE, TILE_SIZE)
 
@@ -168,7 +170,7 @@ func _create_tileset() -> TileSet:
 
 # Called: _ready().
 func _load_terrain() -> void:
-	
+
 	var file := FileAccess.open("res://assets/maps/level_01/level_01_terrain.txt", FileAccess.READ)
 	if file == null:
 		push_error("Cannot open terrain file.")
@@ -192,7 +194,7 @@ func _load_terrain() -> void:
 
 # Called: _ready().
 func _load_entities() -> void:
-	
+
 	var file := FileAccess.open("res://assets/maps/level_01/level_01_other.txt", FileAccess.READ)
 	if file == null:
 		push_error("Cannot open entities file.")
@@ -219,13 +221,11 @@ func _load_entities() -> void:
 
 # Called: _load_entities().
 func _spawn_bush(world_pos: Vector2) -> void:
-	
+
 	var bush := StaticBody2D.new()
 	bush.set_script(load("res://bush.gd"))
 	bush.position = world_pos
 	add_child(bush)   # triggers bush._ready() which creates its sprite + collision
-
-	# Remove from the list automatically when the bush dies (queue_free).
 	bush.tree_exiting.connect(func(): rotatable_sprites.erase(bush.sprite))
 	rotatable_sprites.append(bush.sprite)
 
@@ -236,9 +236,9 @@ func _spawn_bush(world_pos: Vector2) -> void:
 
 # Called: _process().
 func _rotate_camera() -> void:
-	
+
 	# Drag RMB left/right to rotate the world view.
-	
+
 	if not rmb_held:
 		return
 
@@ -263,7 +263,7 @@ func _update_sprites() -> void:
 	player_sprite.global_position = player.global_position
 	camera.global_position        = player.global_position
 
-	# Only on rotation: update angles (no need to set the same value every frame).
+	# Only on rotation: update angles.
 	if _angle_dirty:
 		player_sprite.rotation_degrees = -world_angle
 		camera.rotation_degrees        = -world_angle
@@ -273,35 +273,21 @@ func _update_sprites() -> void:
 # =============================================================================
 # Z-SORT  —  who draws on top of whom
 #
-# In a top-down view, things that appear lower on screen should draw on top.
-# When the camera is not rotated, "lower on screen" = higher world Y.
-# When the camera rotates, "lower on screen" changes — it becomes a mix of
-# X and Y depending on the angle.
-#
-# The formula  depth = x*sin(angle) + y*cos(angle)  computes exactly that:
-# it projects each world position onto the current screen-down direction.
-# This is the same formula used in the original Python camera.py.
-#
-# We divide by Z_DEPTH_SCALE to keep values inside Godot's z_index limit of ±4096
-# (a 100×100 tile map at 32px/tile can produce depths up to ~4500 otherwise).
+# depth = x*sin(angle) + y*cos(angle) projects each world position onto the
+# current screen-down direction. Higher depth = lower on screen = drawn on top.
+# Dividing by Z_DEPTH_SCALE keeps values inside Godot's z_index limit of +/-4096.
 # =============================================================================
 
 # Called: _process().
 func _update_z_sort() -> void:
 
-	# Only on rotation: recompute trig, rotate all entity sprites, update bush depths.
+	# Only on rotation: recompute trig, rotate all entity sprites, update depths.
 	if _angle_dirty:
 		var rad      := deg_to_rad(world_angle)
 		cached_sin_a  = sin(rad)
 		cached_cos_a  = cos(rad)
-		
-		# One loop: rotate every entity sprite and set its depth.
-		# sprite.get_parent() is the entity node (bush, tree...) which holds the position.
-		# To add a new entity type in the future: just append its sprite to rotatable_sprites.
 		for sprite in rotatable_sprites:
-			
 			var pos             := (sprite.get_parent() as Node2D).position
-			
 			sprite.rotation_degrees = -world_angle
 			sprite.z_index          = int((pos.x * cached_sin_a + pos.y * cached_cos_a) / Z_DEPTH_SCALE)
 
