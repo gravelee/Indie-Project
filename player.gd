@@ -16,44 +16,52 @@ extends CharacterBody2D
 #   - Set z_index                 (game.gd does that)
 # =============================================================================
 
+const SPRITE_SIZE	:= 96
 
-# ── Settings ───────────────────────────────────────────────────────────────────
+# ── Base stats ─────────────────────────────────────────────────────────────────
 
-const SPEED := 200.0
+const BASE_STR := 0
+const BASE_AGI := 0
+const BASE_STA := 0
+const BASE_INT := 0
+const BASE_SPR := 0
+const BASE_RES := 0
+const BASE_DEF := 0
 
 
 # ── Animation sets ─────────────────────────────────────────────────────────────
 
-const DIRECTIONS := ["south", "north", "east", "west"]
-
-# These animations exist in 4 directional variants (_south, _north, _east, _west).
-const DIRECTIONAL_ANIMS := ["idle_neutral", "idle_attack", "walking", "forward_slash"]
-
-# These animations are a single sheet with no direction suffix.
+const DIRECTIONS         	:= ["south", "north", "east", "west"]
+const DIRECTIONAL_ANIMS  	:= ["idle_neutral", "idle_attack", "walking", "forward_slash"]
 const NON_DIRECTIONAL_ANIMS := ["spawn", "death"]
-
-# One-shot states: animation plays once and sets anim_done when finished.
-const ONE_SHOT_STATES := ["spawn", "forward_slash", "death"]
+const ONE_SHOT_STATES    	:= ["spawn", "forward_slash", "death"]
 
 
 # ── State ──────────────────────────────────────────────────────────────────────
 
 var state     : String = "spawn"
 var facing    : String = "south"
-var in_combat : bool   = false   # set externally when combat is implemented
-var anim_done : bool   = false   # true for one frame when a one-shot finishes
+var in_combat : bool   = false
+var anim_done : bool   = false
 
 
 # ── References ─────────────────────────────────────────────────────────────────
 
 var sprite       : AnimatedSprite2D   # assigned by game.gd before load_animations()
 var camera_angle : float = 0.0        # set by game.gd every frame
+var stats        : Stats              # created in _ready()
 
 
 # =============================================================================
 # SETUP
-# Called by game.gd after it creates the sprite node and assigns it above.
 # =============================================================================
+
+# INIT
+func _ready() -> void:
+
+	stats = Stats.new(BASE_STR, BASE_AGI, BASE_STA, BASE_INT,
+					  BASE_SPR, BASE_RES, BASE_DEF, true)
+
 
 # Called: game._build_scene().
 func load_animations() -> void:
@@ -61,7 +69,6 @@ func load_animations() -> void:
 	var frames := SpriteFrames.new()
 	sprite.sprite_frames = frames
 
-	# Directional: four variants per animation (south/north/east/west).
 	for anim in DIRECTIONAL_ANIMS:
 		for dir in DIRECTIONS:
 			var key  : String = anim + "_" + dir
@@ -69,7 +76,6 @@ func load_animations() -> void:
 			var loop : bool   = anim not in ONE_SHOT_STATES
 			_add_strip(frames, key, texture, loop)
 
-	# Non-directional: one sheet per animation.
 	for anim in NON_DIRECTIONAL_ANIMS:
 		var texture : Texture2D = load("res://assets/spritesheets/player/" + anim + ".png")
 		_add_strip(frames, anim, texture, false)
@@ -79,19 +85,18 @@ func load_animations() -> void:
 
 
 # Called: load_animations().
-# Registers one horizontal spritesheet as an animation in frames.
-# Every frame is 96 px wide.
 func _add_strip(frames: SpriteFrames, key: String, texture: Texture2D, loop: bool) -> void:
 
+	# Registers one horizontal spritesheet as an animation.
 	frames.add_animation(key)
 	frames.set_animation_loop(key, loop)
 	frames.set_animation_speed(key, 8.0)
 
-	var frame_count := texture.get_width() / 96
+	var frame_count := texture.get_width() / SPRITE_SIZE
 	for i in range(frame_count):
-		var atlas    := AtlasTexture.new()
-		atlas.atlas   = texture
-		atlas.region  = Rect2(i * 96, 0, 96, 96)
+		var atlas   := AtlasTexture.new()
+		atlas.atlas  = texture
+		atlas.region = Rect2(i * SPRITE_SIZE, 0, SPRITE_SIZE, SPRITE_SIZE)
 		frames.add_frame(key, atlas)
 
 
@@ -99,16 +104,20 @@ func _add_strip(frames: SpriteFrames, key: String, texture: Texture2D, loop: boo
 # ANIMATION
 # =============================================================================
 
-# Returns the SpriteFrames key for the current state and facing direction.
+# Called: _sync_anim().
 func _anim_key() -> String:
+
+	# Returns the SpriteFrames key for the current state and facing direction.
 	if state in NON_DIRECTIONAL_ANIMS:
 		return state
 	return state + "_" + facing
 
 
-# Syncs the sprite to the current state + facing — no-op if already correct.
-# Not called for "dead" so the death sheet stays frozen on its last frame.
+# Called: _physics_process().
 func _sync_anim() -> void:
+
+	# Syncs the sprite to the current state + facing.
+	# Skipped for "dead" so the death sheet stays frozen on its last frame.
 	if state == "dead":
 		return
 	var key := _anim_key()
@@ -116,14 +125,17 @@ func _sync_anim() -> void:
 		sprite.play(key)
 
 
-# Called: load_animations() (via signal).
+# Called: load_animations() via signal.
 func _on_anim_finished() -> void:
+
 	if state in ONE_SHOT_STATES:
 		anim_done = true
 
 
-# Sets a new state. Resets anim_done so the next one-shot can fire correctly.
+# Called: _update_state(), _handle_movement().
 func _set_state(new_state: String) -> void:
+
+	# Resets anim_done so the next one-shot can fire correctly.
 	if state == new_state:
 		return
 	state     = new_state
@@ -132,7 +144,6 @@ func _set_state(new_state: String) -> void:
 
 # =============================================================================
 # STATE MACHINE
-# Runs every physics frame before movement so transitions take effect immediately.
 # =============================================================================
 
 # Called: _physics_process().
@@ -164,22 +175,23 @@ func _update_state() -> void:
 
 
 # =============================================================================
-# MOVEMENT  -  runs every physics frame
+# MOVEMENT
 # =============================================================================
 
 # LOOP
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 
 	_update_state()
-	_handle_movement()
+	_handle_movement(delta)
 	_sync_anim()
+	if not in_combat and state not in ["death", "dead"]:
+		stats.regen(delta)
 
 
 # Called: _physics_process().
-func _handle_movement() -> void:
+func _handle_movement(_delta: float) -> void:
 
-	# Block movement during one-shot animations or when dead.
-	if state in ONE_SHOT_STATES or state == "dead":
+	if state in ONE_SHOT_STATES or state in ["death", "dead"]:
 		velocity = Vector2.ZERO
 		move_and_slide()
 		return
@@ -204,7 +216,7 @@ func _handle_movement() -> void:
 		input = input.rotated(deg_to_rad(-camera_angle))
 
 		_set_state("walking")
-		velocity = input * SPEED
+		velocity = input * stats.mspd
 
 	else:
 		# No input — return to the appropriate idle.
@@ -216,7 +228,7 @@ func _handle_movement() -> void:
 
 
 # =============================================================================
-# INPUT  -  attack trigger
+# INPUT
 # =============================================================================
 
 # LOOP
@@ -230,10 +242,7 @@ func _input(event: InputEvent) -> void:
 # Called: _input().
 func _try_attack() -> void:
 
-	# Cannot attack during one-shot animations or when dead.
-	if state in ONE_SHOT_STATES or state == "dead":
+	# Damage and hit detection wired up when combat is implemented.
+	if state in ONE_SHOT_STATES or state in ["death", "dead"]:
 		return
-
-	# Trigger the forward slash animation.
-	# Damage and hit detection will be wired up when combat is implemented.
 	_set_state("forward_slash")
