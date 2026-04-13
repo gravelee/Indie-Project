@@ -16,6 +16,7 @@ extends Node2D
 #   |-- CharacterBody2D    <- player physics + movement  (player.gd)
 #   |-- AnimatedSprite2D   <- player visual sprite
 #   |-- StaticBody2D ...   <- one per bush (bush.gd), added at load time
+#   |-- CharacterBody2D .. <- one per rat  (rat.gd),  added at load time
 #   +-- CanvasLayer
 #         +-- Node2D       <- HUD bars (hud.gd)
 # =============================================================================
@@ -68,6 +69,8 @@ var player            : CharacterBody2D
 var player_sprite     : AnimatedSprite2D
 var hud               : Node2D
 var rotatable_sprites : Array      = []   # every sprite that counter-rotates with the camera
+var creature_sprites  : Array      = []   # creature sprites — z_index updated every frame
+var creatures         : Array      = []   # all active creature nodes
 var obstacle_map : Dictionary = {}   # Vector2i(tile_x, tile_y) → any attackable StaticBody2D
 
 
@@ -230,11 +233,37 @@ func _load_entities() -> void:
 
 			if tile_id == 1:       # 1 = player spawn point
 				player.position = world_pos
+			elif tile_id == 2:     # 2 = rat spawn point
+				_spawn_rat(world_pos)
 			elif tile_id == 101:   # 101 = bush
 				_spawn_bush(world_pos)
 		row += 1
 
 	file.close()
+
+
+# Called: _load_entities().
+func _spawn_rat(world_pos: Vector2) -> void:
+
+	var rat := CharacterBody2D.new()
+	rat.set_script(load("res://rat.gd"))
+	var col_shape := CollisionShape2D.new()
+	var shape      := CircleShape2D.new()
+	shape.radius   = 20.0
+	col_shape.shape = shape
+	rat.add_child(col_shape)
+	rat.position = world_pos
+	add_child(rat)   # triggers rat._ready() which creates sprite as child
+
+	rat.player       = player
+	rat.camera_angle = world_angle
+
+	rat.tree_exiting.connect(func():
+		creature_sprites.erase(rat.sprite)
+		creatures.erase(rat)
+	)
+	creature_sprites.append(rat.sprite)
+	creatures.append(rat)
 
 
 # Called: _load_entities().
@@ -318,6 +347,8 @@ func _update_sprites() -> void:
 		player_sprite.rotation_degrees = -world_angle
 		camera.rotation_degrees        = -world_angle
 		player.camera_angle            = world_angle
+		for creature in creatures:
+			creature.camera_angle = world_angle
 
 
 # =============================================================================
@@ -340,6 +371,11 @@ func _update_z_sort() -> void:
 			var pos             := (sprite.get_parent() as Node2D).position
 			sprite.rotation_degrees = -world_angle
 			sprite.z_index          = int((pos.x * cached_sin_a + pos.y * cached_cos_a) / Z_DEPTH_SCALE)
+		for sprite in creature_sprites:
+			sprite.rotation_degrees = -world_angle
 
-	# Always: player moves every frame so depth must stay current.
+	# Always: player and creatures move every frame so depth must stay current.
 	player_sprite.z_index = int((player.position.x * cached_sin_a + player.position.y * cached_cos_a) / Z_DEPTH_SCALE)
+	for sprite in creature_sprites:
+		var pos := (sprite.get_parent() as Node2D).position
+		sprite.z_index = int((pos.x * cached_sin_a + pos.y * cached_cos_a) / Z_DEPTH_SCALE)
