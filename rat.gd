@@ -6,7 +6,7 @@ extends CharacterBody2D
 # Responsibilities:
 #   - Full state machine: idle_neutral ↔ wander ↔ notice → enter_stance
 #                         ↔ idle_attack ↔ chase ↔ exit_stance ↔ returning
-#                         → attack_bite / attack_slash → dying → dead
+#                         → attack_bite / attack_slash → death → dead
 #   - Wander randomly when idle, chase and attack when player is near
 #   - Return home when player escapes or energy runs out
 #
@@ -33,10 +33,18 @@ const HOME_MAX_DIST    := 2000.0
 const HOME_DIST        := 16.0
 const FLEE_SPEED       := 200.0
 
+# Pre-squared — avoids sqrt in distance comparisons every frame.
+const NOTICE_DIRECTION_SQ := NOTICE_DIRECTION * NOTICE_DIRECTION
+const NOTICE_DIST_SQ      := NOTICE_DIST      * NOTICE_DIST
+const CHASE_DIST_SQ       := CHASE_DIST       * CHASE_DIST
+const ATTACK_DIST_SQ      := ATTACK_DIST      * ATTACK_DIST
+const HOME_MAX_DIST_SQ    := HOME_MAX_DIST    * HOME_MAX_DIST
+const HOME_DIST_SQ        := HOME_DIST        * HOME_DIST
+
 
 # ── Wander settings ────────────────────────────────────────────────────────────
 
-const WANDER_CHANCE        := 0.40
+const WANDER_CHANCE        := 0.30
 const WANDER_INTERVAL_MIN  := 0.9
 const WANDER_INTERVAL_MAX  := 1.1
 const WANDER_DURATION_MIN  := 0.5
@@ -45,13 +53,13 @@ const WANDER_DURATION_MAX  := 3.0
 
 # ── Base stats ─────────────────────────────────────────────────────────────────
 
-const BASE_STR := 2
-const BASE_AGI := 3
-const BASE_STA := 2
+const BASE_STR := 0
+const BASE_AGI := 0
+const BASE_STA := 0
 const BASE_INT := 0
 const BASE_SPR := 0
 const BASE_RES := 0
-const BASE_DEF := 1
+const BASE_DEF := 0
 
 
 # ── Animation files ────────────────────────────────────────────────────────────
@@ -67,11 +75,25 @@ const ANIM_FILES := {
 	"returning"    : "move.png",
 	"attack_bite"  : "attack_bite.png",
 	"attack_slash" : "attack_slash.png",
-	"dying"        : "death.png",
+	"death"        : "death.png",
 }
 
-const ONE_SHOT_STATES := ["notice", "enter_stance", "exit_stance",
-						  "attack_bite", "attack_slash", "dying"]
+const ONE_SHOT_STATES := {
+	"notice": true, "enter_stance": true, "exit_stance": true,
+	"attack_bite": true, "attack_slash": true, "death": true
+}
+
+const COMBAT_STATES := {
+	"enter_stance": true, "idle_attack": true, "chase": true,
+	"attack_bite": true,  "attack_slash": true
+}
+
+const NON_COMBAT_STATES := {
+	"idle_neutral": true, "wander": true,   "notice": true,
+	"exit_stance":  true, "returning": true, "death": true
+}
+
+const MOVING_STATES := {"wander": true, "chase": true, "returning": true}
 
 
 # ── State ──────────────────────────────────────────────────────────────────────
@@ -105,10 +127,24 @@ var out_of_energy   : bool    = false
 
 # ── References ─────────────────────────────────────────────────────────────────
 
-var sprite       : AnimatedSprite2D   # created in _ready()
-var player       : CharacterBody2D    # set by game.gd after spawn
-var stats        : Stats              # created in _ready()
-var camera_angle : float = 0.0       # set by game.gd on rotation
+var sprite  : AnimatedSprite2D   # created in _ready()
+var player  : CharacterBody2D    # set by game.gd after spawn
+var stats   : Stats              # created in _ready()
+
+# Setter caches trig once per rotation and immediately corrects facing_right
+# using the last known movement direction, so _move_toward stays cheap.
+var camera_angle : float = 0.0:
+	set(value):
+		camera_angle = value
+		var rad := deg_to_rad(value)
+		_cos_a       = cos(rad)
+		_sin_a       = sin(rad)
+		facing_right = (_move_dx * _cos_a - _move_dy * _sin_a) > 0
+
+var _cos_a   : float = 1.0   # cached cos(camera_angle)
+var _sin_a   : float = 0.0   # cached sin(camera_angle)
+var _move_dx : float = 0.0   # last movement direction — reused by setter on rotation
+var _move_dy : float = 1.0
 
 
 # =============================================================================
@@ -208,92 +244,95 @@ func _update_state(delta: float) -> void:
 	if not player:
 		return
 
-	var dist      : float = position.distance_to(player.position)
-	var player_ok : bool  = player.state not in ["death", "dead"]
+	var player_ok : bool = player.state != "death" and player.state != "dead"
+
+	# dist_sq is computed lazily for idle states after the AABB check.
+	# For all active states it is computed once here — no sqrt ever.
+	var dist_sq : float = 0.0
+	if state != "idle_neutral" and state != "wander":
+		dist_sq = position.distance_squared_to(player.position)
 
 	match state:
 
 		"idle_neutral", "wander":
-			# ── Face player if nearby ──────────────────────────────────────────
-			if player_ok and dist < NOTICE_DIRECTION:
-				_update_facing(player.position.x - position.x,
-							   player.position.y - position.y)
-				if dist < NOTICE_DIST and notice_cooldown <= 0.0:
-					_set_state("notice")
-					return
+			# ── AABB broad phase — skip dist entirely when player is clearly out of range ──
+			if player_ok:
+				var dx := absf(player.position.x - position.x)
+				var dy := absf(player.position.y - position.y)
+				if dx <= NOTICE_DIRECTION and dy <= NOTICE_DIRECTION:
+					dist_sq = position.distance_squared_to(player.position)
+					if dist_sq < NOTICE_DIRECTION_SQ:
+						_update_facing(player.position.x - position.x,
+									   player.position.y - position.y)
+						if dist_sq < NOTICE_DIST_SQ and notice_cooldown <= 0.0:
+							_set_state("notice")
+							return
 			# ── Wander ────────────────────────────────────────────────────────
 			var signal_ := _wander(delta)
 			if signal_ == "start": _set_state("wander")
 			elif signal_ == "done": _set_state("idle_neutral")
 
 		"notice":
-			if dist < ATTACK_DIST:
+			if dist_sq < ATTACK_DIST_SQ:
 				_set_state("enter_stance")
 			elif anim_done:
-				if dist < NOTICE_DIST: _set_state("enter_stance")
-				else:                  _set_state("idle_neutral")
+				if dist_sq < NOTICE_DIST_SQ: _set_state("enter_stance")
+				else:                         _set_state("idle_neutral")
 
 		"enter_stance":
-			# Record home on first engagement.
 			if anim_done:
-				if dist < ATTACK_DIST:      _set_state("idle_attack")
-				elif dist < NOTICE_DIST:    _set_state("chase")
-				else:                        _set_state("exit_stance")
+				if dist_sq < ATTACK_DIST_SQ:   _set_state("idle_attack")
+				elif dist_sq < NOTICE_DIST_SQ: _set_state("chase")
+				else:                           _set_state("exit_stance")
 
 		"idle_attack":
 			if not player_ok or out_of_energy:
 				_set_state("returning")
-			elif dist < ATTACK_DIST:
+			elif dist_sq < ATTACK_DIST_SQ:
 				_try_attack()
-			elif dist < CHASE_DIST:
+			elif dist_sq < CHASE_DIST_SQ:
 				_set_state("chase")
 			else:
 				_set_state("exit_stance")
 
 		"chase":
-			var dist_home := position.distance_to(home_position)
-			if dist_home > HOME_MAX_DIST:
+			var dist_home_sq := position.distance_squared_to(home_position)
+			if dist_home_sq > HOME_MAX_DIST_SQ:
 				home_max_dist = true
 				_set_state("returning")
-			elif dist < ATTACK_DIST: _set_state("idle_attack")
-			elif dist > CHASE_DIST:  _set_state("exit_stance")
+			elif dist_sq < ATTACK_DIST_SQ: _set_state("idle_attack")
+			elif dist_sq > CHASE_DIST_SQ:  _set_state("exit_stance")
 			else:
 				_move_toward(player.position, stats.mspd, delta)
 
 		"exit_stance":
 			if anim_done:
-				if dist < NOTICE_DIST: _set_state("enter_stance")
-				else:                  _set_state("returning")
+				if dist_sq < NOTICE_DIST_SQ: _set_state("enter_stance")
+				else:                         _set_state("returning")
 
 		"returning":
-			var dist_home := position.distance_to(home_position)
-			var forced    := home_max_dist or out_of_energy or not player_ok
+			var dist_home_sq := position.distance_squared_to(home_position)
+			var forced       := home_max_dist or out_of_energy or not player_ok
 
-			if forced or dist > NOTICE_DIST:
-				if dist_home <= HOME_DIST:
+			if forced or dist_sq > NOTICE_DIST_SQ:
+				if dist_home_sq <= HOME_DIST_SQ:
 					_snap_to_home()
 				else:
 					_move_toward(home_position, FLEE_SPEED, delta)
 			else:
 				_update_facing(player.position.x - position.x,
 							   player.position.y - position.y)
-				if dist < ATTACK_DIST: _set_state("idle_attack")
-				else:                  _set_state("enter_stance")
+				if dist_sq < ATTACK_DIST_SQ: _set_state("idle_attack")
+				else:                         _set_state("enter_stance")
 
 		"attack_bite", "attack_slash":
 			if anim_done:
 				_set_state("idle_attack")
 
-		"dying":
+		"death":
 			if anim_done:
 				alive = false
 				_set_state("dead")
-
-		"dead":
-			corpse_alpha = maxf(0.0, corpse_alpha - 300.0 * delta)
-			sprite.modulate = Color(1.0, 1.0, 1.0, corpse_alpha / 255.0)
-			if corpse_alpha <= 0.0:
-				queue_free()
 
 
 # =============================================================================
@@ -309,30 +348,23 @@ func _wander(delta: float) -> String:
 		if wander_timer >= wander_interval:
 			wander_timer    = 0.0
 			wander_interval = randf_range(WANDER_INTERVAL_MIN, WANDER_INTERVAL_MAX)
-
-			if randf() < WANDER_CHANCE or force_wander:
-				force_wander     = false
-				var angle        := randf() * TAU
-				wander_dx        = cos(angle)
-				wander_dy        = sin(angle)
-				wander_elapsed   = 0.0
-				wander_duration  = randf_range(WANDER_DURATION_MIN, WANDER_DURATION_MAX)
-				_update_facing(wander_dx, wander_dy)
+			if randf() < WANDER_CHANCE:
+				force_wander = true   # direction + facing set next frame in wander branch
 				return "start"
 		return ""
 
-	# Currently wandering.
-	wander_elapsed += delta
-	velocity = Vector2(wander_dx, wander_dy) * stats.mspd
-
+	# Currently wandering — resolve direction first, then apply velocity.
 	if force_wander:
-		force_wander = false
-		var angle    := randf() * TAU
-		wander_dx    = cos(angle)
-		wander_dy    = sin(angle)
+		force_wander    = false
+		var angle       := randf() * TAU
+		wander_dx       = cos(angle)
+		wander_dy       = sin(angle)
 		wander_elapsed  = 0.0
 		wander_duration = randf_range(WANDER_DURATION_MIN, WANDER_DURATION_MAX)
 		_update_facing(wander_dx, wander_dy)
+
+	wander_elapsed += delta
+	velocity = Vector2(wander_dx, wander_dy) * stats.mspd
 
 	if wander_elapsed >= wander_duration:
 		return "done"
@@ -347,18 +379,17 @@ func _wander(delta: float) -> String:
 # LOOP
 func _physics_process(delta: float) -> void:
 
-	if state in ["dead", "dying"]:
-		velocity = Vector2.ZERO
-		move_and_slide()
-		_update_state(delta)
-		_sync_anim()
+	if state == "dead":
+		corpse_alpha = maxf(0.0, corpse_alpha - 300.0 * delta)
+		sprite.modulate = Color(1.0, 1.0, 1.0, corpse_alpha / 255.0)
+		if corpse_alpha <= 0.0:
+			queue_free()
 		return
 
-	# Reset velocity — wander and _move_toward set it; idle states leave it zero.
-	if state not in ["wander", "chase", "returning"]:
-		velocity = Vector2.ZERO
-
 	_update_state(delta)
+
+	if state not in MOVING_STATES:
+		velocity = Vector2.ZERO
 
 	# Skip physics resolution during one-shot animations — the rat is stationary
 	# and skipping move_and_slide() prevents the player from pushing the body.
@@ -367,7 +398,7 @@ func _physics_process(delta: float) -> void:
 		if is_on_wall() and state == "wander":
 			force_wander = true
 
-	if state not in ONE_SHOT_STATES and state != "dead":
+	if state in ["idle_neutral", "wander"]:
 		stats.regen(delta)
 
 	_sync_anim()
@@ -380,7 +411,14 @@ func _move_toward(target_pos: Vector2, speed: float, _delta: float) -> void:
 	if dir.length() < 1.0:
 		velocity = Vector2.ZERO
 		return
-	_update_facing(dir.x, dir.y)
+	# No trig here — _cos_a/_sin_a are cached by the camera_angle setter.
+	# Only write facing_right when it would actually flip; also update _move_dx/dy
+	# so a camera rotation arriving this frame corrects facing immediately.
+	var new_right := (dir.x * _cos_a - dir.y * _sin_a) > 0
+	if new_right != facing_right:
+		facing_right = new_right
+		_move_dx = dir.x
+		_move_dy = dir.y
 	velocity = dir.normalized() * speed
 
 
@@ -402,14 +440,13 @@ func _snap_to_home() -> void:
 # FACING
 # =============================================================================
 
-# Called: _update_state(), _wander(), _move_toward().
+# Called: _update_state(), _wander().
 func _update_facing(world_dx: float, world_dy: float) -> void:
 
-	# Converts world-space movement to screen-space to determine left/right flip.
-	var rad   := deg_to_rad(camera_angle)
-	var cos_a := cos(rad)
-	var sin_a := sin(rad)
-	facing_right = (world_dx * cos_a - world_dy * sin_a) > 0
+	# Uses cached trig — no cos/sin calls here.
+	_move_dx     = world_dx
+	_move_dy     = world_dy
+	facing_right = (world_dx * _cos_a - world_dy * _sin_a) > 0
 
 
 # =============================================================================
@@ -429,7 +466,7 @@ func _try_attack() -> void:
 # Called: game.gd or player combat system (future).
 func take_damage(amount: float) -> void:
 
-	if not alive or state in ["dying", "dead"]:
+	if not alive or state in ["death", "dead"]:
 		return
 	stats.take_damage(amount)
 	if not stats.is_alive():
@@ -439,6 +476,5 @@ func take_damage(amount: float) -> void:
 # Called: take_damage().
 func _begin_death() -> void:
 
-	alive         = false
-	out_of_energy = true
-	_set_state("dying")
+	alive	= false
+	_set_state("death")
