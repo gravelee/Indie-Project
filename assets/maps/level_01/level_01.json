@@ -7,49 +7,49 @@
     },
     "creatures": [
     {
-        "row": 7, "col": 5, "type": "rat",
+        "row": 4, "col": 6, "type": "rat",
         "str": 1, "agi": 0, "sta": 6,
         "int": 0, "spr": 0, "res": 0, "def": 0,
         "exp": 0, "home": true, "returning": false, "fleeing": false
     },
     {
-        "row": 5, "col": 24, "type": "rat",
+        "row": 5, "col": 92, "type": "rat",
         "str": 0, "agi": 1, "sta": 5,
         "int": 0, "spr": 0, "res": 1, "def": 0,
         "exp": 0, "home": true, "returning": true, "fleeing": false
     },
     {
-        "row": 55, "col": 7, "type": "rat",
+        "row": 6, "col": 54, "type": "rat",
         "str": 0, "agi": 0, "sta": 6,
         "int": 0, "spr": 0, "res": 1, "def": 1,
         "exp": 0, "home": false, "returning": false, "fleeing": false
     },
     {
-        "row": 93, "col": 6, "type": "rat",
+        "row": 23, "col": 4, "type": "rat",
         "str": 1, "agi": 0, "sta": 5,
         "int": 0, "spr": 0, "res": 0, "def": 1,
         "exp": 0, "home": false, "returning": true, "fleeing": false
     },
     {
-        "row": 10, "col": 70, "type": "snake",
+        "row": 42, "col": 82, "type": "snake",
         "str": 3, "agi": 2, "sta": 7,
         "int": 0, "spr": 0, "res": 1, "def": 0,
         "exp": 0, "home": true, "returning": false, "fleeing": false
     },
     {
-        "row": 48, "col": 78, "type": "snake",
+        "row": 69, "col": 9, "type": "snake",
         "str": 2, "agi": 1, "sta": 6,
         "int": 0, "spr": 0, "res": 1, "def": 3,
         "exp": 0, "home": true, "returning": true, "fleeing": false
     },
     {
-        "row": 96, "col": 92, "type": "snake",
+        "row": 77, "col": 47, "type": "snake",
         "str": 3, "agi": 2, "sta": 8,
         "int": 0, "spr": 0, "res": 1, "def": 1,
         "exp": 0, "home": false, "returning": false, "fleeing": false
     },
     {
-        "row": 83, "col": 43, "type": "snake",
+        "row": 91, "col": 95, "type": "snake",
         "str": 2, "agi": 3, "sta": 7,
         "int": 0, "spr": 0, "res": 1, "def": 3,
         "exp": 0, "home": false, "returning": true, "fleeing": false

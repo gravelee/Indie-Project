@@ -35,6 +35,8 @@ const Z_DEPTH_SCALE := 32
 const TERRAIN_Z := -4096
 
 # Melee attack reach and forward arc half-angle (degrees either side of facing).
+const TILE_TYPE_MAP       := {2: "rat", 3: "snake"}
+
 const ATTACK_RADIUS       := 96.0
 const ATTACK_RADIUS_SQ    := ATTACK_RADIUS * ATTACK_RADIUS
 const ATTACK_QUARTER_CONE := 45.0
@@ -69,7 +71,8 @@ var hud               : Node2D
 var rotatable_sprites : Array      = []   # every sprite that counter-rotates with the camera
 var creature_sprites  : Array      = []   # creature sprites — z_index updated every frame
 var creatures         : Array      = []   # all active creature nodes
-var obstacle_map : Dictionary = {}   # Vector2i(tile_x, tile_y) → any attackable StaticBody2D
+var obstacle_map      : Dictionary = {}   # Vector2i(tile_x, tile_y) → any attackable StaticBody2D
+var _creature_configs : Dictionary = {}   # Vector2i(row, col) → JSON creature entry
 
 
 # =============================================================================
@@ -80,6 +83,7 @@ var obstacle_map : Dictionary = {}   # Vector2i(tile_x, tile_y) → any attackab
 func _ready() -> void:
 
 	_build_scene()
+	_load_json()
 	_load_terrain()
 	_load_entities()
 	hud.player_stats = player.stats
@@ -229,39 +233,73 @@ func _load_entities() -> void:
 			var tile_id   := int(cols[col])
 			var world_pos := Vector2(col * TILE_SIZE, row * TILE_SIZE)
 
-			if tile_id == 1:       # 1 = player spawn point
+			if tile_id == 1:                  # 1 = player spawn
 				player.position = world_pos
-			elif tile_id == 2:     # 2 = rat spawn point
-				_spawn_rat(world_pos)
-			elif tile_id == 101:   # 101 = bush
+			elif tile_id in TILE_TYPE_MAP:    # 2 = rat, 3 = snake, …
+				_spawn_creature(world_pos, row, col, tile_id)
+			elif tile_id == 101:              # 101 = bush
 				_spawn_bush(world_pos)
 		row += 1
 
 	file.close()
 
 
-# Called: _load_entities().
-func _spawn_rat(world_pos: Vector2) -> void:
+# Called: _ready().
+func _load_json() -> void:
 
-	var rat := CharacterBody2D.new()
-	rat.set_script(load("res://rat.gd"))
+	var file := FileAccess.open("res://assets/maps/level_01/level_01.json", FileAccess.READ)
+	if file == null:
+		push_error("Cannot open level_01.json.")
+		return
+	var data = JSON.parse_string(file.get_as_text())
+	file.close()
+	if data == null:
+		push_error("Failed to parse level_01.json.")
+		return
+
+	# Apply player stats from JSON.
+	var p : Dictionary = data["player"]
+	player.stats = Stats.new(p["str"], p["agi"], p["sta"], p["int"],
+							 p["spr"], p["res"], p["def"], true)
+
+	# Build creature config lookup keyed by tile coordinates.
+	for entry in data["creatures"]:
+		_creature_configs[Vector2i(entry["row"], entry["col"])] = entry
+
+
+# Called: _load_entities().
+func _spawn_creature(world_pos: Vector2, row: int, col: int, tile_id: int) -> void:
+
+	var key       := Vector2i(row, col)
+	if not _creature_configs.has(key):
+		push_error("No JSON config for creature at row %d col %d." % [row, col])
+		return
+	var cfg       : Dictionary = _creature_configs[key]
+	var type_name : String     = TILE_TYPE_MAP[tile_id]
+	if cfg["type"] != type_name:
+		push_error("Type mismatch at row %d col %d: map=%s json=%s." % [row, col, type_name, cfg["type"]])
+		return
+
+	var creature  := CharacterBody2D.new()
+	creature.set_script(load("res://" + type_name + ".gd"))
 	var col_shape := CollisionShape2D.new()
 	var shape      := CircleShape2D.new()
 	shape.radius   = 20.0
 	col_shape.shape = shape
-	rat.add_child(col_shape)
-	rat.position = world_pos
-	add_child(rat)   # triggers rat._ready() which creates sprite as child
+	creature.add_child(col_shape)
+	creature.position = world_pos
+	add_child(creature)   # triggers _ready() which creates sprite
 
-	rat.player       = player
-	rat.camera_angle = world_angle
+	creature.configure(cfg, world_pos)
+	creature.player       = player
+	creature.camera_angle = world_angle
 
-	rat.tree_exiting.connect(func():
-		creature_sprites.erase(rat.sprite)
-		creatures.erase(rat)
+	creature.tree_exiting.connect(func():
+		creature_sprites.erase(creature.sprite)
+		creatures.erase(creature)
 	)
-	creature_sprites.append(rat.sprite)
-	creatures.append(rat)
+	creature_sprites.append(creature.sprite)
+	creatures.append(creature)
 
 
 # Called: _load_entities().

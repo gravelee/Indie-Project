@@ -1,12 +1,12 @@
 extends CharacterBody2D
 
 # =============================================================================
-# RAT.GD
+# SNAKE.GD
 #
 # Responsibilities:
 #   - Full state machine: idle_neutral ↔ wander ↔ notice → enter_stance
 #                         ↔ idle_attack ↔ chase ↔ exit_stance ↔ returning
-#                         → attack_bite / attack_slash → death → dead
+#                         → attack_bite / attack_tail_slam → death → dead
 #   - Wander randomly when idle, chase and attack when player is near
 #   - Return home when player escapes or energy runs out
 #
@@ -21,7 +21,7 @@ extends CharacterBody2D
 
 enum State {
 	IDLE_NEUTRAL, WANDER, NOTICE, ENTER_STANCE, IDLE_ATTACK,
-	CHASE, EXIT_STANCE, RETURNING, ATTACK_BITE, ATTACK_SLASH,
+	CHASE, EXIT_STANCE, RETURNING, ATTACK_BITE, ATTACK_TAIL_SLAM,
 	DEATH, DEAD
 }
 
@@ -29,7 +29,7 @@ enum State {
 # ── Sprite ─────────────────────────────────────────────────────────────────────
 
 const SPRITE_SIZE := 96
-const SPRITE_PATH := "res://assets/spritesheets/rat/"
+const SPRITE_PATH := "res://assets/spritesheets/snake/"
 
 
 # ── AI distances ───────────────────────────────────────────────────────────────
@@ -76,38 +76,38 @@ const BASE_DEF := 0
 
 # Maps State enum → animation name for sprite.play(). Integer keys, O(1).
 const STATE_ANIM := {
-	State.IDLE_NEUTRAL : "idle_neutral",
-	State.WANDER       : "wander",
-	State.NOTICE       : "notice",
-	State.ENTER_STANCE : "enter_stance",
-	State.IDLE_ATTACK  : "idle_attack",
-	State.CHASE        : "chase",
-	State.EXIT_STANCE  : "exit_stance",
-	State.RETURNING    : "returning",
-	State.ATTACK_BITE  : "attack_bite",
-	State.ATTACK_SLASH : "attack_slash",
-	State.DEATH        : "death",
+	State.IDLE_NEUTRAL      : "idle_neutral",
+	State.WANDER            : "wander",
+	State.NOTICE            : "notice",
+	State.ENTER_STANCE      : "enter_stance",
+	State.IDLE_ATTACK       : "idle_attack",
+	State.CHASE             : "chase",
+	State.EXIT_STANCE       : "exit_stance",
+	State.RETURNING         : "returning",
+	State.ATTACK_BITE       : "attack_bite",
+	State.ATTACK_TAIL_SLAM  : "attack_tail slam",
+	State.DEATH             : "death",
 }
 
 # String keys — only used at startup by _load_animations() to set loop flags.
 const ANIM_FILES := {
-	"idle_neutral" : "idle_neutral.png",
-	"wander"       : "move.png",
-	"notice"       : "notice.png",
-	"enter_stance" : "enter_stance.png",
-	"idle_attack"  : "idle_attack.png",
-	"chase"        : "move.png",
-	"exit_stance"  : "exit_stance.png",
-	"returning"    : "move.png",
-	"attack_bite"  : "attack_bite.png",
-	"attack_slash" : "attack_slash.png",
-	"death"        : "death.png",
+	"idle_neutral"     : "idle_neutral.png",
+	"wander"           : "move.png",
+	"notice"           : "notice.png",
+	"enter_stance"     : "enter_stance.png",
+	"idle_attack"      : "idle_attack.png",
+	"chase"            : "move.png",
+	"exit_stance"      : "exit_stance.png",
+	"returning"        : "move.png",
+	"attack_bite"      : "attack_bite.png",
+	"attack_tail slam" : "attack_tail slam.png",
+	"death"            : "death.png",
 }
 
 # String set — used only in _load_animations() to determine loop flag.
 const ONE_SHOT_ANIM_NAMES := {
 	"notice": true, "enter_stance": true, "exit_stance": true,
-	"attack_bite": true, "attack_slash": true, "death": true
+	"attack_bite": true, "attack_tail slam": true, "death": true
 }
 
 
@@ -115,12 +115,12 @@ const ONE_SHOT_ANIM_NAMES := {
 
 const ONE_SHOT_STATES := {
 	State.NOTICE: true, State.ENTER_STANCE: true, State.EXIT_STANCE: true,
-	State.ATTACK_BITE: true, State.ATTACK_SLASH: true, State.DEATH: true
+	State.ATTACK_BITE: true, State.ATTACK_TAIL_SLAM: true, State.DEATH: true
 }
 
 const COMBAT_STATES := {
 	State.ENTER_STANCE: true, State.IDLE_ATTACK: true, State.CHASE: true,
-	State.ATTACK_BITE: true,  State.ATTACK_SLASH: true
+	State.ATTACK_BITE: true,  State.ATTACK_TAIL_SLAM: true
 }
 
 const NON_COMBAT_STATES := {
@@ -170,7 +170,7 @@ var out_of_energy   : bool    = false
 
 var sprite  : AnimatedSprite2D   # created in _ready()
 var player  : CharacterBody2D    # set by game.gd after spawn
-var stats   : Stats              # created in _ready()
+var stats   : Stats              # set by configure()
 
 # Setter caches trig once per rotation and immediately corrects facing_right
 # using the last known movement direction, so _move_toward stays cheap.
@@ -389,7 +389,7 @@ func _update_state(delta: float) -> void:
 					_set_state(State.IDLE_ATTACK)
 				else:                         _set_state(State.ENTER_STANCE)
 
-		State.ATTACK_BITE, State.ATTACK_SLASH:
+		State.ATTACK_BITE, State.ATTACK_TAIL_SLAM:
 			if anim_done:
 				_set_state(State.IDLE_ATTACK)
 
@@ -455,7 +455,7 @@ func _physics_process(delta: float) -> void:
 	if state not in MOVING_STATES:
 		velocity = Vector2.ZERO
 
-	# Skip physics resolution during one-shot animations — the rat is stationary
+	# Skip physics resolution during one-shot animations — the snake is stationary
 	# and skipping move_and_slide() prevents the player from pushing the body.
 	if state not in ONE_SHOT_STATES:
 		if state == State.WANDER and test_move(global_transform, velocity * delta):
@@ -478,15 +478,12 @@ func _move_toward(target_pos: Vector2, speed: float, _delta: float) -> void:
 	if len_sq < 1.0:
 		velocity = Vector2.ZERO
 		return
-	# No trig here — _cos_a/_sin_a are cached by the camera_angle setter.
-	# Only write facing_right when it would actually flip; also update _move_dx/dy
-	# so a camera rotation arriving this frame corrects facing immediately.
 	var new_right := (dir.x * _cos_a - dir.y * _sin_a) > 0
 	if new_right != facing_right:
 		facing_right = new_right
 		_move_dx = dir.x
 		_move_dy = dir.y
-	velocity = dir / sqrt(len_sq) * speed	# normalization.
+	velocity = dir / sqrt(len_sq) * speed
 
 
 # Called: _update_state().
@@ -531,7 +528,7 @@ func _try_attack() -> void:
 	if gcd_timer > 0.0:
 		return
 	gcd_timer = Stats.GCD
-	_set_state(State.ATTACK_BITE if randf() > 0.5 else State.ATTACK_SLASH)
+	_set_state(State.ATTACK_BITE if randf() > 0.5 else State.ATTACK_TAIL_SLAM)
 
 
 # Called: game.gd or player combat system (future).
