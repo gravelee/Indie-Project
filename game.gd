@@ -35,12 +35,10 @@ const Z_DEPTH_SCALE := 32
 const TERRAIN_Z := -4096
 
 # Melee attack reach and forward arc half-angle (degrees either side of facing).
-const ATTACK_RADIUS    := 96.0
+const ATTACK_RADIUS       := 96.0
+const ATTACK_RADIUS_SQ    := ATTACK_RADIUS * ATTACK_RADIUS
 const ATTACK_QUARTER_CONE := 45.0
-
-# Sprites beyond this distance from the player are outside the viewport and hidden.
-# Viewport half-diagonal at 1920x1080: sqrt(960^2 + 540^2) = 1101px, plus one sprite buffer (96px).
-# Stored squared to avoid a sqrt() per sprite per frame.
+const ATTACK_SEARCH_R     := 3   # ceili(ATTACK_RADIUS / TILE_SIZE)
 
 # ── Camera rotation state ──────────────────────────────────────────────────────
 
@@ -287,11 +285,10 @@ func _on_player_attacked(world_pos: Vector2, facing_dir: Vector2) -> void:
 
 	# Spatial hash lookup — only tiles within ATTACK_RADIUS are checked.
 	# O(search_area) not O(n_obstacles); search_area is a fixed ~49 tiles.
-	var search_r    := ceili(ATTACK_RADIUS / TILE_SIZE)
 	var player_tile := Vector2i(int(world_pos.x) / TILE_SIZE, int(world_pos.y) / TILE_SIZE)
 
-	for dr in range(-search_r, search_r + 1):
-		for dc in range(-search_r, search_r + 1):
+	for dr in range(-ATTACK_SEARCH_R, ATTACK_SEARCH_R + 1):
+		for dc in range(-ATTACK_SEARCH_R, ATTACK_SEARCH_R + 1):
 			var key      := Vector2i(player_tile.x + dr, player_tile.y + dc)
 			if not obstacle_map.has(key):
 				continue
@@ -299,10 +296,10 @@ func _on_player_attacked(world_pos: Vector2, facing_dir: Vector2) -> void:
 			if not obstacle.alive:
 				continue
 			var to_obs : Vector2 = obstacle.position - world_pos
-			if to_obs.length() > ATTACK_RADIUS:
+			if to_obs.length_squared() > ATTACK_RADIUS_SQ:
 				continue
 			# Angle check — obstacle must be within the forward arc.
-			if to_obs.length() > 0:
+			if to_obs != Vector2.ZERO:
 				var deg := rad_to_deg(facing_dir.angle_to(to_obs.normalized()))
 				if absf(deg) > ATTACK_QUARTER_CONE:
 					continue

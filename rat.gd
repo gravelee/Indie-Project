@@ -17,6 +17,15 @@ extends CharacterBody2D
 # =============================================================================
 
 
+# ── State enum ─────────────────────────────────────────────────────────────────
+
+enum State {
+	IDLE_NEUTRAL, WANDER, NOTICE, ENTER_STANCE, IDLE_ATTACK,
+	CHASE, EXIT_STANCE, RETURNING, ATTACK_BITE, ATTACK_SLASH,
+	DEATH, DEAD
+}
+
+
 # ── Sprite ─────────────────────────────────────────────────────────────────────
 
 const SPRITE_SIZE := 96
@@ -62,8 +71,24 @@ const BASE_RES := 0
 const BASE_DEF := 0
 
 
-# ── Animation files ────────────────────────────────────────────────────────────
+# ── Animation mapping ──────────────────────────────────────────────────────────
 
+# Maps State enum → animation name for sprite.play(). Integer keys, O(1).
+const STATE_ANIM := {
+	State.IDLE_NEUTRAL : "idle_neutral",
+	State.WANDER       : "wander",
+	State.NOTICE       : "notice",
+	State.ENTER_STANCE : "enter_stance",
+	State.IDLE_ATTACK  : "idle_attack",
+	State.CHASE        : "chase",
+	State.EXIT_STANCE  : "exit_stance",
+	State.RETURNING    : "returning",
+	State.ATTACK_BITE  : "attack_bite",
+	State.ATTACK_SLASH : "attack_slash",
+	State.DEATH        : "death",
+}
+
+# String keys — only used at startup by _load_animations() to set loop flags.
 const ANIM_FILES := {
 	"idle_neutral" : "idle_neutral.png",
 	"wander"       : "move.png",
@@ -78,31 +103,42 @@ const ANIM_FILES := {
 	"death"        : "death.png",
 }
 
-const ONE_SHOT_STATES := {
+# String set — used only in _load_animations() to determine loop flag.
+const ONE_SHOT_ANIM_NAMES := {
 	"notice": true, "enter_stance": true, "exit_stance": true,
 	"attack_bite": true, "attack_slash": true, "death": true
 }
 
+
+# ── State sets (enum keys — O(1) integer lookup) ───────────────────────────────
+
+const ONE_SHOT_STATES := {
+	State.NOTICE: true, State.ENTER_STANCE: true, State.EXIT_STANCE: true,
+	State.ATTACK_BITE: true, State.ATTACK_SLASH: true, State.DEATH: true
+}
+
 const COMBAT_STATES := {
-	"enter_stance": true, "idle_attack": true, "chase": true,
-	"attack_bite": true,  "attack_slash": true
+	State.ENTER_STANCE: true, State.IDLE_ATTACK: true, State.CHASE: true,
+	State.ATTACK_BITE: true,  State.ATTACK_SLASH: true
 }
 
 const NON_COMBAT_STATES := {
-	"idle_neutral": true, "wander": true,   "notice": true,
-	"exit_stance":  true, "returning": true, "death": true
+	State.IDLE_NEUTRAL: true, State.WANDER: true,   State.NOTICE: true,
+	State.EXIT_STANCE:  true, State.RETURNING: true, State.DEATH: true
 }
 
-const MOVING_STATES := {"wander": true, "chase": true, "returning": true}
+const MOVING_STATES := {
+	State.WANDER: true, State.CHASE: true, State.RETURNING: true
+}
 
 
 # ── State ──────────────────────────────────────────────────────────────────────
 
-var state        : String = "idle_neutral"
-var anim_done    : bool   = false
-var facing_right : bool   = false
-var alive        : bool   = true
-var corpse_alpha : float  = 255.0
+var state        : State = State.IDLE_NEUTRAL
+var anim_done    : bool  = false
+var facing_right : bool  = false
+var alive        : bool  = true
+var corpse_alpha : float = 255.0
 
 
 # ── Wander ─────────────────────────────────────────────────────────────────────
@@ -154,10 +190,10 @@ var _move_dy : float = 1.0
 # INIT
 func _ready() -> void:
 
-	stats         = Stats.new(BASE_STR, BASE_AGI, BASE_STA, BASE_INT,
-							  BASE_SPR, BASE_RES, BASE_DEF, false)
-	home_position = position
-	wander_timer  = randf_range(0.0, 1.0)
+	stats           = Stats.new(BASE_STR, BASE_AGI, BASE_STA, BASE_INT,
+								BASE_SPR, BASE_RES, BASE_DEF, false)
+	home_position   = position
+	wander_timer    = randf_range(0.0, 1.0)
 	wander_interval = randf_range(WANDER_INTERVAL_MIN, WANDER_INTERVAL_MAX)
 
 	_create_sprite()
@@ -172,7 +208,7 @@ func _create_sprite() -> void:
 
 	_load_animations()
 	sprite.animation_finished.connect(_on_anim_finished)
-	sprite.play("idle_neutral")
+	sprite.play(STATE_ANIM[State.IDLE_NEUTRAL])
 
 
 # Called: _create_sprite().
@@ -182,9 +218,9 @@ func _load_animations() -> void:
 	sprite.sprite_frames = frames
 
 	for anim_name in ANIM_FILES:
-		var path    : String   = "res://assets/spritesheets/rat/" + ANIM_FILES[anim_name]
+		var path    : String    = "res://assets/spritesheets/rat/" + ANIM_FILES[anim_name]
 		var texture : Texture2D = load(path)
-		var loop    : bool     = anim_name not in ONE_SHOT_STATES
+		var loop    : bool      = anim_name not in ONE_SHOT_ANIM_NAMES
 
 		frames.add_animation(anim_name)
 		frames.set_animation_loop(anim_name, loop)
@@ -202,7 +238,7 @@ func _load_animations() -> void:
 # ANIMATION
 # =============================================================================
 
-# Called: load_animations() via signal.
+# Called: _load_animations() via signal.
 func _on_anim_finished() -> void:
 
 	if state in ONE_SHOT_STATES:
@@ -210,14 +246,14 @@ func _on_anim_finished() -> void:
 
 
 # Called: _update_state(), _wander().
-func _set_state(new_state: String) -> void:
+func _set_state(new_state: State) -> void:
 
 	if state == new_state:
 		return
 	state     = new_state
 	anim_done = false
-	if state != "dead":
-		sprite.play(state)
+	if state != State.DEAD:
+		sprite.play(STATE_ANIM[state])
 
 
 # Called: _physics_process().
@@ -244,17 +280,17 @@ func _update_state(delta: float) -> void:
 	if not player:
 		return
 
-	var player_ok : bool = player.state != "death" and player.state != "dead"
+	var player_ok : bool = player.state != player.State.DEATH and player.state != player.State.DEAD
 
 	# dist_sq is computed lazily for idle states after the AABB check.
 	# For all active states it is computed once here — no sqrt ever.
 	var dist_sq : float = 0.0
-	if state != "idle_neutral" and state != "wander":
+	if state != State.IDLE_NEUTRAL and state != State.WANDER:
 		dist_sq = position.distance_squared_to(player.position)
 
 	match state:
 
-		"idle_neutral", "wander":
+		State.IDLE_NEUTRAL, State.WANDER:
 			# ── AABB broad phase — skip dist entirely when player is clearly out of range ──
 			if player_ok:
 				var dx := absf(player.position.x - position.x)
@@ -265,52 +301,52 @@ func _update_state(delta: float) -> void:
 						_update_facing(player.position.x - position.x,
 									   player.position.y - position.y)
 						if dist_sq < NOTICE_DIST_SQ and notice_cooldown <= 0.0:
-							_set_state("notice")
+							_set_state(State.NOTICE)
 							return
 			# ── Wander ────────────────────────────────────────────────────────
 			var signal_ := _wander(delta)
-			if signal_ == "start": _set_state("wander")
-			elif signal_ == "done": _set_state("idle_neutral")
+			if signal_ == "start": _set_state(State.WANDER)
+			elif signal_ == "done": _set_state(State.IDLE_NEUTRAL)
 
-		"notice":
+		State.NOTICE:
 			if dist_sq < ATTACK_DIST_SQ:
-				_set_state("enter_stance")
+				_set_state(State.ENTER_STANCE)
 			elif anim_done:
-				if dist_sq < NOTICE_DIST_SQ: _set_state("enter_stance")
-				else:                         _set_state("idle_neutral")
+				if dist_sq < NOTICE_DIST_SQ: _set_state(State.ENTER_STANCE)
+				else:                         _set_state(State.IDLE_NEUTRAL)
 
-		"enter_stance":
+		State.ENTER_STANCE:
 			if anim_done:
-				if dist_sq < ATTACK_DIST_SQ:   _set_state("idle_attack")
-				elif dist_sq < NOTICE_DIST_SQ: _set_state("chase")
-				else:                           _set_state("exit_stance")
+				if dist_sq < ATTACK_DIST_SQ:   _set_state(State.IDLE_ATTACK)
+				elif dist_sq < NOTICE_DIST_SQ: _set_state(State.CHASE)
+				else:                           _set_state(State.EXIT_STANCE)
 
-		"idle_attack":
+		State.IDLE_ATTACK:
 			if not player_ok or out_of_energy:
-				_set_state("returning")
+				_set_state(State.RETURNING)
 			elif dist_sq < ATTACK_DIST_SQ:
 				_try_attack()
 			elif dist_sq < CHASE_DIST_SQ:
-				_set_state("chase")
+				_set_state(State.CHASE)
 			else:
-				_set_state("exit_stance")
+				_set_state(State.EXIT_STANCE)
 
-		"chase":
+		State.CHASE:
 			var dist_home_sq := position.distance_squared_to(home_position)
 			if dist_home_sq > HOME_MAX_DIST_SQ:
 				home_max_dist = true
-				_set_state("returning")
-			elif dist_sq < ATTACK_DIST_SQ: _set_state("idle_attack")
-			elif dist_sq > CHASE_DIST_SQ:  _set_state("exit_stance")
+				_set_state(State.RETURNING)
+			elif dist_sq < ATTACK_DIST_SQ: _set_state(State.IDLE_ATTACK)
+			elif dist_sq > CHASE_DIST_SQ:  _set_state(State.EXIT_STANCE)
 			else:
 				_move_toward(player.position, stats.mspd, delta)
 
-		"exit_stance":
+		State.EXIT_STANCE:
 			if anim_done:
-				if dist_sq < NOTICE_DIST_SQ: _set_state("enter_stance")
-				else:                         _set_state("returning")
+				if dist_sq < NOTICE_DIST_SQ: _set_state(State.ENTER_STANCE)
+				else:                         _set_state(State.RETURNING)
 
-		"returning":
+		State.RETURNING:
 			var dist_home_sq := position.distance_squared_to(home_position)
 			var forced       := home_max_dist or out_of_energy or not player_ok
 
@@ -322,17 +358,17 @@ func _update_state(delta: float) -> void:
 			else:
 				_update_facing(player.position.x - position.x,
 							   player.position.y - position.y)
-				if dist_sq < ATTACK_DIST_SQ: _set_state("idle_attack")
-				else:                         _set_state("enter_stance")
+				if dist_sq < ATTACK_DIST_SQ: _set_state(State.IDLE_ATTACK)
+				else:                         _set_state(State.ENTER_STANCE)
 
-		"attack_bite", "attack_slash":
+		State.ATTACK_BITE, State.ATTACK_SLASH:
 			if anim_done:
-				_set_state("idle_attack")
+				_set_state(State.IDLE_ATTACK)
 
-		"death":
+		State.DEATH:
 			if anim_done:
 				alive = false
-				_set_state("dead")
+				_set_state(State.DEAD)
 
 
 # =============================================================================
@@ -343,7 +379,7 @@ func _update_state(delta: float) -> void:
 func _wander(delta: float) -> String:
 
 	# Returns "start" to enter wander state, "done" to return to idle, "" to continue.
-	if state == "idle_neutral":
+	if state == State.IDLE_NEUTRAL:
 		wander_timer += delta
 		if wander_timer >= wander_interval:
 			wander_timer    = 0.0
@@ -379,7 +415,7 @@ func _wander(delta: float) -> String:
 # LOOP
 func _physics_process(delta: float) -> void:
 
-	if state == "dead":
+	if state == State.DEAD:
 		corpse_alpha = maxf(0.0, corpse_alpha - 300.0 * delta)
 		sprite.modulate = Color(1.0, 1.0, 1.0, corpse_alpha / 255.0)
 		if corpse_alpha <= 0.0:
@@ -395,10 +431,10 @@ func _physics_process(delta: float) -> void:
 	# and skipping move_and_slide() prevents the player from pushing the body.
 	if state not in ONE_SHOT_STATES:
 		move_and_slide()
-		if is_on_wall() and state == "wander":
+		if is_on_wall() and state == State.WANDER:
 			force_wander = true
 
-	if state in ["idle_neutral", "wander"]:
+	if state == State.IDLE_NEUTRAL or state == State.WANDER:
 		stats.regen(delta)
 
 	_sync_anim()
@@ -407,8 +443,9 @@ func _physics_process(delta: float) -> void:
 # Called: _update_state().
 func _move_toward(target_pos: Vector2, speed: float, _delta: float) -> void:
 
-	var dir := (target_pos - position)
-	if dir.length() < 1.0:
+	var dir    := target_pos - position
+	var len_sq := dir.length_squared()
+	if len_sq < 1.0:
 		velocity = Vector2.ZERO
 		return
 	# No trig here — _cos_a/_sin_a are cached by the camera_angle setter.
@@ -419,21 +456,21 @@ func _move_toward(target_pos: Vector2, speed: float, _delta: float) -> void:
 		facing_right = new_right
 		_move_dx = dir.x
 		_move_dy = dir.y
-	velocity = dir.normalized() * speed
+	velocity = dir / sqrt(len_sq) * speed	# normalization.
 
 
 # Called: _update_state().
 func _snap_to_home() -> void:
 
-	position      = home_position
-	velocity      = Vector2.ZERO
-	home_max_dist = false
-	out_of_energy = false
+	position        = home_position
+	velocity        = Vector2.ZERO
+	home_max_dist   = false
+	out_of_energy   = false
 	notice_cooldown = NOTICE_COOLDOWN
-	wander_timer  = 0.0
-	wander_elapsed = 0.0
-	force_wander  = false
-	_set_state("idle_neutral")
+	wander_timer    = 0.0
+	wander_elapsed  = 0.0
+	force_wander    = false
+	_set_state(State.IDLE_NEUTRAL)
 
 
 # =============================================================================
@@ -460,13 +497,13 @@ func _try_attack() -> void:
 	if gcd_timer > 0.0:
 		return
 	gcd_timer = Stats.GCD
-	_set_state("attack_bite" if randf() > 0.5 else "attack_slash")
+	_set_state(State.ATTACK_BITE if randf() > 0.5 else State.ATTACK_SLASH)
 
 
 # Called: game.gd or player combat system (future).
 func take_damage(amount: float) -> void:
 
-	if not alive or state in ["death", "dead"]:
+	if not alive or state == State.DEATH or state == State.DEAD:
 		return
 	stats.take_damage(amount)
 	if not stats.is_alive():
@@ -476,5 +513,5 @@ func take_damage(amount: float) -> void:
 # Called: take_damage().
 func _begin_death() -> void:
 
-	alive	= false
-	_set_state("death")
+	alive = false
+	_set_state(State.DEATH)

@@ -82,15 +82,15 @@ func _load_animations() -> void:
 		atlas.atlas  = death_tex
 		atlas.region = Rect2(i * frame_w, 0, frame_w, death_tex.get_height())
 		frames.add_frame("death", atlas)
-
+	
+	# When the death animation is complete call _on_death_finished().
 	sprite.animation_finished.connect(_on_death_finished)
 
 
 # Called: take_hit().
 func _on_death_finished() -> void:
 
-	if sprite.animation == "death":
-		queue_free()
+	queue_free()
 
 
 # =============================================================================
@@ -100,8 +100,6 @@ func _on_death_finished() -> void:
 # Called: None.
 func take_hit() -> void:
 
-	if not alive:
-		return
 	alive = false
 	collision.set_deferred("disabled", true)
 	sprite.play("death")
