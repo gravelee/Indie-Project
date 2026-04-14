@@ -83,7 +83,7 @@ func _process(_delta: float) -> void:
 		queue_redraw()
 
 
-# LOOP
+# Godot built-in — triggered by queue_redraw().
 func _draw() -> void:
 
 	if not player_stats:

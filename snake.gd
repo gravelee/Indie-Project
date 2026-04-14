@@ -12,7 +12,6 @@ extends CharacterBody2D
 #
 # What this script does NOT do:
 #   - Deal actual damage  (abilities not yet implemented)
-#   - Use A* pathfinding  (direct movement for now)
 #   - Set z_index or rotation  (game.gd handles all camera-dependent rendering)
 # =============================================================================
 
@@ -61,6 +60,22 @@ const WANDER_DURATION_MIN  := 0.5
 const WANDER_DURATION_MAX  := 3.0
 
 
+# ── Debug ──────────────────────────────────────────────────────────────────────
+
+const DEBUG_PATH := true   # draws A* waypoints; set false to disable
+
+
+# ── Pathfinding settings ───────────────────────────────────────────────────────
+
+const TILE_SIZE            := 32
+const PATH_INTERVAL_MIN    := 0.8
+const PATH_INTERVAL_MAX    := 1.2
+const LOS_INTERVAL_MIN     := 1.8
+const LOS_INTERVAL_MAX     := 2.2
+const LOS_CLEAR_INTERVAL   := 0.4   # recheck interval when LOS is clear (shorter than blocked interval).
+const WAYPOINT_REACH_SQ    := (TILE_SIZE * 0.5) * (TILE_SIZE * 0.5)
+const STUCK_TIME           := 0.3   # sample interval; if not enough progress in this window → idle_attack.
+
 
 # ── Animation mapping ──────────────────────────────────────────────────────────
 
@@ -108,16 +123,6 @@ const ONE_SHOT_STATES := {
 	State.ATTACK_BITE: true, State.ATTACK_TAIL_SLAM: true, State.DEATH: true
 }
 
-const COMBAT_STATES := {
-	State.ENTER_STANCE: true, State.IDLE_ATTACK: true, State.CHASE: true,
-	State.ATTACK_BITE: true,  State.ATTACK_TAIL_SLAM: true
-}
-
-const NON_COMBAT_STATES := {
-	State.IDLE_NEUTRAL: true, State.WANDER: true,   State.NOTICE: true,
-	State.EXIT_STANCE:  true, State.RETURNING: true, State.DEATH: true
-}
-
 const MOVING_STATES := {
 	State.WANDER: true, State.CHASE: true, State.RETURNING: true
 }
@@ -156,6 +161,20 @@ var gcd_timer       : float   = 0.0
 var out_of_energy   : bool    = false
 
 
+# ── Pathfinding ────────────────────────────────────────────────────────────────
+
+var pathfinder        : Pathfinder   # set game._spawn_creature().
+var path              : Array  = []  # set _move_smart().
+var path_timer        : float  = 0.0 # set _move_smart().
+var path_interval     : float  = 0.0 # set _ready().
+var has_los           : bool   = false  # set _move_smart().
+var los_lock_timer    : float  = 0.0   # set _move_smart().
+var los_lock_interval : float  = 0.0   # set _ready().
+var _stuck_timer      : float  = 0.0   # set _physics_process(); >= STUCK_TIME → show idle_attack.
+var _stuck_check_pos  : Vector2 = Vector2.ZERO  # set _physics_process(), _snap_to_home(); position at last sample.
+var _stuck_threshold  : float  = 0.0   # set configure(); (mspd*STUCK_TIME)² * 0.5 — precomputed.
+
+
 # ── References ─────────────────────────────────────────────────────────────────
 
 var sprite  : AnimatedSprite2D   # init _create_sprite().
@@ -184,8 +203,10 @@ var _move_dy : float = 1.0   # set _update_facing(), _move_toward().
 # INIT
 func _ready() -> void:
 
-	wander_timer    = randf_range(0.0, 1.0)
-	wander_interval = randf_range(WANDER_INTERVAL_MIN, WANDER_INTERVAL_MAX)
+	wander_timer      = randf_range(0.0, 1.0)
+	wander_interval   = randf_range(WANDER_INTERVAL_MIN, WANDER_INTERVAL_MAX)
+	path_interval     = randf_range(PATH_INTERVAL_MIN,   PATH_INTERVAL_MAX)
+	los_lock_interval = randf_range(LOS_INTERVAL_MIN,    LOS_INTERVAL_MAX)
 	_create_sprite()
 
 
@@ -199,6 +220,8 @@ func configure(cfg: Dictionary, world_pos: Vector2) -> void:
 	if cfg["home"]:
 		home_position = world_pos
 		has_home      = true
+	var d := stats.mspd * STUCK_TIME
+	_stuck_threshold  = d * d * 0.5   # (mspd * interval)² * 0.5 — precomputed once.
 
 
 # Called: _ready().
@@ -220,8 +243,8 @@ func _load_animations() -> void:
 	sprite.sprite_frames = frames
 
 	for anim_name in ANIM_FILES:
-		var path    : String    = SPRITE_PATH + ANIM_FILES[anim_name]
-		var texture : Texture2D = load(path)
+		var anim_path : String    = SPRITE_PATH + ANIM_FILES[anim_name]
+		var texture   : Texture2D = load(anim_path)
 		var loop    : bool      = anim_name not in ONE_SHOT_ANIM_NAMES
 
 		frames.add_animation(anim_name)
@@ -247,7 +270,7 @@ func _on_anim_finished() -> void:
 		anim_done = true
 
 
-# Called: _update_state(), _wander().
+# Called: _update_state(), _wander(), _snap_to_home(), _begin_death().
 func _set_state(new_state: State) -> void:
 
 	if state == new_state:
@@ -264,6 +287,16 @@ func _sync_anim() -> void:
 	# Keep flip in sync with facing every frame.
 	# Z_index and rotation are handled by game.gd.
 	sprite.flip_h = facing_right
+
+	# Stuck in CHASE with clear LOS: physically blocked, no room to pass.
+	# Show idle_attack so the creature doesn't walk in place.
+	# Restore chase as soon as movement resumes (_stuck_timer resets to 0).
+	if state == State.CHASE:
+		if _stuck_timer >= STUCK_TIME:
+			if sprite.animation != "idle_attack":
+				sprite.play("idle_attack")
+		elif sprite.animation == "idle_attack":
+			sprite.play(STATE_ANIM[State.CHASE])
 
 
 # =============================================================================
@@ -354,7 +387,7 @@ func _update_state(delta: float) -> void:
 				_set_state(State.IDLE_ATTACK)
 			elif dist_sq > CHASE_DIST_SQ:  _set_state(State.EXIT_STANCE)
 			else:
-				_move_toward(player.position, stats.mspd, delta)
+				_move_smart(player.position, stats.mspd, delta)
 
 		State.EXIT_STANCE:
 			if anim_done:
@@ -369,7 +402,7 @@ func _update_state(delta: float) -> void:
 				if dist_home_sq <= HOME_DIST_SQ:
 					_snap_to_home()
 				else:
-					_move_toward(home_position, FLEE_SPEED, delta)
+					_move_smart(home_position, FLEE_SPEED, delta)
 			else:
 				_update_facing(player.position.x - position.x,
 							   player.position.y - position.y)
@@ -446,6 +479,7 @@ func _physics_process(delta: float) -> void:
 
 	# Skip physics resolution during one-shot animations — the snake is stationary
 	# and skipping move_and_slide() prevents the player from pushing the body.
+	var had_velocity := velocity.length_squared() > 1.0
 	if state not in ONE_SHOT_STATES:
 		if state == State.WANDER and test_move(global_transform, velocity * delta):
 			velocity     = Vector2.ZERO
@@ -453,13 +487,32 @@ func _physics_process(delta: float) -> void:
 		else:
 			move_and_slide()
 
+	# Periodic stuck detection — samples every STUCK_TIME seconds instead of per frame.
+	# Per-frame cost: one float add + one comparison. Distance check runs ~3×/second only.
+	# The else branch keeps _stuck_check_pos current outside CHASE, so the first sample
+	# after entering CHASE always has a valid reference point.
+	if state == State.CHASE and had_velocity:
+		_stuck_timer += delta
+		if _stuck_timer >= STUCK_TIME:
+			if position.distance_squared_to(_stuck_check_pos) < _stuck_threshold:
+				_stuck_timer = STUCK_TIME   # sustain idle_attack until movement resumes
+			else:
+				_stuck_timer = 0.0
+			_stuck_check_pos = position
+	else:
+		_stuck_timer     = 0.0
+		_stuck_check_pos = position
+
 	if state == State.IDLE_NEUTRAL or state == State.WANDER:
 		stats.regen(delta)
 
 	_sync_anim()
 
+	if DEBUG_PATH:
+		queue_redraw()
 
-# Called: _update_state().
+
+# Called: _move_smart().
 func _move_toward(target_pos: Vector2, speed: float, _delta: float) -> void:
 
 	var dir    := target_pos - position
@@ -475,6 +528,46 @@ func _move_toward(target_pos: Vector2, speed: float, _delta: float) -> void:
 	velocity = dir / sqrt(len_sq) * speed
 
 
+# Called: _update_state() during CHASE and RETURNING.
+func _move_smart(target_pos: Vector2, speed: float, delta: float) -> void:
+
+	if not pathfinder:
+		_move_toward(target_pos, speed, delta)
+		return
+
+	# Tick LOS lock — recheck only when lock expires to avoid per-frame raycast.
+	# Timer is always set after a check: short when clear, long when blocked.
+	if los_lock_timer > 0.0:
+		los_lock_timer = maxf(0.0, los_lock_timer - delta)
+	if los_lock_timer <= 0.0:
+		has_los        = pathfinder.line_of_sight(position, target_pos)
+		los_lock_timer = LOS_CLEAR_INTERVAL if has_los else los_lock_interval
+
+	if has_los:
+		path.clear()
+		_move_toward(target_pos, speed, delta)
+		return
+
+	# No LOS — refresh A* path on interval or when exhausted.
+	path_timer += delta
+	if path_timer >= path_interval or path.is_empty():
+		path_timer = 0.0
+		path = pathfinder.find_path(position, target_pos)
+
+	if path.is_empty():
+		_move_toward(target_pos, speed, delta)
+		return
+
+	# Pop waypoints as they are reached.
+	if position.distance_squared_to(path[0]) < WAYPOINT_REACH_SQ:
+		path.pop_front()
+
+	if path.is_empty():
+		return
+
+	_move_toward(path[0], speed, delta)
+
+
 # Called: _update_state().
 func _snap_to_home() -> void:
 
@@ -486,6 +579,12 @@ func _snap_to_home() -> void:
 	wander_timer    = 0.0
 	wander_elapsed  = 0.0
 	force_wander    = false
+	path.clear()
+	path_timer      = 0.0
+	has_los          = false
+	los_lock_timer   = 0.0
+	_stuck_timer     = 0.0
+	_stuck_check_pos = position
 	if temp_home:
 		home_position = Vector2.ZERO
 		has_home      = false
@@ -535,3 +634,27 @@ func _begin_death() -> void:
 
 	alive = false
 	_set_state(State.DEATH)
+
+
+# =============================================================================
+# DEBUG
+# =============================================================================
+
+# Godot built-in — triggered by queue_redraw().
+func _draw() -> void:
+
+	if not DEBUG_PATH or path.is_empty():
+		return
+	_draw_path()
+
+
+# Called: _draw().
+func _draw_path() -> void:
+
+	# Waypoints are in world space; _draw() uses local space, so subtract position.
+	var prev := Vector2.ZERO   # local origin = creature's own position
+	for i in range(path.size()):
+		var wp : Vector2 = path[i] - position
+		draw_circle(wp, 4.0, Color(1.0, 0.85, 0.0, 0.9))
+		draw_line(prev, wp, Color(0.0, 0.75, 1.0, 0.6), 1.5)
+		prev = wp

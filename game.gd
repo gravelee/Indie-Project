@@ -34,9 +34,10 @@ const Z_DEPTH_SCALE := 32
 # a sprite's depth goes negative (which happens at certain camera angles).
 const TERRAIN_Z := -4096
 
-# Melee attack reach and forward arc half-angle (degrees either side of facing).
+# Entity tile IDs → creature script names; used by _load_entities() to spawn the right type.
 const TILE_TYPE_MAP       := {2: "rat", 3: "snake"}
 
+# Melee attack reach and forward arc half-angle (degrees either side of facing).
 const ATTACK_RADIUS       := 96.0
 const ATTACK_RADIUS_SQ    := ATTACK_RADIUS * ATTACK_RADIUS
 const ATTACK_QUARTER_CONE := 45.0
@@ -78,11 +79,16 @@ var camera            : Camera2D			# init _build_scene().
 var player            : CharacterBody2D		# init _build_scene().
 var player_sprite     : AnimatedSprite2D	# init _build_scene().
 var hud               : Node2D				# init _build_scene().
+var pathfinder        : Pathfinder			# init _build_pathfinder().
 var rotatable_sprites : Array      = []		# init _spawn_bush().
 var obstacle_map      : Dictionary = {}		# init _spawn_bush().
 var creature_sprites  : Array      = []		# init _spawn_creature().
 var creatures         : Array      = []		# init _spawn_creature().
 var _creature_configs : Dictionary = {}   	# init _load_json().
+var _map_cols         : int        = 0     	# set _load_terrain().
+var _map_rows         : int        = 0     	# set _load_terrain().
+var _creature_tile_set: Dictionary = {}    	# set _update_dynamic_blockers().
+var _blocker_timer    : float      = 0.0   	# set _update_dynamic_blockers().
 
 
 # =============================================================================
@@ -95,6 +101,7 @@ func _ready() -> void:
 	_build_scene()
 	_load_json()
 	_load_terrain()
+	_build_pathfinder()
 	_load_entities()
 	hud.player_stats = player.stats
 
@@ -109,8 +116,9 @@ func _input(event: InputEvent) -> void:
 
 
 # LOOP
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 
+	_update_dynamic_blockers(delta)
 	_rotate_camera()
 	_update_sprites()
 	_update_z_sort()
@@ -238,14 +246,24 @@ func _load_terrain() -> void:
 		if line == "":
 			continue
 		var cols := line.split(",")
+		if _map_cols == 0:
+			_map_cols = cols.size()
 		for col in range(cols.size()):
 			var tile_id    := int(cols[col])
 			var atlas_col  := tile_id % 24
 			var atlas_row  := tile_id / 24
 			tilemap.set_cell(0, Vector2i(col, row), 0, Vector2i(atlas_col, atlas_row))
 		row += 1
+	_map_rows = row
 
 	file.close()
+
+
+# Called: _ready().
+func _build_pathfinder() -> void:
+
+	pathfinder = Pathfinder.new()
+	pathfinder.build(_map_cols, _map_rows)
 
 
 # Called: _ready().
@@ -303,6 +321,7 @@ func _spawn_creature(world_pos: Vector2, row: int, col: int, tile_id: int) -> vo
 	creature.configure(cfg, world_pos)
 	creature.player       = player
 	creature.camera_angle = world_angle
+	creature.pathfinder   = pathfinder
 
 	creature.tree_exiting.connect(func():
 		creature_sprites.erase(creature.sprite)
@@ -320,9 +339,11 @@ func _spawn_bush(world_pos: Vector2) -> void:
 	bush.set_script(load(PATH_BUSH_SCRIPT))
 	bush.position = world_pos
 	add_child(bush)   # triggers bush._ready() which creates its sprite + collision
+	pathfinder.set_tile_solid(tile_key, true)
 	bush.tree_exiting.connect(func():
 		rotatable_sprites.erase(bush.sprite)
 		obstacle_map.erase(tile_key)
+		pathfinder.set_tile_solid(tile_key, false)
 	)
 	rotatable_sprites.append(bush.sprite)
 	obstacle_map[tile_key] = bush
@@ -336,9 +357,9 @@ func _on_player_attacked(world_pos: Vector2, facing_dir: Vector2) -> void:
 	# 7x7 broad phase = 49 tiles → circle (r=3 tiles, dx²+dy²≤9) = 29 → 90° cone (±45°) ≈ 9 tiles.
 	var player_tile := Vector2i(int(world_pos.x) / TILE_SIZE, int(world_pos.y) / TILE_SIZE)
 
-	for dr in range(-ATTACK_SEARCH_R, ATTACK_SEARCH_R + 1):
-		for dc in range(-ATTACK_SEARCH_R, ATTACK_SEARCH_R + 1):
-			var key      := Vector2i(player_tile.x + dr, player_tile.y + dc)
+	for dy in range(-ATTACK_SEARCH_R, ATTACK_SEARCH_R + 1):
+		for dx in range(-ATTACK_SEARCH_R, ATTACK_SEARCH_R + 1):
+			var key      := Vector2i(player_tile.x + dx, player_tile.y + dy)
 			if not obstacle_map.has(key):
 				continue
 			var obstacle := obstacle_map[key] as StaticBody2D
@@ -358,6 +379,22 @@ func _on_player_attacked(world_pos: Vector2, facing_dir: Vector2) -> void:
 # =============================================================================
 # PER-FRAME UPDATES
 # =============================================================================
+
+# Called: _process().
+# Rebuilds creature tile occupancy once per second — cheap O(n) rebuild aligned
+# with the path refresh interval so stale data never outlives the next path query.
+func _update_dynamic_blockers(delta: float) -> void:
+
+	_blocker_timer += delta
+	if _blocker_timer < 1.0:
+		return
+	_blocker_timer = 0.0
+	_creature_tile_set.clear()
+	for creature in creatures:
+		var tile := Vector2i(int(creature.position.x) / TILE_SIZE, int(creature.position.y) / TILE_SIZE)
+		_creature_tile_set[tile] = true
+	pathfinder.set_dynamic_blockers(_creature_tile_set)
+
 
 # Called: _process().
 func _rotate_camera() -> void:

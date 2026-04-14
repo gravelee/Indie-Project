@@ -172,7 +172,7 @@ func _on_anim_finished() -> void:
 		anim_done = true
 
 
-# Called: _update_state(), _handle_movement().
+# Called: _update_state(), _handle_movement(), _try_attack().
 func _set_state(new_state: State) -> void:
 
 	if state == new_state:

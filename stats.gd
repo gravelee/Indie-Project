@@ -190,7 +190,7 @@ func regen(dt: float) -> void:
 	rage   = maxf(0.0,        rage   - RAGE_DECAY   * dt)
 
 
-# Called: ability.use(), combat system.
+# Called: creature.take_damage(); ability.use(), combat system (future).
 func take_damage(raw_damage: float, is_magic: bool = false, is_crit: bool = false) -> float:
 
 	# Returns the actual damage dealt after defense is applied.
@@ -201,7 +201,7 @@ func take_damage(raw_damage: float, is_magic: bool = false, is_crit: bool = fals
 	return actual
 
 
-# Called: combat system.
+# Called: upgrade_stat(), combat system (future).
 func spend_resource(resource: String, amount: float) -> bool:
 
 	# Deducts amount from the named resource. Returns false if insufficient.
