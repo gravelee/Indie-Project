@@ -41,7 +41,7 @@ const CHASE_DIST       := 900.0
 const ATTACK_DIST      := 60.0
 const HOME_MAX_DIST    := 2000.0
 const HOME_DIST        := 16.0
-const FLEE_SPEED       := 200.0
+const FLEE_SPEED       := 240.0
 
 # Pre-squared — avoids sqrt in distance comparisons every frame.
 const NOTICE_DIRECTION_SQ := NOTICE_DIRECTION * NOTICE_DIRECTION
@@ -60,16 +60,6 @@ const WANDER_INTERVAL_MAX  := 1.1
 const WANDER_DURATION_MIN  := 0.5
 const WANDER_DURATION_MAX  := 3.0
 
-
-# ── Base stats ─────────────────────────────────────────────────────────────────
-
-const BASE_STR := 0
-const BASE_AGI := 0
-const BASE_STA := 0
-const BASE_INT := 0
-const BASE_SPR := 0
-const BASE_RES := 0
-const BASE_DEF := 0
 
 
 # ── Animation mapping ──────────────────────────────────────────────────────────
@@ -168,12 +158,11 @@ var out_of_energy   : bool    = false
 
 # ── References ─────────────────────────────────────────────────────────────────
 
-var sprite  : AnimatedSprite2D   # created in _ready()
-var player  : CharacterBody2D    # set by game.gd after spawn
-var stats   : Stats              # set by configure()
+var sprite  : AnimatedSprite2D   # init _create_sprite().
+var player  : CharacterBody2D    # set game._spawn_creature().
+var stats   : Stats              # set configure().
 
-# Setter caches trig once per rotation and immediately corrects facing_right
-# using the last known movement direction, so _move_toward stays cheap.
+# Setter caches trig and corrects facing_right on rotation so _move_toward stays cheap.
 var camera_angle : float = 0.0:
 	set(value):
 		camera_angle = value
@@ -182,10 +171,10 @@ var camera_angle : float = 0.0:
 		_sin_a       = sin(rad)
 		facing_right = (_move_dx * _cos_a - _move_dy * _sin_a) > 0
 
-var _cos_a   : float = 1.0   # cached cos(camera_angle)
-var _sin_a   : float = 0.0   # cached sin(camera_angle)
-var _move_dx : float = 0.0   # last movement direction — reused by setter on rotation
-var _move_dy : float = 1.0
+var _cos_a   : float = 1.0   # set camera_angle setter.
+var _sin_a   : float = 0.0   # set camera_angle setter.
+var _move_dx : float = 0.0   # set _update_facing(), _move_toward().
+var _move_dy : float = 1.0   # set _update_facing(), _move_toward().
 
 
 # =============================================================================
@@ -251,7 +240,7 @@ func _load_animations() -> void:
 # ANIMATION
 # =============================================================================
 
-# Called: _load_animations() via signal.
+# Called: sprite.animation_finished signal.
 func _on_anim_finished() -> void:
 
 	if state in ONE_SHOT_STATES:
@@ -385,9 +374,9 @@ func _update_state(delta: float) -> void:
 				_update_facing(player.position.x - position.x,
 							   player.position.y - position.y)
 				if dist_sq < ATTACK_DIST_SQ:
-					_update_facing(player.position.x - position.x, player.position.y - position.y)
 					_set_state(State.IDLE_ATTACK)
-				else:                         _set_state(State.ENTER_STANCE)
+				else:                         
+					_set_state(State.ENTER_STANCE)
 
 		State.ATTACK_BITE, State.ATTACK_TAIL_SLAM:
 			if anim_done:

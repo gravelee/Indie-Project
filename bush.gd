@@ -12,6 +12,12 @@ extends StaticBody2D
 # =============================================================================
 
 
+# ── File paths ─────────────────────────────────────────────────────────────────
+
+const PATH_IDLE  := "res://assets/sprites/bush/bush.png"
+const PATH_DEATH := "res://assets/spritesheets/bush/death.png"
+
+
 # ── State ──────────────────────────────────────────────────────────────────────
 
 var alive : bool = true
@@ -19,8 +25,8 @@ var alive : bool = true
 
 # ── References (created in _ready) ────────────────────────────────────────────
 
-var sprite    : AnimatedSprite2D
-var collision : CollisionShape2D
+var sprite    : AnimatedSprite2D   # init _ready().
+var collision : CollisionShape2D   # init _ready().
 
 
 # =============================================================================
@@ -63,7 +69,7 @@ func _load_animations() -> void:
 	frames.set_animation_loop("idle", true)
 	frames.set_animation_speed("idle", 1.0)
 
-	var idle_tex   : Texture2D = load("res://assets/sprites/bush/bush.png")
+	var idle_tex   : Texture2D = load(PATH_IDLE)
 	var idle_atlas := AtlasTexture.new()
 	idle_atlas.atlas  = idle_tex
 	idle_atlas.region = Rect2(0, 0, idle_tex.get_width(), idle_tex.get_height())
@@ -74,10 +80,11 @@ func _load_animations() -> void:
 	frames.set_animation_loop("death", false)
 	frames.set_animation_speed("death", 8.0)
 
-	var death_tex : Texture2D = load("res://assets/spritesheets/bush/death.png")
-	var frame_w   := death_tex.get_width() / 12
+	var death_tex   : Texture2D = load(PATH_DEATH)
+	var frame_w     := death_tex.get_height()   # frames are square
+	var frame_count := death_tex.get_width() / frame_w
 
-	for i in range(12):
+	for i in range(frame_count):
 		var atlas   := AtlasTexture.new()
 		atlas.atlas  = death_tex
 		atlas.region = Rect2(i * frame_w, 0, frame_w, death_tex.get_height())
@@ -87,7 +94,7 @@ func _load_animations() -> void:
 	sprite.animation_finished.connect(_on_death_finished)
 
 
-# Called: take_hit().
+# Called: sprite.animation_finished signal.
 func _on_death_finished() -> void:
 
 	queue_free()
@@ -97,7 +104,7 @@ func _on_death_finished() -> void:
 # PUBLIC API
 # =============================================================================
 
-# Called: None.
+# Called: game._on_player_attacked().
 func take_hit() -> void:
 
 	alive = false

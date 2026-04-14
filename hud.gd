@@ -31,20 +31,20 @@ const COLOR_ENERGY     := Color(1.00, 0.55, 0.00)   # orange
 
 # ── Reference ─────────────────────────────────────────────────────────────────
 
-var player_stats : Stats   # set by game.gd after player is ready
+var player_stats : Stats   # set game._ready().
 
 
 # ── Cached layout (recomputed only on viewport resize) ────────────────────────
 
-var _bar_x : float = 0.0
-var _top_y : float = 0.0
-var _en_y  : float = 0.0
+var _bar_x : float = 0.0   # set _on_viewport_resized().
+var _top_y : float = 0.0   # set _on_viewport_resized().
+var _en_y  : float = 0.0   # set _on_viewport_resized().
 
 
 # ── Cached stat values (redraw only when changed) ─────────────────────────────
 
-var _last_hp     : float = -1.0
-var _last_energy : float = -1.0
+var _last_hp     : float = -1.0   # set _process().
+var _last_energy : float = -1.0   # set _process().
 
 
 # =============================================================================

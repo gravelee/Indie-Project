@@ -42,6 +42,16 @@ const ATTACK_RADIUS_SQ    := ATTACK_RADIUS * ATTACK_RADIUS
 const ATTACK_QUARTER_CONE := 45.0
 const ATTACK_SEARCH_R     := 3   # ceili(ATTACK_RADIUS / TILE_SIZE)
 
+# ── File paths ─────────────────────────────────────────────────────────────────
+
+const PATH_PLAYER_SCRIPT  := "res://player.gd"
+const PATH_HUD_SCRIPT     := "res://hud.gd"
+const PATH_BUSH_SCRIPT    := "res://bush.gd"
+const PATH_TILESET        := "res://assets/tilemaps/leaf/leaf.png"
+const PATH_MAP_TERRAIN    := "res://assets/maps/level_01/level_01_terrain.txt"
+const PATH_MAP_ENTITIES   := "res://assets/maps/level_01/level_01_other.txt"
+const PATH_MAP_JSON       := "res://assets/maps/level_01/level_01.json"
+
 # ── Camera rotation state ──────────────────────────────────────────────────────
 
 var world_angle : float  = 0.0   # degrees; positive = world rotates clockwise
@@ -63,16 +73,16 @@ var cached_cos_a : float = 1.0
 
 # ── Node references (all created in _build_scene) ─────────────────────────────
 
-var tilemap           : TileMap
-var camera            : Camera2D
-var player            : CharacterBody2D
-var player_sprite     : AnimatedSprite2D
-var hud               : Node2D
-var rotatable_sprites : Array      = []   # every sprite that counter-rotates with the camera
-var creature_sprites  : Array      = []   # creature sprites — z_index updated every frame
-var creatures         : Array      = []   # all active creature nodes
-var obstacle_map      : Dictionary = {}   # Vector2i(tile_x, tile_y) → any attackable StaticBody2D
-var _creature_configs : Dictionary = {}   # Vector2i(row, col) → JSON creature entry
+var tilemap           : TileMap				# init _build_scene(), set _load_terrain().
+var camera            : Camera2D			# init _build_scene().
+var player            : CharacterBody2D		# init _build_scene().
+var player_sprite     : AnimatedSprite2D	# init _build_scene().
+var hud               : Node2D				# init _build_scene().
+var rotatable_sprites : Array      = []		# init _spawn_bush().
+var obstacle_map      : Dictionary = {}		# init _spawn_bush().
+var creature_sprites  : Array      = []		# init _spawn_creature().
+var creatures         : Array      = []		# init _spawn_creature().
+var _creature_configs : Dictionary = {}   	# init _load_json().
 
 
 # =============================================================================
@@ -134,7 +144,7 @@ func _build_scene() -> void:
 	# The visible sprite is a separate node (see below) so it can be
 	# z-sorted alongside bushes independently of the physics body.
 	player = CharacterBody2D.new()
-	player.set_script(load("res://player.gd"))
+	player.set_script(load(PATH_PLAYER_SCRIPT))
 	var col_shape := CollisionShape2D.new()
 	var shape      := CircleShape2D.new()
 	shape.radius   = 30.0
@@ -160,7 +170,7 @@ func _build_scene() -> void:
 	hud_layer.layer = 10
 	add_child(hud_layer)
 	hud = Node2D.new()
-	hud.set_script(load("res://hud.gd"))
+	hud.set_script(load(PATH_HUD_SCRIPT))
 	hud_layer.add_child(hud)
 
 
@@ -170,7 +180,7 @@ func _create_tileset() -> TileSet:
 	var tileset := TileSet.new()
 	tileset.tile_size = Vector2i(TILE_SIZE, TILE_SIZE)
 
-	var texture : Texture2D = load("res://assets/tilemaps/leaf/leaf.png")
+	var texture : Texture2D = load(PATH_TILESET)
 	var source  := TileSetAtlasSource.new()
 	source.texture = texture
 	source.texture_region_size = Vector2i(TILE_SIZE, TILE_SIZE)
@@ -192,9 +202,32 @@ func _create_tileset() -> TileSet:
 # =============================================================================
 
 # Called: _ready().
+func _load_json() -> void:
+
+	var file := FileAccess.open(PATH_MAP_JSON, FileAccess.READ)
+	if file == null:
+		push_error("Cannot open level_01.json.")
+		return
+	var data = JSON.parse_string(file.get_as_text())
+	file.close()
+	if data == null:
+		push_error("Failed to parse level_01.json.")
+		return
+
+	# Apply player stats from JSON.
+	var p : Dictionary = data["player"]
+	player.stats = Stats.new(p["str"], p["agi"], p["sta"], p["int"],
+							 p["spr"], p["res"], p["def"], true)
+
+	# Build creature config lookup keyed by tile coordinates.
+	for entry in data["creatures"]:
+		_creature_configs[Vector2i(entry["row"], entry["col"])] = entry
+
+
+# Called: _ready().
 func _load_terrain() -> void:
 
-	var file := FileAccess.open("res://assets/maps/level_01/level_01_terrain.txt", FileAccess.READ)
+	var file := FileAccess.open(PATH_MAP_TERRAIN, FileAccess.READ)
 	if file == null:
 		push_error("Cannot open terrain file.")
 		return
@@ -218,7 +251,7 @@ func _load_terrain() -> void:
 # Called: _ready().
 func _load_entities() -> void:
 
-	var file := FileAccess.open("res://assets/maps/level_01/level_01_other.txt", FileAccess.READ)
+	var file := FileAccess.open(PATH_MAP_ENTITIES, FileAccess.READ)
 	if file == null:
 		push_error("Cannot open entities file.")
 		return
@@ -242,29 +275,6 @@ func _load_entities() -> void:
 		row += 1
 
 	file.close()
-
-
-# Called: _ready().
-func _load_json() -> void:
-
-	var file := FileAccess.open("res://assets/maps/level_01/level_01.json", FileAccess.READ)
-	if file == null:
-		push_error("Cannot open level_01.json.")
-		return
-	var data = JSON.parse_string(file.get_as_text())
-	file.close()
-	if data == null:
-		push_error("Failed to parse level_01.json.")
-		return
-
-	# Apply player stats from JSON.
-	var p : Dictionary = data["player"]
-	player.stats = Stats.new(p["str"], p["agi"], p["sta"], p["int"],
-							 p["spr"], p["res"], p["def"], true)
-
-	# Build creature config lookup keyed by tile coordinates.
-	for entry in data["creatures"]:
-		_creature_configs[Vector2i(entry["row"], entry["col"])] = entry
 
 
 # Called: _load_entities().
@@ -307,7 +317,7 @@ func _spawn_bush(world_pos: Vector2) -> void:
 
 	var bush     := StaticBody2D.new()
 	var tile_key := Vector2i(int(world_pos.x) / TILE_SIZE, int(world_pos.y) / TILE_SIZE)
-	bush.set_script(load("res://bush.gd"))
+	bush.set_script(load(PATH_BUSH_SCRIPT))
 	bush.position = world_pos
 	add_child(bush)   # triggers bush._ready() which creates its sprite + collision
 	bush.tree_exiting.connect(func():
@@ -322,7 +332,8 @@ func _spawn_bush(world_pos: Vector2) -> void:
 func _on_player_attacked(world_pos: Vector2, facing_dir: Vector2) -> void:
 
 	# Spatial hash lookup — only tiles within ATTACK_RADIUS are checked.
-	# O(search_area) not O(n_obstacles); search_area is a fixed ~49 tiles.
+	# O(search_area) not O(n_obstacles).
+	# 7x7 broad phase = 49 tiles → circle (r=3 tiles, dx²+dy²≤9) = 29 → 90° cone (±45°) ≈ 9 tiles.
 	var player_tile := Vector2i(int(world_pos.x) / TILE_SIZE, int(world_pos.y) / TILE_SIZE)
 
 	for dr in range(-ATTACK_SEARCH_R, ATTACK_SEARCH_R + 1):

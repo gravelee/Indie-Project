@@ -18,6 +18,7 @@ extends CharacterBody2D
 
 const SPRITE_SIZE := 96
 const TILE_SIZE   := 32
+const SPRITE_PATH := "res://assets/spritesheets/player/"
 
 
 # ── Enums ──────────────────────────────────────────────────────────────────────
@@ -30,16 +31,6 @@ enum Facing { SOUTH, NORTH, EAST, WEST }
 
 signal attacked(world_pos: Vector2, facing_dir: Vector2)
 
-
-# ── Base stats ─────────────────────────────────────────────────────────────────
-
-const BASE_STR := 0
-const BASE_AGI := 0
-const BASE_STA := 0
-const BASE_INT := 0
-const BASE_SPR := 0
-const BASE_RES := 0
-const BASE_DEF := 0
 
 
 # ── Animation data ─────────────────────────────────────────────────────────────
@@ -95,8 +86,8 @@ var _anim_key : String = "spawn"
 
 # ── References ─────────────────────────────────────────────────────────────────
 
-var sprite       : AnimatedSprite2D   # assigned by game.gd before load_animations()
-var stats        : Stats              # created in _ready()
+var sprite       : AnimatedSprite2D   # init game._build_scene().
+var stats        : Stats              # set game._load_json().
 
 # Setter caches the rotated radian so _handle_movement avoids deg_to_rad every frame.
 var camera_angle : float = 0.0:
@@ -111,12 +102,6 @@ var _cam_rad : float = 0.0
 # SETUP
 # =============================================================================
 
-# INIT
-func _ready() -> void:
-
-	stats = Stats.new(BASE_STR, BASE_AGI, BASE_STA, BASE_INT,
-					  BASE_SPR, BASE_RES, BASE_DEF, true)
-
 
 # Called: game._build_scene().
 func load_animations() -> void:
@@ -128,11 +113,11 @@ func load_animations() -> void:
 		var loop : bool = anim not in ONE_SHOT_ANIM_NAMES
 		for dir in DIRECTIONS:
 			var key     : String    = anim + "_" + dir
-			var texture : Texture2D = load("res://assets/spritesheets/player/" + key + ".png")
+			var texture : Texture2D = load(SPRITE_PATH + key + ".png")
 			_add_strip(frames, key, texture, loop)
 
 	for anim in NON_DIRECTIONAL_ANIMS:
-		var texture : Texture2D = load("res://assets/spritesheets/player/" + anim + ".png")
+		var texture : Texture2D = load(SPRITE_PATH + anim + ".png")
 		_add_strip(frames, anim, texture, false)
 
 	sprite.animation_finished.connect(_on_anim_finished)
@@ -180,7 +165,7 @@ func _sync_anim() -> void:
 		sprite.play(_anim_key)
 
 
-# Called: load_animations() via signal.
+# Called: sprite.animation_finished signal.
 func _on_anim_finished() -> void:
 
 	if state in ONE_SHOT_STATES:

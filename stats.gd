@@ -113,7 +113,7 @@ var upgrade_history : Array = []
 # INIT
 # =============================================================================
 
-# Called: player._ready(), creature._ready().
+# Called: game._load_json() (player), creature.configure() (creatures).
 func _init(p_str: int, p_agi: int, p_sta: int, p_int: int,
 		   p_spr: int, p_res: int, p_def: int,
 		   is_player: bool = false) -> void:
@@ -228,7 +228,7 @@ func restore_resource(resource: String, amount: float) -> void:
 		"mp":     mp     = minf(mp_max,     mp     + amount)
 
 
-# Called: creature._begin_death().
+# Called: combat system (future).
 func gain_exp(amount: float) -> void:
 
 	exp          += amount
@@ -306,7 +306,7 @@ func rage_pct() -> float:
 func mp_pct() -> float:
 	return mp / mp_max if mp_max > 0.0 else 0.0
 
-# Called: creature._begin_death().
+# Called: combat system (future).
 func exp_reward() -> float:
 	return maxf(1.0, level * exp_multiplier)
 
