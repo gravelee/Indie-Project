@@ -4,47 +4,65 @@ extends Node2D
 # HUD.GD
 #
 # Responsibilities:
-#   - Draw HP and energy bars above the player sprite when stats change
+#   - Draw player HP / energy / rage / mana bars (bottom-centre of screen)
+#   - Draw creature overhead bars (HP + energy + rage/mana) above each sprite
+#   - Bars only redraw when stats actually change (_process dirty check)
 #
-# The player is always at the camera centre, so bars are drawn relative
-# to the viewport centre — no world-to-screen conversion needed.
+# Drawn on a CanvasLayer — positions are in screen space.
+# World→screen: (world_pos - player.position).rotated(-angle) + viewport_centre
 # =============================================================================
 
 
-# ── Bar dimensions (mirrors settings.py) ──────────────────────────────────────
+# ── Player bar dimensions ─────────────────────────────────────────────────────
 
-const BAR_W      := 60.0
-const HP_H       := 5.0
-const EN_H       := 3.0
-const BAR_GAP    := 3.0
-const BAR_OFFSET := 60.0   # pixels above viewport centre
+const P_BAR_W   := 300.0   # wider — most important bar
+const P_HP_H    := 18.0
+const P_SUB_H   := 12.0    # energy, rage, mana
+const P_GAP     := 6.0
+const P_PAD_BOT := 40.0    # pixels from bottom of screen
 
 
-# ── Colors ─────────────────────────────────────────────────────────────────────
+# ── Creature bar dimensions ───────────────────────────────────────────────────
+
+const C_BAR_W   := 60.0
+const C_HP_H    := 5.0
+const C_SUB_H   := 3.0
+const C_GAP     := 3.0
+const C_OFFSET  := 60.0   # pixels above entity center (screen space)
+
+
+# ── Colors ────────────────────────────────────────────────────────────────────
 
 const COLOR_BG         := Color(0.15, 0.15, 0.15)
-const COLOR_HP_HIGH    := Color(0.24, 0.78, 0.31)   # green  — above 75%
-const COLOR_HP_MID     := Color(0.90, 0.78, 0.16)   # yellow — 25-75%
-const COLOR_HP_LOW     := Color(0.86, 0.24, 0.24)   # red    — below 25%
-const COLOR_ENERGY     := Color(1.00, 0.55, 0.00)   # orange
+const COLOR_BORDER     := Color(0.04, 0.04, 0.04)
+const COLOR_HP_HIGH    := Color(0.24, 0.78, 0.31)
+const COLOR_HP_MID     := Color(0.90, 0.78, 0.16)
+const COLOR_HP_LOW     := Color(0.86, 0.24, 0.24)
+const COLOR_ENERGY     := Color(1.00, 0.55, 0.00)
+const COLOR_RAGE       := Color(0.82, 0.16, 0.16)
+const COLOR_MANA       := Color(0.31, 0.47, 1.00)
 
 
-# ── Reference ─────────────────────────────────────────────────────────────────
+# ── References set by game.gd ─────────────────────────────────────────────────
 
-var player_stats : Stats   # set game._ready().
-
-
-# ── Cached layout (recomputed only on viewport resize) ────────────────────────
-
-var _bar_x : float = 0.0   # set _on_viewport_resized().
-var _top_y : float = 0.0   # set _on_viewport_resized().
-var _en_y  : float = 0.0   # set _on_viewport_resized().
+var player_stats  : Stats              # set game._ready().
+var player        : CharacterBody2D    # set game._ready() via init().
+var creatures     : Array  = []        # set game._ready() via init(); Array[CharacterBody2D]
+var world_angle   : float  = 0.0       # set game._process() via set_world_angle().
 
 
-# ── Cached stat values (redraw only when changed) ─────────────────────────────
+# ── Cached layout ─────────────────────────────────────────────────────────────
 
-var _last_hp     : float = -1.0   # set _process().
-var _last_energy : float = -1.0   # set _process().
+var _vp_size   : Vector2 = Vector2.ZERO   # set _on_viewport_resized().
+var _vp_center : Vector2 = Vector2.ZERO   # set _on_viewport_resized().
+
+
+# ── Dirty tracking — redraw only when a value changes ────────────────────────
+
+var _last_hp     : int = -1
+var _last_energy : int = -1
+var _last_rage   : int = -1
+var _last_mp     : int = -1
 
 
 # =============================================================================
@@ -61,12 +79,22 @@ func _ready() -> void:
 # Called: _ready(), size_changed signal.
 func _on_viewport_resized() -> void:
 
-	var vp    := get_viewport().get_visible_rect()
-	var cx    := vp.size.x * 0.5
-	var cy    := vp.size.y * 0.5
-	_bar_x     = cx - BAR_W * 0.5
-	_top_y     = cy - BAR_OFFSET - HP_H - EN_H - BAR_GAP
-	_en_y      = _top_y + HP_H + BAR_GAP
+	_vp_size   = get_viewport().get_visible_rect().size
+	_vp_center = _vp_size * 0.5
+	queue_redraw()
+
+
+# Called: game._ready() after player and creatures are set up.
+func init(p_player: CharacterBody2D, p_creatures: Array) -> void:
+
+	player    = p_player
+	creatures = p_creatures
+
+
+# Called: game._process().
+func set_world_angle(angle: float) -> void:
+
+	world_angle = angle
 	queue_redraw()
 
 
@@ -75,37 +103,157 @@ func _process(_delta: float) -> void:
 
 	if not player_stats:
 		return
-	var hp     := player_stats.hp_pct()
-	var energy := player_stats.energy_pct()
-	if hp != _last_hp or energy != _last_energy:
+
+	var hp     : int = int(player_stats.hp)
+	var energy : int = int(player_stats.energy)
+	var rage   : int = int(player_stats.rage)
+	var mp     : int = int(player_stats.mp)
+
+	if hp != _last_hp or energy != _last_energy or rage != _last_rage or mp != _last_mp:
 		_last_hp     = hp
 		_last_energy = energy
+		_last_rage   = rage
+		_last_mp     = mp
+		queue_redraw()
+
+	# Creature bars always need a redraw (creatures move every frame).
+	if creatures.size() > 0:
 		queue_redraw()
 
 
 # Godot built-in — triggered by queue_redraw().
 func _draw() -> void:
 
+	_draw_player_bars()
+	_draw_creature_bars()
+
+
+# =============================================================================
+# PLAYER BARS
+# =============================================================================
+
+# Called: _draw().
+func _draw_player_bars() -> void:
+
 	if not player_stats:
 		return
 
-	# ── HP bar ─────────────────────────────────────────────────────────────────
-	var hp_pct := _last_hp
-	draw_rect(Rect2(_bar_x, _top_y, BAR_W, HP_H), COLOR_BG)
-	draw_rect(Rect2(_bar_x, _top_y, BAR_W * hp_pct, HP_H), _hp_color(hp_pct))
+	var s     := player_stats
+	var x     := _vp_center.x - P_BAR_W * 0.5
+	var cursor := _vp_size.y - P_PAD_BOT
 
-	# ── Energy bar ─────────────────────────────────────────────────────────────
-	draw_rect(Rect2(_bar_x, _en_y, BAR_W, EN_H), COLOR_BG)
-	draw_rect(Rect2(_bar_x, _en_y, BAR_W * _last_energy, EN_H), COLOR_ENERGY)
+	# Stack from bottom: mana/rage → HP → energy (energy on top)
+	# First measure total height.
+	var has_rage := s.rage > 0.0
+	var has_mana := s.spr > 0 and s.mp_max > 0.0 and s.mp < s.mp_max
+	var has_sub  := has_rage or has_mana
+
+	var total_h := P_SUB_H + P_GAP + P_HP_H
+	if has_sub:
+		total_h += P_GAP + P_SUB_H
+
+	var stack_top := cursor - total_h
+
+	# Energy (top).
+	_draw_bar(x, stack_top, P_BAR_W, P_SUB_H, s.energy_pct(), COLOR_ENERGY)
+	stack_top += P_SUB_H + P_GAP
+
+	# HP (middle).
+	_draw_bar(x, stack_top, P_BAR_W, P_HP_H, s.hp_pct(), _hp_color(s.hp_pct()))
+	stack_top += P_HP_H + P_GAP
+
+	# Rage or mana (bottom — only when non-zero).
+	if has_rage:
+		_draw_bar(x, stack_top, P_BAR_W, P_SUB_H, s.rage_pct(), COLOR_RAGE)
+	elif has_mana:
+		_draw_bar(x, stack_top, P_BAR_W, P_SUB_H, s.mp_pct(), COLOR_MANA)
+
+
+# =============================================================================
+# CREATURE OVERHEAD BARS
+# =============================================================================
+
+# Called: _draw().
+func _draw_creature_bars() -> void:
+
+	if not player:
+		return
+
+	for creature in creatures:
+
+		if not creature.alive:
+			continue
+
+		var s : Stats = creature.stats
+
+		# Don't show bars when HP is full and creature is idle/non-combat.
+		var state = creature.state
+		var idle : bool = (
+			state == creature.State.IDLE_NEUTRAL or
+			state == creature.State.WANDER       or
+			state == creature.State.NOTICE       or
+			state == creature.State.EXIT_STANCE  or
+			state == creature.State.RETURNING
+		)
+		if idle and s.hp >= s.hp_max:
+			continue
+
+		# Convert world position to screen space.
+		var sp : Vector2 = _world_to_screen(creature.position)
+		var bx : float   = sp.x - C_BAR_W * 0.5
+		var by : float   = sp.y - C_OFFSET
+
+		# Stack: energy (if not full) → HP → rage/mana (if > 0)
+		var energy_pct := s.energy_pct()
+		var has_energy := energy_pct < 1.0
+		var has_rage   := s.rage > 0.0
+		var has_mana   := s.spr > 0 and s.mp_max > 0.0 and s.mp < s.mp_max
+		var has_sub    := has_rage or has_mana
+
+		var cursor_y := by
+		if has_energy:
+			cursor_y -= C_SUB_H + C_GAP
+		if has_sub:
+			cursor_y -= C_SUB_H + C_GAP
+
+		if has_energy:
+			_draw_bar(bx, cursor_y, C_BAR_W, C_SUB_H, energy_pct, COLOR_ENERGY)
+			cursor_y += C_SUB_H + C_GAP
+
+		_draw_bar(bx, cursor_y, C_BAR_W, C_HP_H, s.hp_pct(), _hp_color(s.hp_pct()))
+		cursor_y += C_HP_H + C_GAP
+
+		if has_rage:
+			_draw_bar(bx, cursor_y, C_BAR_W, C_SUB_H, s.rage_pct(), COLOR_RAGE)
+		elif has_mana:
+			_draw_bar(bx, cursor_y, C_BAR_W, C_SUB_H, s.mp_pct(), COLOR_MANA)
 
 
 # =============================================================================
 # HELPERS
 # =============================================================================
 
-# Called: _draw().
+# Called: _draw_player_bars(), _draw_creature_bars().
+func _draw_bar(x: float, y: float, w: float, h: float, pct: float, color: Color) -> void:
+
+	var border := 1.0
+	draw_rect(Rect2(x - border, y - border, w + border * 2.0, h + border * 2.0), COLOR_BORDER)
+	draw_rect(Rect2(x, y, w, h), COLOR_BG)
+	var fill_w := maxf(0.0, w * clampf(pct, 0.0, 1.0))
+	if fill_w > 0.0:
+		draw_rect(Rect2(x, y, fill_w, h), color)
+
+
+# Called: _draw_player_bars(), _draw_creature_bars().
 func _hp_color(pct: float) -> Color:
 
 	if pct > 0.75:   return COLOR_HP_HIGH
 	elif pct > 0.25: return COLOR_HP_MID
 	else:            return COLOR_HP_LOW
+
+
+# Called: _draw_creature_bars().
+func _world_to_screen(world_pos: Vector2) -> Vector2:
+
+	var delta : Vector2 = world_pos - player.position
+	return delta.rotated(deg_to_rad(world_angle)) + _vp_center

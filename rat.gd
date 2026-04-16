@@ -11,21 +11,9 @@ extends CharacterBody2D
 #   - Return home when player escapes or energy runs out
 #
 # What this script does NOT do:
-#   - Deal actual damage  (abilities not yet implemented)
-#   - Set z_index or rotation  (game.gd handles all camera-dependent rendering)
+#   - Deal actual damage  		(ability does that).
+#   - Set z_index or rotation  	(game.gd does that).
 # =============================================================================
-
-
-# ── State enum ─────────────────────────────────────────────────────────────────
-
-enum State {
-	IDLE_NEUTRAL, WANDER, NOTICE, ENTER_STANCE, IDLE_ATTACK,
-	CHASE, EXIT_STANCE, RETURNING, ATTACK_BITE, ATTACK_SLASH,
-	DEATH, DEAD
-}
-
-
-# ── Sprite ─────────────────────────────────────────────────────────────────────
 
 const SPRITE_SIZE := 96
 const SPRITE_PATH := "res://assets/spritesheets/rat/"
@@ -60,11 +48,6 @@ const WANDER_DURATION_MIN  := 0.5
 const WANDER_DURATION_MAX  := 3.0
 
 
-# ── Debug ──────────────────────────────────────────────────────────────────────
-
-const DEBUG_PATH := true   # draws A* waypoints; set false to disable
-
-
 # ── Pathfinding settings ───────────────────────────────────────────────────────
 
 const TILE_SIZE            := 32
@@ -77,47 +60,18 @@ const WAYPOINT_REACH_SQ    := (TILE_SIZE * 0.5) * (TILE_SIZE * 0.5)
 const STUCK_TIME           := 0.3   # sample interval; if not enough progress in this window → idle_attack.
 
 
+# ── Debug ──────────────────────────────────────────────────────────────────────
 
-# ── Animation mapping ──────────────────────────────────────────────────────────
+const DEBUG_PATH := true   # draws A* waypoints; set false to disable.
 
-# Maps State enum → animation name for sprite.play(). Integer keys, O(1).
-const STATE_ANIM := {
-	State.IDLE_NEUTRAL : "idle_neutral",
-	State.WANDER       : "wander",
-	State.NOTICE       : "notice",
-	State.ENTER_STANCE : "enter_stance",
-	State.IDLE_ATTACK  : "idle_attack",
-	State.CHASE        : "chase",
-	State.EXIT_STANCE  : "exit_stance",
-	State.RETURNING    : "returning",
-	State.ATTACK_BITE  : "attack_bite",
-	State.ATTACK_SLASH : "attack_slash",
-	State.DEATH        : "death",
+
+# ── Other ──────────────────────────────────────────────────────────────────────
+
+enum State {
+	IDLE_NEUTRAL, WANDER, NOTICE, ENTER_STANCE, IDLE_ATTACK,
+	CHASE, EXIT_STANCE, RETURNING, ATTACK_BITE, ATTACK_SLASH,
+	DEATH, DEAD
 }
-
-# String keys — only used at startup by _load_animations() to set loop flags.
-const ANIM_FILES := {
-	"idle_neutral" : "idle_neutral.png",
-	"wander"       : "move.png",
-	"notice"       : "notice.png",
-	"enter_stance" : "enter_stance.png",
-	"idle_attack"  : "idle_attack.png",
-	"chase"        : "move.png",
-	"exit_stance"  : "exit_stance.png",
-	"returning"    : "move.png",
-	"attack_bite"  : "attack_bite.png",
-	"attack_slash" : "attack_slash.png",
-	"death"        : "death.png",
-}
-
-# String set — used only in _load_animations() to determine loop flag.
-const ONE_SHOT_ANIM_NAMES := {
-	"notice": true, "enter_stance": true, "exit_stance": true,
-	"attack_bite": true, "attack_slash": true, "death": true
-}
-
-
-# ── State sets (enum keys — O(1) integer lookup) ───────────────────────────────
 
 const ONE_SHOT_STATES := {
 	State.NOTICE: true, State.ENTER_STANCE: true, State.EXIT_STANCE: true,
@@ -128,12 +82,32 @@ const MOVING_STATES := {
 	State.WANDER: true, State.CHASE: true, State.RETURNING: true
 }
 
+const COMBAT_STATES := {
+	State.ENTER_STANCE: true, State.IDLE_ATTACK: true, State.CHASE: true,
+	State.EXIT_STANCE: true, State.ATTACK_BITE: true, State.ATTACK_SLASH: true
+}
+
+const STATE_ANIM := {
+	State.IDLE_NEUTRAL : "idle_neutral",
+	State.WANDER       : "move",
+	State.NOTICE       : "notice",
+	State.ENTER_STANCE : "enter_stance",
+	State.IDLE_ATTACK  : "idle_attack",
+	State.CHASE        : "move",
+	State.EXIT_STANCE  : "exit_stance",
+	State.RETURNING    : "move",
+	State.ATTACK_BITE  : "attack_bite",
+	State.ATTACK_SLASH : "attack_slash",
+	State.DEATH        : "death",
+}
+
 
 # ── State ──────────────────────────────────────────────────────────────────────
 
 var state        : State = State.IDLE_NEUTRAL
-var anim_done    : bool  = false
 var facing_right : bool  = false
+var in_combat    : bool  = false
+var anim_done    : bool  = false
 var alive        : bool  = true
 var corpse_alpha : float = 255.0
 
@@ -158,29 +132,32 @@ var is_returning    : bool    = false
 var fleeing         : bool    = false
 var home_max_dist   : bool    = false
 var notice_cooldown : float   = 0.0
-var gcd_timer       : float   = 0.0
 var out_of_energy   : bool    = false
 
 
 # ── Pathfinding ────────────────────────────────────────────────────────────────
 
-var pathfinder        : Pathfinder   # set game._spawn_creature().
-var path              : Array  = []  # set _move_smart().
-var path_timer        : float  = 0.0 # set _move_smart().
-var path_interval     : float  = 0.0 # set _ready().
-var has_los           : bool   = false  # set _move_smart().
-var los_lock_timer    : float  = 0.0   # set _move_smart().
-var los_lock_interval : float  = 0.0   # set _ready().
-var _stuck_timer      : float  = 0.0   # set _physics_process(); >= STUCK_TIME → show idle_attack.
-var _stuck_check_pos  : Vector2 = Vector2.ZERO  # set _physics_process(), _snap_to_home(); position at last sample.
-var _stuck_threshold  : float  = 0.0   # set configure(); (mspd*STUCK_TIME)² * 0.5 — precomputed.
+var pathfinder        : Pathfinder    	# set game._spawn_creature().
+var path              : Array   = []  	# set _move_smart().
+var path_timer        : float   = 0.0 	# set _move_smart().
+var path_interval     : float   = 0.0 	# set _ready().
+var has_los           : bool    = false # set _move_smart().
+var los_lock_timer    : float   = 0.0   # set _move_smart().
+var los_lock_interval : float   = 0.0   # set _ready().
 
 
 # ── References ─────────────────────────────────────────────────────────────────
 
-var sprite  : AnimatedSprite2D   # init _create_sprite().
-var player  : CharacterBody2D    # set game._spawn_creature().
-var stats   : Stats              # set configure().
+var sprite  	: AnimatedSprite2D  # init _create_sprite().
+var player  	: CharacterBody2D   # set game._spawn_creature().
+var stats   	: Stats             # set configure().
+var abilities 	: Array = [] 		# Array[Ability]. init configure().
+
+# ── Combat feedback buffers ────────────────────────────────────────────────────
+
+# Set in _physics_process(), read and cleared by combat_feedback._read_creatures().
+var _cf_dot     : float         = 0.0
+var _cf_expired : Array[String] = []
 
 # Setter caches trig and corrects facing_right on rotation so _move_toward stays cheap.
 var camera_angle : float = 0.0:
@@ -211,20 +188,6 @@ func _ready() -> void:
 	_create_sprite()
 
 
-# Called: game._spawn_creature() after add_child.
-func configure(cfg: Dictionary, world_pos: Vector2) -> void:
-
-	stats        = Stats.new(cfg["str"], cfg["agi"], cfg["sta"], cfg["int"],
-							 cfg["spr"], cfg["res"], cfg["def"], false)
-	is_returning = cfg["returning"]
-	fleeing      = cfg["fleeing"]
-	if cfg["home"]:
-		home_position = world_pos
-		has_home      = true
-	var d := stats.mspd * STUCK_TIME
-	_stuck_threshold  = d * d * 0.5   # (mspd * interval)² * 0.5 — precomputed once.
-
-
 # Called: _ready().
 func _create_sprite() -> void:
 
@@ -233,8 +196,6 @@ func _create_sprite() -> void:
 	add_child(sprite)
 
 	_load_animations()
-	sprite.animation_finished.connect(_on_anim_finished)
-	sprite.play(STATE_ANIM[State.IDLE_NEUTRAL])
 
 
 # Called: _create_sprite().
@@ -243,10 +204,14 @@ func _load_animations() -> void:
 	var frames := SpriteFrames.new()
 	sprite.sprite_frames = frames
 
-	for anim_name in ANIM_FILES:
-		var anim_path : String    = SPRITE_PATH + ANIM_FILES[anim_name]
+	for s in STATE_ANIM:
+		var anim_name : String = STATE_ANIM[s]
+		# Skip if already loaded (multiple states can share one animation, e.g. "move").
+		if frames.has_animation(anim_name):
+			continue
+		var anim_path : String    = SPRITE_PATH + anim_name + ".png"
 		var texture   : Texture2D = load(anim_path)
-		var loop    : bool      = anim_name not in ONE_SHOT_ANIM_NAMES
+		var loop      : bool      = s not in ONE_SHOT_STATES
 
 		frames.add_animation(anim_name)
 		frames.set_animation_loop(anim_name, loop)
@@ -259,10 +224,38 @@ func _load_animations() -> void:
 			atlas.region = Rect2(i * SPRITE_SIZE, 0, SPRITE_SIZE, SPRITE_SIZE)
 			frames.add_frame(anim_name, atlas)
 
+	sprite.animation_finished.connect(_on_anim_finished)
+	sprite.play(STATE_ANIM[State.IDLE_NEUTRAL])
+
+
+# Called: game._spawn_creature().
+func configure(cfg: Dictionary, world_pos: Vector2) -> void:
+
+	stats        = Stats.new(cfg["str"], cfg["agi"], cfg["sta"], 
+		cfg["int"], cfg["spr"], cfg["res"], cfg["def"], cfg["bms"], cfg["exp"])
+	is_returning = cfg["returning"]
+	fleeing      = cfg["fleeing"]
+	if cfg["home"]:
+		home_position = world_pos
+		has_home      = true
+		
+	stats.effects     = StatusEffect.EffectManager.new()
+	
+	abilities   = [
+		Ability.get_ability("rat_bite",  stats.level),
+		Ability.get_ability("rat_slash", stats.level),
+	]
+
 
 # =============================================================================
 # ANIMATION
 # =============================================================================
+
+# Called: _physics_process().
+func _sync_anim() -> void:
+
+	sprite.flip_h = facing_right
+
 
 # Called: sprite.animation_finished signal.
 func _on_anim_finished() -> void:
@@ -278,26 +271,9 @@ func _set_state(new_state: State) -> void:
 		return
 	state     = new_state
 	anim_done = false
+	in_combat = new_state in COMBAT_STATES
 	if state != State.DEAD:
 		sprite.play(STATE_ANIM[state])
-
-
-# Called: _physics_process().
-func _sync_anim() -> void:
-
-	# Keep flip in sync with facing every frame.
-	# Z_index and rotation are handled by game.gd.
-	sprite.flip_h = facing_right
-
-	# Stuck in CHASE with clear LOS: physically blocked, no room to pass.
-	# Show idle_attack so the creature doesn't walk in place.
-	# Restore chase as soon as movement resumes (_stuck_timer resets to 0).
-	if state == State.CHASE:
-		if _stuck_timer >= STUCK_TIME:
-			if sprite.animation != "idle_attack":
-				sprite.play("idle_attack")
-		elif sprite.animation == "idle_attack":
-			sprite.play(STATE_ANIM[State.CHASE])
 
 
 # =============================================================================
@@ -305,138 +281,267 @@ func _sync_anim() -> void:
 # =============================================================================
 
 # Called: _physics_process().
-func _update_state(delta: float) -> void:
+func _update_state(dt: float) -> void:
 
-	# Tick cooldowns.
-	if notice_cooldown > 0.0:
-		notice_cooldown = maxf(0.0, notice_cooldown - delta)
-	if gcd_timer > 0.0:
-		gcd_timer = maxf(0.0, gcd_timer - delta)
-
-	if not player:
-		return
-
-	var player_ok : bool = player.state != player.State.DEATH and player.state != player.State.DEAD
-
-	# dist_sq is computed lazily for idle states after the AABB check.
-	# For all active states it is computed once here — no sqrt ever.
-	var dist_sq : float = 0.0
-	if state != State.IDLE_NEUTRAL and state != State.WANDER:
-		dist_sq = position.distance_squared_to(player.position)
+	var player_ok 	: bool  = player.state != player.State.DEATH and player.state != player.State.DEAD
+	var dist_sq 	: float = position.distance_squared_to(player.position)
 
 	match state:
 
 		State.IDLE_NEUTRAL, State.WANDER:
-			# ── AABB broad phase — skip dist entirely when player is clearly out of range ──
-			var player_near := false
-			if player_ok:
-				var dx := absf(player.position.x - position.x)
-				var dy := absf(player.position.y - position.y)
-				if dx <= NOTICE_DIRECTION and dy <= NOTICE_DIRECTION:
-					dist_sq = position.distance_squared_to(player.position)
-					if dist_sq < NOTICE_DIRECTION_SQ:
-						player_near = true
-						_update_facing(player.position.x - position.x,
-									   player.position.y - position.y)
-						if dist_sq < NOTICE_DIST_SQ and notice_cooldown <= 0.0:
-							_set_state(State.NOTICE)
-							return
-			# ── Wander ────────────────────────────────────────────────────────
-			# Player nearby in IDLE_NEUTRAL → stay alert, don't start a new wander.
-			# Already wandering → let it finish; can't re-enter after it ends.
-			if not (player_near and state == State.IDLE_NEUTRAL):
-				var signal_ := _wander(delta)
+			# If the player is within creatures notice direction 
+			# distance then creature updates facing.
+			if player_ok and dist_sq < NOTICE_DIRECTION_SQ:
+				_update_facing(player.position.x - position.x, player.position.y - position.y)
+				# If the player is within creatures notice distance and 
+				# notice cooldown is up then creature enters notice state.
+				if dist_sq < NOTICE_DIST_SQ and notice_cooldown <= 0.0:
+					_set_state(State.NOTICE)
+					return
+			# Creature can wander while in wander state or player not ok or in idle neutral state 
+			# but only if the players distance is bigger than notice direction distance.
+			if state == State.WANDER or not player_ok or dist_sq  > NOTICE_DIRECTION_SQ:
+				var signal_ := _wander(dt)
 				if signal_ == "start": _set_state(State.WANDER)
 				elif signal_ == "done": _set_state(State.IDLE_NEUTRAL)
 
 		State.NOTICE:
+			# If the player is within attack distance creature 
+			# bypasses notice anim_done and enters enter stance state.
 			if dist_sq < ATTACK_DIST_SQ:
 				_set_state(State.ENTER_STANCE)
 			elif anim_done:
-				if dist_sq < NOTICE_DIST_SQ: _set_state(State.ENTER_STANCE)
-				else:                         _set_state(State.IDLE_NEUTRAL)
+				# If the player is still within notice distance after 
+				# anim_done the creature enters enter stance state.
+				if dist_sq < NOTICE_DIST_SQ:
+					_set_state(State.ENTER_STANCE)
+				# If the player has left notice distance while anim_done
+				# then the creature enters idle neutral state.
+				else:
+					_set_state(State.IDLE_NEUTRAL)
 
 		State.ENTER_STANCE:
+			# If creatures has no initial home it sets one here.
 			if not has_home:
 				home_position = position
-				has_home      = true
 				temp_home     = true
 			if anim_done:
+				# When ani_done the creature updates its facing.
+				_update_facing(player.position.x - position.x, player.position.y - position.y)
+				# If the player is within attack distance after anim_done the
+				# creature enters idle attack state.
 				if dist_sq < ATTACK_DIST_SQ:
-					_update_facing(player.position.x - position.x, player.position.y - position.y)
 					_set_state(State.IDLE_ATTACK)
-				elif dist_sq < NOTICE_DIST_SQ: _set_state(State.CHASE)
-				else:                           _set_state(State.EXIT_STANCE)
+				# If the player is within notice distance after anim_done the
+				# creature enters chase state.
+				elif dist_sq < NOTICE_DIST_SQ: 
+					_set_state(State.CHASE)
+				# If the player is out of notice distance after anim_done the
+				# creature enters exit stance state.
+				else:                           
+					_set_state(State.EXIT_STANCE)
 
 		State.IDLE_ATTACK:
+			# If the player is not okay or the creature is 
+			# out of energy it enters returning state.
 			if not player_ok or out_of_energy:
 				_set_state(State.RETURNING)
+			# If the player is within attack distance then the
+			# creatures tries to attack.
 			elif dist_sq < ATTACK_DIST_SQ:
 				_try_attack()
+			# If the player is within chasing distance 
+			# the creature enters chase state.
 			elif dist_sq < CHASE_DIST_SQ:
 				_set_state(State.CHASE)
+			# If the player is out of chasing distance
+			# the creatures enters exit stance state.
 			else:
 				_set_state(State.EXIT_STANCE)
 
 		State.CHASE:
+			# Calculates the distance to home position.
 			var dist_home_sq := position.distance_squared_to(home_position)
+			# If the creature has reached the maximum distance 
+			# from home it enters returning state.
 			if dist_home_sq > HOME_MAX_DIST_SQ:
 				home_max_dist = true
 				_set_state(State.RETURNING)
+			# If the player is within attack distance then the
+			# creature updates its facing and enters idle attack state.
 			elif dist_sq < ATTACK_DIST_SQ:
 				_update_facing(player.position.x - position.x, player.position.y - position.y)
 				_set_state(State.IDLE_ATTACK)
+			# If the player is out of chasing distance the
+			# creature enters exit stance state.
 			elif dist_sq > CHASE_DIST_SQ:  _set_state(State.EXIT_STANCE)
+			# If the player is still within chasing distance the
+			# creature move smart towards the player.
 			else:
-				_move_smart(player.position, stats.mspd, delta)
+				_move_smart(player.position, stats.mspd, dt)
 
 		State.EXIT_STANCE:
+			
 			if anim_done:
-				if dist_sq < NOTICE_DIST_SQ: _set_state(State.ENTER_STANCE)
-				else:                         _set_state(State.RETURNING)
+				# When anim_done if the player is within notice distance
+				# the creature enters enter stance state.
+				if dist_sq < NOTICE_DIST_SQ: 
+					_set_state(State.ENTER_STANCE)
+				# When anim_done if the player is out of notice distance
+				# the creature enters returning state.
+				else:                         
+					_set_state(State.RETURNING)
 
 		State.RETURNING:
+			# Calculates the distance to home position and forced.
 			var dist_home_sq := position.distance_squared_to(home_position)
 			var forced       := is_returning or home_max_dist or out_of_energy or not player_ok
-
+			# If the player is out of notice distance or the creature is
+			# forced to return home if it is next to home snaps to it otherwise
+			# it moves towards its home (original or temporary) position.
 			if forced or dist_sq > NOTICE_DIST_SQ:
 				if dist_home_sq <= HOME_DIST_SQ:
 					_snap_to_home()
 				else:
-					_move_smart(home_position, FLEE_SPEED, delta)
+					_move_smart(home_position, FLEE_SPEED, dt)
+			# If player is within notice distance and the creature is not forced
+			# the creature updates its facing.
 			else:
-				_update_facing(player.position.x - position.x,
-							   player.position.y - position.y)
+				_update_facing(player.position.x - position.x, player.position.y - position.y)
+				# If player is within attack distance the creature enters idle attack state.
 				if dist_sq < ATTACK_DIST_SQ:
 					_set_state(State.IDLE_ATTACK)
+				# Otherwise the creature enters enter stance state.
 				else:                         
 					_set_state(State.ENTER_STANCE)
 
 		State.ATTACK_BITE, State.ATTACK_SLASH:
+			# If anim_done then the creature enters idle attack state.
 			if anim_done:
 				_set_state(State.IDLE_ATTACK)
 
 		State.DEATH:
+			# If anim_done then the creature enters dead state.
 			if anim_done:
-				alive = false
 				_set_state(State.DEAD)
 
 
 # =============================================================================
-# WANDER
+# MOVEMENT
 # =============================================================================
 
+# LOOP
+func _physics_process(dt: float) -> void:
+
+	if is_dead(dt):
+		return
+		
+	_update_state(dt)
+	
+	_sync_anim()
+	
+	if state not in MOVING_STATES:
+		velocity = Vector2.ZERO
+		
+	if state != State.DEATH:
+		
+		if los_lock_timer > 0.0:
+			los_lock_timer -= dt
+			
+		if notice_cooldown > 0.0:
+			notice_cooldown -= dt
+			
+		# Update out_of_energy status.
+		if stats.energy <= 0:
+			out_of_energy = true
+			
+		# Update abilities tick timer.
+		for ability in abilities:
+			ability.tick(dt)
+			
+		# Update stats ( hp, energy, rage, mp).
+		if not in_combat:
+			stats.regen(dt)
+			
+		# Update effects, buffer dot/expired for combat_feedback, then apply.
+		var _dot := stats.update_effects(dt)
+		_cf_dot     = _dot
+		_cf_expired = stats.effects.expired_names.duplicate()
+		take_damage(_dot, true)
+
+	if velocity != Vector2.ZERO:
+		move_and_slide()
+		
+	# Prints creatures path.
+	queue_redraw()
+
+
+# Called: _update_state() during CHASE and RETURNING.
+func _move_smart(target_pos: Vector2, speed: float, dt: float) -> void:
+	
+	# If time for LOS check.
+	if los_lock_timer <= 0.0:
+		has_los        = pathfinder.line_of_sight(position, target_pos)
+		los_lock_timer = LOS_CLEAR_INTERVAL if has_los else los_lock_interval
+
+	# If clear LOS.
+	if has_los:
+		path.clear()
+		_move_toward(target_pos, speed)
+		return
+
+	path_timer += dt
+	# If time for path finding.
+	if path_timer >= path_interval or path.is_empty():
+		path_timer = 0.0
+		path = pathfinder.find_path(position, target_pos)
+
+	# A* couldnt find a path.
+	if path.is_empty():
+		_move_toward(target_pos, speed)
+		return
+
+	# Pop waypoints as they are reached.
+	if position.distance_squared_to(path[0]) < WAYPOINT_REACH_SQ:
+		path.pop_front()
+	
+	# If no other waypoints.
+	if path.is_empty():
+		return
+	
+	# Move towards the next waypoint.
+	_move_toward(path[0], speed)
+
+
+# Called: _move_smart().
+func _move_toward(target_pos: Vector2, speed: float) -> void:
+
+	var direction	:= target_pos - position
+	var len_sq 		:= direction.length_squared()
+	if len_sq < 1.0:
+		velocity = Vector2.ZERO
+		return
+	
+	var new_right := (direction.x * _cos_a - direction.y * _sin_a) > 0
+	if new_right != facing_right:
+		facing_right = new_right
+		_move_dx = direction.x
+		_move_dy = direction.y
+		
+	velocity = direction / sqrt(len_sq) * speed	# normalization.
+
+
 # Called: _update_state().
-func _wander(delta: float) -> String:
+func _wander(dt: float) -> String:
 
 	# Returns "start" to enter wander state, "done" to return to idle, "" to continue.
 	if state == State.IDLE_NEUTRAL:
-		wander_timer += delta
+		wander_timer += dt
 		if wander_timer >= wander_interval:
 			wander_timer    = 0.0
 			wander_interval = randf_range(WANDER_INTERVAL_MIN, WANDER_INTERVAL_MAX)
 			if randf() < WANDER_CHANCE:
-				force_wander = true   # direction + facing set next frame in wander branch
+				force_wander = true
 				return "start"
 		return ""
 
@@ -450,7 +555,7 @@ func _wander(delta: float) -> String:
 		wander_duration = randf_range(WANDER_DURATION_MIN, WANDER_DURATION_MAX)
 		_update_facing(wander_dx, wander_dy)
 
-	wander_elapsed += delta
+	wander_elapsed += dt
 	velocity = Vector2(wander_dx, wander_dy) * stats.mspd
 
 	if wander_elapsed >= wander_duration:
@@ -459,139 +564,23 @@ func _wander(delta: float) -> String:
 	return ""
 
 
-# =============================================================================
-# MOVEMENT
-# =============================================================================
-
-# LOOP
-func _physics_process(delta: float) -> void:
-
-	if state == State.DEAD:
-		corpse_alpha = maxf(0.0, corpse_alpha - 300.0 * delta)
-		sprite.modulate = Color(1.0, 1.0, 1.0, corpse_alpha / 255.0)
-		if corpse_alpha <= 0.0:
-			queue_free()
-		return
-
-	_update_state(delta)
-
-	if state not in MOVING_STATES:
-		velocity = Vector2.ZERO
-
-	# Skip physics resolution during one-shot animations — the rat is stationary
-	# and skipping move_and_slide() prevents the player from pushing the body.
-	var had_velocity := velocity.length_squared() > 1.0
-	if state not in ONE_SHOT_STATES:
-		if state == State.WANDER and test_move(global_transform, velocity * delta):
-			velocity     = Vector2.ZERO
-			force_wander = true
-		else:
-			move_and_slide()
-
-	# Periodic stuck detection — samples every STUCK_TIME seconds instead of per frame.
-	# Per-frame cost: one float add + one comparison. Distance check runs ~3×/second only.
-	# The else branch keeps _stuck_check_pos current outside CHASE, so the first sample
-	# after entering CHASE always has a valid reference point.
-	if state == State.CHASE and had_velocity:
-		_stuck_timer += delta
-		if _stuck_timer >= STUCK_TIME:
-			if position.distance_squared_to(_stuck_check_pos) < _stuck_threshold:
-				_stuck_timer = STUCK_TIME   # sustain idle_attack until movement resumes
-			else:
-				_stuck_timer = 0.0
-			_stuck_check_pos = position
-	else:
-		_stuck_timer     = 0.0
-		_stuck_check_pos = position
-
-	if state == State.IDLE_NEUTRAL or state == State.WANDER:
-		stats.regen(delta)
-
-	_sync_anim()
-
-	if DEBUG_PATH:
-		queue_redraw()
-
-
-# Called: _move_smart().
-func _move_toward(target_pos: Vector2, speed: float, _delta: float) -> void:
-
-	var dir    := target_pos - position
-	var len_sq := dir.length_squared()
-	if len_sq < 1.0:
-		velocity = Vector2.ZERO
-		return
-	# No trig here — _cos_a/_sin_a are cached by the camera_angle setter.
-	# Only write facing_right when it would actually flip; also update _move_dx/dy
-	# so a camera rotation arriving this frame corrects facing immediately.
-	var new_right := (dir.x * _cos_a - dir.y * _sin_a) > 0
-	if new_right != facing_right:
-		facing_right = new_right
-		_move_dx = dir.x
-		_move_dy = dir.y
-	velocity = dir / sqrt(len_sq) * speed	# normalization.
-
-
-# Called: _update_state() during CHASE and RETURNING.
-func _move_smart(target_pos: Vector2, speed: float, delta: float) -> void:
-
-	if not pathfinder:
-		_move_toward(target_pos, speed, delta)
-		return
-
-	# Tick LOS lock — recheck only when lock expires to avoid per-frame raycast.
-	# Timer is always set after a check: short when clear, long when blocked.
-	if los_lock_timer > 0.0:
-		los_lock_timer = maxf(0.0, los_lock_timer - delta)
-	if los_lock_timer <= 0.0:
-		has_los        = pathfinder.line_of_sight(position, target_pos)
-		los_lock_timer = LOS_CLEAR_INTERVAL if has_los else los_lock_interval
-
-	if has_los:
-		path.clear()
-		_move_toward(target_pos, speed, delta)
-		return
-
-	# No LOS — refresh A* path on interval or when exhausted.
-	path_timer += delta
-	if path_timer >= path_interval or path.is_empty():
-		path_timer = 0.0
-		path = pathfinder.find_path(position, target_pos)
-
-	if path.is_empty():
-		_move_toward(target_pos, speed, delta)
-		return
-
-	# Pop waypoints as they are reached.
-	if position.distance_squared_to(path[0]) < WAYPOINT_REACH_SQ:
-		path.pop_front()
-
-	if path.is_empty():
-		return
-
-	_move_toward(path[0], speed, delta)
-
-
 # Called: _update_state().
 func _snap_to_home() -> void:
 
-	position        = home_position
-	velocity        = Vector2.ZERO
-	home_max_dist   = false
-	out_of_energy   = false
-	notice_cooldown = NOTICE_COOLDOWN
-	wander_timer    = 0.0
-	wander_elapsed  = 0.0
-	force_wander    = false
+	position          = home_position
+	velocity          = Vector2.ZERO
+	home_max_dist     = false
+	out_of_energy     = false
+	notice_cooldown   = NOTICE_COOLDOWN
+	wander_timer      = 0.0
+	wander_elapsed    = 0.0
+	force_wander      = false
 	path.clear()
-	path_timer      = 0.0
-	has_los         = false
-	los_lock_timer  = 0.0
-	_stuck_timer     = 0.0
-	_stuck_check_pos = position
+	path_timer        = 0.0
+	has_los           = false
+	los_lock_timer    = 0.0
 	if temp_home:
 		home_position = Vector2.ZERO
-		has_home      = false
 		temp_home     = false
 	_set_state(State.IDLE_NEUTRAL)
 
@@ -613,38 +602,67 @@ func _update_facing(world_dx: float, world_dy: float) -> void:
 # COMBAT
 # =============================================================================
 
-# Called: _update_state() when in ATTACK_DIST.
+# Called: _update_state().
 func _try_attack() -> void:
 
-	# Picks attack animation. Actual damage wired up when abilities are implemented.
-	if gcd_timer > 0.0:
+	# Find any ability that is ready and in range.
+	var dist := position.distance_to(player.position)
+	var chosen : Ability = null
+	for ability in abilities:
+		if ability.check_resources(stats, dist):
+			# Prefer higher damage_multiplier abilities.
+			if chosen == null or ability.damage_mult > chosen.damage_mult:
+				chosen = ability
+	
+	# If nothing is ready.
+	if not chosen:
 		return
-	gcd_timer = Stats.GCD
-	_set_state(State.ATTACK_BITE if randf() > 0.5 else State.ATTACK_SLASH)
-
-
-# Called: game.gd or player combat system (future).
-func take_damage(amount: float) -> void:
-
-	if not alive or state == State.DEATH or state == State.DEAD:
+	if not chosen.check_resources(stats, dist):
 		return
-	stats.take_damage(amount)
+	
+	chosen.use(stats, [player], dist)
+		
+	if chosen.anim == "attack_bite":
+		_set_state(State.ATTACK_BITE)
+	else:
+		_set_state(State.ATTACK_SLASH)
+
+
+# Called: ability.use().
+func take_damage(raw_damage: float, dot: bool = false, is_magic: bool = false, is_crit: bool = false) -> float:
+
+	var damage : float = stats.take_damage(raw_damage, dot, is_magic, is_crit)
+	
 	if not stats.is_alive():
+		alive = false
 		_begin_death()
 
+	return damage
 
 # Called: take_damage().
 func _begin_death() -> void:
 
-	alive = false
+	stats.cleanse_all_effects()
 	_set_state(State.DEATH)
+	
+
+# Called: _physics_process().
+func is_dead(dt: float) -> bool:
+	
+	if state == State.DEAD:
+		corpse_alpha = maxf(0.0, corpse_alpha - 300.0 * dt)
+		sprite.modulate = Color(1.0, 1.0, 1.0, corpse_alpha / 255.0)
+		if corpse_alpha <= 0.0:
+			queue_free()
+		return true
+	return false
 
 
 # =============================================================================
 # DEBUG
 # =============================================================================
 
-# Godot built-in — triggered by queue_redraw().
+# Called: _physics_process() triggered by queue_redraw().
 func _draw() -> void:
 
 	if not DEBUG_PATH or path.is_empty():

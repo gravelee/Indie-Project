@@ -1,16 +1,6 @@
 class_name Stats
 extends RefCounted
 
-# =============================================================================
-# STATS.GD
-#
-# Holds all base stats, derived stats, and resources for any entity
-# (player or creature). Mirrors stats.py from the Python prototype.
-#
-# Usage:
-#   var stats := Stats.new(str_, agi, sta, int_, spr, res, def_, is_player)
-# =============================================================================
-
 
 # ── Weights ────────────────────────────────────────────────────────────────────
 
@@ -24,17 +14,12 @@ const W_DEF         := 1.0
 const LEVEL_DIVISOR := 7
 
 
-# ── Speed floors ───────────────────────────────────────────────────────────────
-
-const PLAYER_BASE_SPEED := 200.0
-const BASE_SPEED        := 180.0
-
-
 # ── Regen rates (per second, out of combat) ────────────────────────────────────
 
 const HP_REGEN     := 1.0
 const ENERGY_REGEN := 1.0
 const RAGE_DECAY   := 1.0
+const MP_REGEN     := 1.0
 
 
 # ── Global cooldown ────────────────────────────────────────────────────────────
@@ -44,23 +29,23 @@ const GCD := 1.0
 
 # ── Rank table ─────────────────────────────────────────────────────────────────
 
-const RANKS := [
-	[0,          "None", "Unranked"],
-	[500,        "E",    "Novice"],
-	[2000,       "D",    "Wanderer"],
-	[8000,       "D+",   "Recruit"],
-	[24000,      "C",    "Apprentice"],
-	[72000,      "C+",   "Scout"],
-	[150000,     "B",    "Hunter"],
-	[300000,     "B+",   "Captain"],
-	[900000,     "A",    "General"],
-	[3000000,    "A+",   "Champion"],
-	[12000000,   "A++",  "Elite"],
-	[50000000,   "S",    "Master"],
-	[250000000,  "SS",   "Legend"],
-	[1250000000, "SSS",  "Kami"],
-]
-
+# Lifetime experience -> [Grade, Title].
+const RANKS : Array = [                                                                                     
+	  [1250000000, "SSS", "Kami"],                                                                            
+	  [250000000,  "SS",  "Legend"],                                                                          
+	  [50000000,   "S",   "Master"],                                                                          
+	  [12000000,   "A++", "Elite"],
+	  [3000000,    "A+",  "Champion"],                                                                        
+	  [900000,     "A",   "General"],
+	  [300000,     "B+",  "Captain"],                                                                         
+	  [150000,     "B",   "Hunter"],
+	  [72000,      "C+",  "Scout"],                                                                           
+	  [24000,      "C",   "Apprentice"],                                                                      
+	  [8000,       "D+",  "Recruit"],
+	  [2000,       "D",   "Wanderer"],                                                                        
+	  [500,        "E",   "Novice"],                                                                          
+	  [0,          "None","Unranked"]
+  ]                                   
 
 # ── Base stats ─────────────────────────────────────────────────────────────────
 
@@ -71,69 +56,78 @@ var int_ : int
 var spr  : int
 var res  : int
 var def_ : int
+var bms  : int
+var exp  : int
 
 
 # ── Resources (current values) ────────────────────────────────────────────────
 
-var hp           : float = 0.0
-var energy       : float = 0.0
-var rage         : float = 0.0
-var mp           : float = 0.0
-var exp          : float = 0.0
-var lifetime_exp : float = 0.0
+var hp           : float
+var energy       : float 
+var rage         : float
+var mp           : float
+var lifetime_exp : int
 
 
 # ── Derived stats (recalculated whenever base stats change) ───────────────────
 
-var level      : int   = 1
-var hp_max     : float = 0.0
-var energy_max : float = 0.0
-var rage_max   : float = 0.0
-var mp_max     : float = 0.0
-var patk       : float = 0.0
-var matk       : float = 0.0
-var pdef       : float = 0.0
-var mdef       : float = 0.0
-var crit       : float = 0.0
-var mcrit      : float = 0.0
-var dodge      : float = 0.0
-var block      : float = 0.0
-var resist     : float = 0.0
-var mspd       : float = 0.0
+var level      : int
+var hp_max     : int
+var energy_max : int
+var rage_max   : int
+var mp_max     : int
+var patk       : float
+var matk       : float
+var pdef       : float
+var mdef       : float
+var crit       : float
+var mcrit      : float
+var dodge      : float
+var block      : float
+var resist     : float
+var mspd       : float
 
 
 # ── Internal ──────────────────────────────────────────────────────────────────
 
-var bms             : float = BASE_SPEED
 var exp_multiplier  : float = 1.0
 var upgrade_history : Array = []
-
+var effects   		: StatusEffect.EffectManager	# init creature.configure(), player.init_combat().
+var stunned			: bool = false
+var silenced		: bool = false
+var frozen			: bool = false
+var modified_stats 	: Dictionary = { "str_" : false, "agi" : false, "sta" : false,
+	"int_" : false, "spr" : false, "res" : false, "def_" : false, "bms" : false,
+	"hp_max" : false, "energy_max" : false, "rage_max" : false, "mp_max" : false,
+	"patk" : false, "matk" : false, "pdef" : false, "mdef" : false, "crit" : false,
+	"mcrit" : false, "dodge" : false, "block" : false, "resist" : false, "mspd" : false}
+var gcd_timer       : float  = 0.0
 
 # =============================================================================
 # INIT
 # =============================================================================
 
 # Called: game._load_json() (player), creature.configure() (creatures).
-func _init(p_str: int, p_agi: int, p_sta: int, p_int: int,
-		   p_spr: int, p_res: int, p_def: int,
-		   is_player: bool = false) -> void:
+func _init(_str: int, _agi: int, _sta: int, _int: int,
+		   _spr: int, _res: int, _def: int, _bms: int, _exp: int) -> void:
 
-	str_ = p_str
-	agi  = p_agi
-	sta  = p_sta
-	int_ = p_int
-	spr  = p_spr
-	res  = p_res
-	def_ = p_def
-
-	bms = PLAYER_BASE_SPEED if is_player else BASE_SPEED
+	str_ = _str
+	agi  = _agi
+	sta  = _sta
+	int_ = _int
+	spr  = _spr
+	res  = _res
+	def_ = _def
+	bms  = _bms
+	exp  = _exp
+	
+	lifetime_exp = exp
 
 	_recalculate_all()
 
-	# Fill resources to max on spawn.
 	hp     = hp_max
 	energy = energy_max
-	rage   = 0.0
+	rage   = 0
 	mp     = mp_max
 
 
@@ -144,14 +138,14 @@ func _init(p_str: int, p_agi: int, p_sta: int, p_int: int,
 # Called: _init(), upgrade_stat().
 func _recalculate_all() -> void:
 
-	# Mirrors _recalculate_all() in stats.py.
 	level      = _calc_level()
-	energy_max = 10.0 + level
-	hp_max     = 20.0 + (sta * 2) + (level * 2)
-	rage_max   = 10.0 + level
-	mp_max     = (spr * 2.0) + (level * 2)
-	patk       = (str_ * 3.0) + (level * 2)
-	matk       = (int_ * 3.0) + (level * 2)
+	energy_max = 10 + level
+	hp_max     = 20 + (sta * 2) + (level * 2)
+	rage_max   = 10 + level
+	mp_max     = (spr * 2) + (level * 2)
+	
+	patk       = (str_ * 3) + (level * 2)
+	matk       = (int_ * 3) + (level * 2)
 	pdef       = def_ + (agi * 0.5)
 	mdef       = res  + (spr * 0.5)
 	crit       = agi  * 0.1
@@ -181,27 +175,158 @@ func _calc_level() -> int:
 # RESOURCES
 # =============================================================================
 
-# Called: player._physics_process(), creature._physics_process().
+# Called creature._physics_process(), player._physics_process().
+func update_effects(dt: float) -> float:
+	
+	gcd_timer -= dt
+	effects.update(dt)
+	for effect_name in effects.expired_names:
+		cleanse_effect(effect_name)
+	return effects.total_damage
+
+
+# Called: creature._physics_process(), player._physics_process().
 func regen(dt: float) -> void:
 
-	# Regenerates HP and energy, decays rage. Only called when out of combat.
+	# Regenerates HP, energy and mana, decays rage. Only called when out of combat.
 	energy = minf(energy_max, energy + ENERGY_REGEN * dt)
 	hp     = minf(hp_max,     hp     + HP_REGEN     * dt)
 	rage   = maxf(0.0,        rage   - RAGE_DECAY   * dt)
+	mp     = minf(mp_max,     mp     + MP_REGEN     * dt)
 
 
-# Called: creature.take_damage(); ability.use(), combat system (future).
-func take_damage(raw_damage: float, is_magic: bool = false, is_crit: bool = false) -> float:
+# Called: creature.take_damage(), player.take_damage().
+func take_damage(raw_damage: float, dot: bool = false, is_magic: bool = false, is_crit: bool = false) -> float:
 
-	# Returns the actual damage dealt after defense is applied.
-	var defense : float = mdef if is_magic else pdef
-	var minimum : float = 2.0  if is_crit  else 1.0
-	var actual  : float = floor(maxf(minimum, raw_damage - defense) + 0.4999)
+	var actual : float = 0.0
+	
+	if dot:
+		actual = raw_damage
+	else:
+		var defense : float = mdef if is_magic else pdef
+		var minimum : float = 2.0  if is_crit  else 1.0
+		actual = floor(maxf(minimum, raw_damage - defense) + 0.4999)
+		
 	hp = maxf(0.0, hp - actual)
 	return actual
+	
+	
+# Called ability.use().
+func apply_effect(effect_name: String) -> void:
+	
+	if effects.apply(effect_name):
+		var effect : StatusEffect.Effect = effects._active[effect_name]
+		if effect.type == "modifier":
+			# An effect already modifies that stat.
+			var target_stat = effect.stat
+			if modified_stats[target_stat]:
+				var already_applied_effect : StatusEffect.Effect = null
+				for eff_name in effects._active:
+					var e : StatusEffect.Effect = effects._active[eff_name]
+					if e.stat == target_stat and e.original_value != 0.0:
+						already_applied_effect = e
+						break
+				# If new modifier is stronger do apply.
+				if effect.modifier < already_applied_effect.modifier:
+					var target_stat_original_value = already_applied_effect.original_value
+					already_applied_effect.original_value = 0.0
+					effect.original_value = target_stat_original_value
+					set(target_stat, target_stat_original_value * effect.modifier)
+			# Apply the only effect that modifies target stat.
+			else:
+				var target_stat_value = get(target_stat)
+				effect.original_value = target_stat_value
+				set(target_stat, target_stat_value * effect.modifier)
+				modified_stats[target_stat] = true
+		elif effect.type == "flag":
+			# An effect already controls the flag.
+			var target_flag = effect.flag
+			if get(target_flag):
+				var already_applied_effect : StatusEffect.Effect = null
+				for eff_name in effects._active:
+					var e : StatusEffect.Effect = effects._active[eff_name]
+					if e.flag == target_flag and e.weak_flag == false:
+						already_applied_effect = e
+						break
+				# If new flag duration is longer.
+				if already_applied_effect.time_remaining < effect.duration:
+					already_applied_effect.weak_flag = true
+				else:
+					effect.weak_flag = true
+			# Apply the only effect that controls the flag.
+			else:
+				set(target_flag, true)
+			
 
 
-# Called: upgrade_stat(), combat system (future).
+# Called: update_effects(), cleanse_all_effects().
+func cleanse_effect(effect_name: String) -> void:
+	
+	var effect : StatusEffect.Effect = effects._active[effect_name]
+	# Modifier effect with the strongest modifier gets removed.
+	if effect.type == "modifier" and effect.original_value != 0.0:
+		var target_stat = effect.stat
+		var next_modifier_effect : StatusEffect.Effect = null
+		var min_modifier = 1.0
+		for eff_name in effects._active:
+			var e : StatusEffect.Effect = effects._active[eff_name]
+			if (e.stat == target_stat) and (e.modifier < min_modifier) and (e.original_value == 0.0): 
+				next_modifier_effect = e
+				min_modifier = e.modifier
+				break
+		# If no other effect with same modifier then remove.
+		if next_modifier_effect == null:
+			set(target_stat, effect.original_value)
+			effect.original_value = 0.0
+			modified_stats[target_stat] = false
+		# An effect with the next lowest modifier found.
+		else:
+			next_modifier_effect.original_value = effect.original_value
+			effect.original_value = 0.0
+			set(target_stat, next_modifier_effect.original_value * next_modifier_effect.modifier)
+	# The only flag type effect to be removed (longest duration).
+	elif effect.type == "flag" and effect.weak_flag == false:
+		set(effect.flag, false)
+	
+	effects.cleanse(effect_name)
+	
+
+# Called: creature._begin_death(), player._begin_death().
+func cleanse_all_effects() -> void:
+	
+	for effect in effects._active.keys():
+		cleanse_effect(effect)
+	
+	effects.cleanse_all()
+
+
+# Called: ability.check_resources().
+func check_resources(costs: Array [int]) -> bool:
+	
+	if gcd_timer > 0.0:
+		return false
+	
+	var i : int = 0
+	var count : int = 0
+	var resources : Array[int] = [int(hp), int(energy), int(rage), int(mp)]
+	for cost in costs:
+		if cost <= resources[i]:
+			count += 1
+		i += 1
+	# Check if all resources are found.
+	return count == costs.size()
+	
+	
+# Called: ability.use().
+func spend_resources(costs: Array[int]) -> void:
+	
+	hp -= costs[0]
+	energy -= costs[1]
+	rage -= costs[2]
+	mp -= costs[3]
+
+
+# Called: upgrade_stat().
 func spend_resource(resource: String, amount: float) -> bool:
 
 	# Deducts amount from the named resource. Returns false if insufficient.
@@ -213,9 +338,9 @@ func spend_resource(resource: String, amount: float) -> bool:
 		"exp":    if exp    < amount: return false; exp    -= amount
 		_: return false
 	return true
+	
 
-
-# Called: combat system.
+# Called: None.
 func restore_resource(resource: String, amount: float) -> void:
 
 	# Adds amount to the named resource, capped at its maximum.
@@ -228,7 +353,7 @@ func restore_resource(resource: String, amount: float) -> void:
 		"mp":     mp     = minf(mp_max,     mp     + amount)
 
 
-# Called: combat system (future).
+# Called: ability.use().
 func gain_exp(amount: float) -> void:
 
 	exp          += amount
@@ -239,7 +364,7 @@ func gain_exp(amount: float) -> void:
 # UPGRADES
 # =============================================================================
 
-# Called: upgrade UI (future).
+# Called: None.
 func upgrade_stat(stat_name: String, exp_cost: float = 0.0) -> bool:
 
 	# Spends exp to raise one base stat by 1. The same stat cannot be upgraded
@@ -286,42 +411,55 @@ func upgrade_stat(stat_name: String, exp_cost: float = 0.0) -> bool:
 # READ-ONLY HELPERS
 # =============================================================================
 
-# Called: entity death check.
+# Called: creature.take_damage(), player.take_damage().
 func is_alive() -> bool:
+	
 	return hp > 0.0
 
-# Called: HUD.
+
+# Called: stat_panel._build_lines(), hud._draw_creatire_bars(), hud._draw_player_bars().
 func hp_pct() -> float:
+	
 	return hp / hp_max if hp_max > 0.0 else 0.0
 
-# Called: HUD.
+
+# Called: stat_panel._build_lines(), hud._draw_creatire_bars(), hud._draw_player_bars().
 func energy_pct() -> float:
+	
 	return energy / energy_max if energy_max > 0.0 else 0.0
 
-# Called: HUD.
+
+# Called: stat_panel._build_lines(), hud._draw_creatire_bars(), hud._draw_player_bars().
 func rage_pct() -> float:
+	
 	return rage / rage_max if rage_max > 0.0 else 0.0
 
-# Called: HUD.
+
+# Called: stat_panel._build_lines(), hud._draw_creatire_bars(), hud._draw_player_bars().
 func mp_pct() -> float:
+	
 	return mp / mp_max if mp_max > 0.0 else 0.0
 
-# Called: combat system (future).
+
+# Called: combat_feedback._read_creatures().
 func exp_reward() -> float:
-	return maxf(1.0, level * exp_multiplier)
+	
+	return level * exp_multiplier
 
-# Called: HUD, stat panel.
+
+# Called: stat panel._build_lines().
 func rank_grade() -> String:
-	var result := RANKS[0][1] as String
+	
 	for entry in RANKS:
-		if lifetime_exp >= entry[0]:
-			result = entry[1]
-	return result
+		if lifetime_exp >= entry[0]:                                                                        
+			return entry[1]
+	return "None"	# Never happens.
 
-# Called: HUD, stat panel.
+
+# Called: stat panel._build_lines().
 func rank_title() -> String:
-	var result := RANKS[0][2] as String
+	
 	for entry in RANKS:
 		if lifetime_exp >= entry[0]:
-			result = entry[2]
-	return result
+			return entry[2]
+	return "Unranked"	# Never happens.

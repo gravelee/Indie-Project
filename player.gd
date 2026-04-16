@@ -6,70 +6,42 @@ extends CharacterBody2D
 # Responsibilities:
 #   - Full state machine: spawn → idle_neutral ↔ idle_attack ↔ walking
 #                         forward_slash (attack), death → dead
-#   - Read WASD input and move the physics body
-#   - Keep movement direction relative to the camera angle
-#   - Play the correct animation based on state and facing direction
+#   - Read WASD input and move the physics body.
+#   - Keep movement direction relative to the camera angle.
+#   - Play the correct animation based on state and facing direction.
 #
 # What this script does NOT do:
-#   - Position the visual sprite  (game.gd does that)
-#   - Rotate the visual sprite    (game.gd does that)
-#   - Set z_index                 (game.gd does that)
+#   - Position the visual sprite  (game.gd does that).
+#   - Rotate the visual sprite    (game.gd does that).
+#   - Set z_index                 (game.gd does that).
 # =============================================================================
 
 const SPRITE_SIZE := 96
 const TILE_SIZE   := 32
 const SPRITE_PATH := "res://assets/spritesheets/player/"
 
-
-# ── Enums ──────────────────────────────────────────────────────────────────────
-
 enum State  { SPAWN, IDLE_NEUTRAL, IDLE_ATTACK, WALKING, FORWARD_SLASH, DEATH, DEAD }
 enum Facing { SOUTH, NORTH, EAST, WEST }
 
+const DIRECTIONAL_STATES := {State.IDLE_NEUTRAL: true, 
+	State.IDLE_ATTACK: true, State.WALKING: true, State.FORWARD_SLASH: true}
+const NON_DIRECTIONAL_STATES := {State.SPAWN: true, State.DEATH: true, State.DEAD: true}
+const ONE_SHOT_STATES := {State.SPAWN: true, State.FORWARD_SLASH: true, State.DEATH: true}
 
-# ── Signals ────────────────────────────────────────────────────────────────────
+# Maps enum State → base animation name (directional states need FACING_STR appended).
+const STATE_ANIM_BASE := {
+	State.SPAWN         : "spawn",
+	State.IDLE_NEUTRAL  : "idle_neutral",
+	State.WALKING       : "walking",
+	State.IDLE_ATTACK   : "idle_attack",
+	State.FORWARD_SLASH : "forward_slash",
+	State.DEATH         : "death"
+}
 
-signal attacked(world_pos: Vector2, facing_dir: Vector2)
-
-
-
-# ── Animation data ─────────────────────────────────────────────────────────────
-
-# Directional animations — loaded as state_facing (e.g. "idle_neutral_south").
-const DIRECTIONAL_ANIMS := ["idle_neutral", "idle_attack", "walking", "forward_slash"]
-const DIRECTIONS        := ["south", "north", "east", "west"]
-
-# Non-directional animations — loaded as-is.
-const NON_DIRECTIONAL_ANIMS := ["spawn", "death"]
-
-# String names for non-directional states used in load_animations() loop check.
-const ONE_SHOT_ANIM_NAMES := {"spawn": true, "forward_slash": true, "death": true}
-
-# Maps Facing enum → direction string suffix for animation key lookup.
+# Maps enum Facing → direction string suffix for animation key lookup.
 const FACING_STR := {
 	Facing.SOUTH: "south", Facing.NORTH: "north",
 	Facing.EAST:  "east",  Facing.WEST:  "west"
-}
-
-# Maps State enum → base animation name (directional states need FACING_STR appended).
-const STATE_ANIM_BASE := {
-	State.IDLE_NEUTRAL  : "idle_neutral",
-	State.IDLE_ATTACK   : "idle_attack",
-	State.WALKING       : "walking",
-	State.FORWARD_SLASH : "forward_slash",
-	State.SPAWN         : "spawn",
-	State.DEATH         : "death",
-}
-
-
-# ── State sets (O(1) integer lookup) ───────────────────────────────────────────
-
-const ONE_SHOT_STATES := {
-	State.SPAWN: true, State.FORWARD_SLASH: true, State.DEATH: true
-}
-
-const NON_DIRECTIONAL_STATES := {
-	State.SPAWN: true, State.DEATH: true
 }
 
 
@@ -79,28 +51,47 @@ var state     : State  = State.SPAWN
 var facing    : Facing = Facing.SOUTH
 var in_combat : bool   = false
 var anim_done : bool   = false
+var alive     : bool   = true
 
-# Cached animation key — rebuilt only when state or facing changes.
-var _anim_key : String = "spawn"
+# Cached animation key to rebuilt only when state or facing changes.
+var _anim_key 		: String = "spawn"
 
-
-# ── References ─────────────────────────────────────────────────────────────────
-
-var sprite       : AnimatedSprite2D   # init game._build_scene().
-var stats        : Stats              # set game._load_json().
-
-# Setter caches the rotated radian so _handle_movement avoids deg_to_rad every frame.
-var camera_angle : float = 0.0:
+# Cached rotated radian so _handle_movement avoids deg_to_rad every frame.
+var _cam_rad 		: float = 0.0
+var camera_angle 	: float = 0.0:
 	set(value):
 		camera_angle = value
 		_cam_rad     = deg_to_rad(-value)
 
-var _cam_rad : float = 0.0
+
+# ── References ─────────────────────────────────────────────────────────────────
+
+var sprite      : AnimatedSprite2D		# init game._build_scene().
+var stats       : Stats           		# set game._load_json().
+var abilities 	: Array[Ability] = []	# init load_animations().
+
+# ── Combat feedback buffers ────────────────────────────────────────────────────
+
+# Set in _physics_process(), read and cleared by combat_feedback._read_player().
+var _cf_dot     : float         = 0.0
+var _cf_expired : Array[String] = []
+
+
+# ── Signals ────────────────────────────────────────────────────────────────────
+
+# This signal is connected in game._build_scene() with _on_player_attack().
+signal attack(world_pos: Vector2, facing_direction: Vector2)
 
 
 # =============================================================================
 # SETUP
 # =============================================================================
+
+# Called: game._ready().
+func init() -> void:
+
+	stats.effects       = StatusEffect.EffectManager.new()
+	abilities.append(Ability.get_ability("player_slash", stats.level))
 
 
 # Called: game._build_scene().
@@ -109,16 +100,18 @@ func load_animations() -> void:
 	var frames := SpriteFrames.new()
 	sprite.sprite_frames = frames
 
-	for anim in DIRECTIONAL_ANIMS:
-		var loop : bool = anim not in ONE_SHOT_ANIM_NAMES
-		for dir in DIRECTIONS:
-			var key     : String    = anim + "_" + dir
+	for state in DIRECTIONAL_STATES:
+		var loop : bool = state not in ONE_SHOT_STATES
+		for direction in Facing.values():
+			var key     : String    = STATE_ANIM_BASE[state] + "_" + FACING_STR[direction]
 			var texture : Texture2D = load(SPRITE_PATH + key + ".png")
 			_add_strip(frames, key, texture, loop)
 
-	for anim in NON_DIRECTIONAL_ANIMS:
-		var texture : Texture2D = load(SPRITE_PATH + anim + ".png")
-		_add_strip(frames, anim, texture, false)
+	for state in NON_DIRECTIONAL_STATES:
+		if not STATE_ANIM_BASE.has(state):	# Guard for State.DEAD does not have animation.
+			continue
+		var texture : Texture2D = load(SPRITE_PATH + STATE_ANIM_BASE[state] + ".png")
+		_add_strip(frames, STATE_ANIM_BASE[state], texture, false)
 
 	sprite.animation_finished.connect(_on_anim_finished)
 	sprite.play("spawn")
@@ -144,23 +137,9 @@ func _add_strip(frames: SpriteFrames, key: String, texture: Texture2D, loop: boo
 # ANIMATION
 # =============================================================================
 
-# Called: _set_state(), _set_facing().
-func _rebuild_anim_key() -> void:
-
-	# Rebuilds the cached animation key when state or facing changes.
-	if state in NON_DIRECTIONAL_STATES:
-		_anim_key = STATE_ANIM_BASE[state]
-	else:
-		_anim_key = STATE_ANIM_BASE[state] + "_" + FACING_STR[facing]
-
-
 # Called: _physics_process().
 func _sync_anim() -> void:
 
-	# Skipped for dead so the death sheet stays frozen on its last frame.
-	# Uses cached _anim_key — no string built here.
-	if state == State.DEAD:
-		return
 	if sprite.animation != _anim_key:
 		sprite.play(_anim_key)
 
@@ -172,7 +151,7 @@ func _on_anim_finished() -> void:
 		anim_done = true
 
 
-# Called: _update_state(), _handle_movement(), _try_attack().
+# Called: _update_state(), _handle_movement(), resolve_attack(), _begin_death().
 func _set_state(new_state: State) -> void:
 
 	if state == new_state:
@@ -192,6 +171,16 @@ func _set_facing(new_facing: Facing) -> void:
 	_rebuild_anim_key()
 
 
+# Called: _set_state(), _set_facing().
+func _rebuild_anim_key() -> void:
+
+	# Rebuilds the cached animation key when state or facing changes.
+	if state in NON_DIRECTIONAL_STATES:
+		_anim_key = STATE_ANIM_BASE[state]
+	else:
+		_anim_key = STATE_ANIM_BASE[state] + "_" + FACING_STR[facing]
+
+
 # =============================================================================
 # STATE MACHINE
 # =============================================================================
@@ -201,6 +190,7 @@ func _update_state() -> void:
 
 	match state:
 
+		# State.WALKING transitions handled in _handle_movement().
 		State.SPAWN:
 			if anim_done:
 				_set_state(State.IDLE_NEUTRAL)
@@ -221,34 +211,51 @@ func _update_state() -> void:
 			if anim_done:
 				_set_state(State.DEAD)
 
-		# State.WALKING and State.DEAD transitions handled in _handle_movement().
-
 
 # =============================================================================
 # MOVEMENT
 # =============================================================================
 
 # LOOP
-func _physics_process(delta: float) -> void:
+func _physics_process(dt: float) -> void:
 
+	# This is before DEAD check because player can be resurected.
 	_update_state()
-	_handle_movement(delta)
+
+	if state == State.DEAD:
+		return
+
+	# DEATH state is handled by guarding against ONE_SHOT_STATES.
+	_handle_movement()
+	# _anim_key is updated by _set_state() and _set_facing()..
+	# ..and those are called by _update_state() and _handle_movement().
 	_sync_anim()
-	if not in_combat and state != State.DEATH and state != State.DEAD:
-		stats.regen(delta)
+	
+	if state != State.DEATH:
+		
+		# Update abilities tick timer.
+		for ability in abilities:
+			ability.tick(dt)
+		
+		# Update stats ( hp, energy, rage, mp).
+		if not in_combat:
+			stats.regen(dt)
+	
+		# Update effects, buffer dot/expired for combat_feedback, then apply.
+		var _dot := stats.update_effects(dt)
+		_cf_dot     = _dot
+		_cf_expired = stats.effects.expired_names.duplicate()
+		take_damage(_dot, true)
 
 
 # Called: _physics_process().
-func _handle_movement(_delta: float) -> void:
+func _handle_movement() -> void:
 		
 	if state in ONE_SHOT_STATES:
 		velocity = Vector2.ZERO
 		move_and_slide()
 		return
 		
-	if state == State.DEAD:
-		return
-
 	var input := Vector2.ZERO
 	if Input.is_key_pressed(KEY_W): input.y -= 1
 	if Input.is_key_pressed(KEY_S): input.y += 1
@@ -258,8 +265,6 @@ func _handle_movement(_delta: float) -> void:
 	if input != Vector2.ZERO:
 		input = input.normalized()
 
-		# Facing is based on screen-space intent (before camera rotation)
-		# so the animation always matches what the player sees on screen.
 		if abs(input.x) >= abs(input.y):
 			_set_facing(Facing.EAST if input.x > 0 else Facing.WEST)
 		else:
@@ -296,12 +301,14 @@ func _try_attack() -> void:
 
 	if state in ONE_SHOT_STATES or state == State.DEAD:
 		return
-	_set_state(State.FORWARD_SLASH)
-	attacked.emit(position, _facing_world_dir())
-
-
+	if not abilities[0].check_resources(stats, 0):
+		return
+	# Signal attack is emmited. So it calls game._on_player_attack().
+	attack.emit(position, _facing_world_direction())
+	
+	
 # Called: _try_attack().
-func _facing_world_dir() -> Vector2:
+func _facing_world_direction() -> Vector2:
 
 	# Converts the screen-space facing cardinal into a world-space unit vector,
 	# accounting for the current camera rotation.
@@ -312,3 +319,29 @@ func _facing_world_dir() -> Vector2:
 		Facing.EAST:  screen_dir = Vector2( 1,  0)
 		Facing.WEST:  screen_dir = Vector2(-1,  0)
 	return screen_dir.rotated(_cam_rad)
+	
+	
+# Called: game._on_player_attacked().
+func resolve_attack(targets: Array) -> void:
+
+	abilities[0].use(stats, targets, 0.0)
+	_set_state(State.FORWARD_SLASH)
+
+	
+# Called: ability.use().
+func take_damage(raw_damage: float, dot: bool = false, is_magic: bool = false, is_crit: bool = false) -> float:
+
+	var damage : float = stats.take_damage(raw_damage, dot, is_magic, is_crit)
+	
+	if not stats.is_alive():
+		alive = false
+		_begin_death()
+	
+	return damage
+
+
+# Called: take_damage().
+func _begin_death() -> void:
+
+	stats.cleanse_all_effects()
+	_set_state(State.DEATH)

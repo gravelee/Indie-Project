@@ -1,16 +1,5 @@
 extends StaticBody2D
 
-# =============================================================================
-# BUSH.GD
-#
-# Responsibilities:
-#   - Create its own collision shape and visual sprite in code
-#   - Play idle animation normally, death animation when hit
-#
-# What this script does NOT do:
-#   - Set z_index or rotation  (game.gd handles all camera-dependent rendering)
-# =============================================================================
-
 
 # ── File paths ─────────────────────────────────────────────────────────────────
 
@@ -30,7 +19,7 @@ var collision : CollisionShape2D   # init _ready().
 
 
 # =============================================================================
-# SETUP  -  runs once when this node enters the scene tree
+# SETUP
 # =============================================================================
 
 # INIT
@@ -43,9 +32,6 @@ func _ready() -> void:
 	collision.shape = shape
 	add_child(collision)
 
-	# Visual sprite
-	# z_as_relative = false so z_index is absolute, compared directly against
-	# the player sprite on the same scale (required for z-sort to work).
 	sprite               = AnimatedSprite2D.new()
 	sprite.z_as_relative = false
 	add_child(sprite)
@@ -64,7 +50,7 @@ func _load_animations() -> void:
 	var frames := SpriteFrames.new()
 	sprite.sprite_frames = frames
 
-	# ── Idle: one static frame ─────────────────────────────────────────────────
+	# Idle srite setup.
 	frames.add_animation("idle")
 	frames.set_animation_loop("idle", true)
 	frames.set_animation_speed("idle", 1.0)
@@ -75,11 +61,11 @@ func _load_animations() -> void:
 	idle_atlas.region = Rect2(0, 0, idle_tex.get_width(), idle_tex.get_height())
 	frames.add_frame("idle", idle_atlas)
 
-	# ── Death: 12-frame animation ──────────────────────────────────────────────
 	frames.add_animation("death")
 	frames.set_animation_loop("death", false)
 	frames.set_animation_speed("death", 8.0)
 
+	# Death animation setup.
 	var death_tex   : Texture2D = load(PATH_DEATH)
 	var frame_w     := death_tex.get_height()   # frames are square
 	var frame_count := death_tex.get_width() / frame_w
