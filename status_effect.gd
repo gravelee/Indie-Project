@@ -107,7 +107,7 @@ class Effect:
 class EffectManager:
 
 	var _active : Dictionary = {}
-	var total_damage  : float         = 0.0
+	var total_damage  : Array[float]  = [0.0]
 	var expired_names : Array[String] = []
 
 	# Called: Ability.use().
@@ -143,13 +143,13 @@ class EffectManager:
 	# Called: stats._physics_process().
 	func update(dt: float) -> void:
 
-		total_damage = 0.0
+		total_damage[0] = 0.0
 		expired_names = []
 
 		for effect_name in _active:
 			var effect : Effect = _active[effect_name] 
 			if effect.type == "dot" and effect.tick(dt):
-				total_damage += effect.tick_dmg * effect.stacks
+				total_damage[0] += effect.tick_dmg * effect.stacks
 			effect.update(dt)
 			if effect.expired:
 				expired_names.append(effect_name)

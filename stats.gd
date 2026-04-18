@@ -182,7 +182,7 @@ func update_effects(dt: float) -> float:
 	effects.update(dt)
 	for effect_name in effects.expired_names:
 		cleanse_effect(effect_name)
-	return effects.total_damage
+	return effects.total_damage[0]
 
 
 # Called: creature._physics_process(), player._physics_process().

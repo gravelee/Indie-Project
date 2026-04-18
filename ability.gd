@@ -58,7 +58,7 @@ func _init(
 # API
 # =============================================================================
 
-# Called: creature._update_cooldowns(), player._update_cooldowns().
+# Called: creature._physics_process(), player._physics_process().
 func tick(dt: float) -> void:
 
 	if _timer > 0.0:
@@ -175,7 +175,7 @@ var cooldown_pct : float:
 # FACTORY
 # =============================================================================
 
-# Called: creature.configure(), player.load_animations().
+# Called: creature.init(), player.load_animations().
 static func get_ability(ability_name: String, p_level: int = 1) -> Ability:
 
 	var data : Dictionary = _AbilityData.ABILITY_DATA.get(ability_name, {})
@@ -217,5 +217,4 @@ static func get_ability(ability_name: String, p_level: int = 1) -> Ability:
 		data["name"], p_level, damage_mult, p_cooldown, range_,
 		hp_cost, energy_cost, rage_cost, mp_cost,
 		effect_name, effect_chance, anim,
-		data["is_magic"], data["description"]
-	)
+		data["is_magic"], data["description"])

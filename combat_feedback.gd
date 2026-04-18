@@ -54,6 +54,14 @@ var _vp_center   : Vector2 = Vector2.ZERO   # set _ready(), _on_viewport_resized
 # SETUP
 # =============================================================================
 
+# INIT
+func _ready() -> void:
+
+	_font = ThemeDB.fallback_font
+	get_viewport().size_changed.connect(_on_viewport_resized)
+	_on_viewport_resized()
+
+
 # Called: game._ready().
 func init(p_player: CharacterBody2D, p_creatures: Array) -> void:
 
@@ -66,15 +74,7 @@ func set_world_angle(angle: float) -> void:
 
 	_world_angle = angle
 
-
-# INIT
-func _ready() -> void:
-
-	_font = ThemeDB.fallback_font
-	get_viewport().size_changed.connect(_on_viewport_resized)
-	_on_viewport_resized()
-
-
+# Called: Node.get_viewport().size_changed signal emitted.
 func _on_viewport_resized() -> void:
 
 	_vp_center = get_viewport().get_visible_rect().size * 0.5
@@ -99,6 +99,9 @@ func _process(delta: float) -> void:
 # Called: _process().
 func _read_player() -> void:
 
+	var total_damage  = _player.stats.effects.total_damage
+	var expired_names = _player.stats.effects.expired_names
+
 	# ── Damage results from player's last attack ─────────────────────────────
 	for ability in _player.abilities:
 		if ability.last_hit_verdict.is_empty():
@@ -114,21 +117,24 @@ func _read_player() -> void:
 		ability.last_hit_targets.clear()
 
 	# ── DoT ticks on player ──────────────────────────────────────────────────
-	if _player._cf_dot > 0.0:
-		_spawn_dot(_player._cf_dot, _world_to_screen(_player.position))
-		_player._cf_dot = 0.0
+	if total_damage[0] > 0.0:
+		_spawn_dot(total_damage[0], _world_to_screen(_player.position))
+		total_damage[0] = 0.0
 
 	# ── Effect expiry text on player ─────────────────────────────────────────
-	for eff_name in _player._cf_expired:
+	for eff_name in expired_names:
 		_spawn_text(_effect_label(eff_name), _world_to_screen(_player.position), COLOR_FADE)
-	_player._cf_expired.clear()
+	expired_names.clear()
 
 
 # Called: _process().
 func _read_creatures() -> void:
 
 	for creature in _creatures:
-
+		
+		var total_damage  = creature.stats.effects.total_damage
+		var expired_names = creature.stats.effects.expired_names
+		
 		# ── Creature attack results — damage shown on the player ──────────────
 		for ability in creature.abilities:
 			if ability.last_hit_verdict.is_empty():
@@ -150,14 +156,14 @@ func _read_creatures() -> void:
 				_spawn_exp(reward, _world_to_screen(creature.position))
 
 		# ── DoT ticks on creature ─────────────────────────────────────────────
-		if creature._cf_dot > 0.0:
-			_spawn_dot(creature._cf_dot, _world_to_screen(creature.position))
-			creature._cf_dot = 0.0
+		if total_damage[0] > 0.0:
+			_spawn_dot(total_damage[0], _world_to_screen(creature.position))
+			total_damage[0] = 0.0
 
 		# ── Effect expiry text on creature ────────────────────────────────────
-		for eff_name in creature._cf_expired:
+		for eff_name in expired_names:
 			_spawn_text(_effect_label(eff_name), _world_to_screen(creature.position), COLOR_FADE)
-		creature._cf_expired.clear()
+		expired_names.clear()
 
 
 # Called: _process().
@@ -252,7 +258,7 @@ func _world_to_screen(world_pos: Vector2) -> Vector2:
 # Called: _read_player(), _read_creatures().
 func _effect_label(effect_name: String) -> String:
 
-	# "rat_bite_bleed" → "Bleed"
+	# "ex rat_bite_bleed" → "Bleed"
 	var parts := effect_name.split("_")
 	if parts.size() > 0:
 		return parts[-1].capitalize()

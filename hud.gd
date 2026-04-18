@@ -138,35 +138,40 @@ func _draw_player_bars() -> void:
 	if not player_stats:
 		return
 
-	var s     := player_stats
-	var x     := _vp_center.x - P_BAR_W * 0.5
-	var cursor := _vp_size.y - P_PAD_BOT
+	var s := player_stats
 
-	# Stack from bottom: mana/rage → HP → energy (energy on top)
-	# First measure total height.
-	var has_rage := s.rage > 0.0
-	var has_mana := s.spr > 0 and s.mp_max > 0.0 and s.mp < s.mp_max
-	var has_sub  := has_rage or has_mana
+	# Each bar only visible when below its maximum.
+	var has_hp     := int(s.hp)     < int(s.hp_max)
+	var has_energy := int(s.energy) < int(s.energy_max)
+	var has_rage   := s.rage > 0.0 and s.rage < s.rage_max
+	var has_mana   := s.spr > 0 and s.mp_max > 0.0 and s.mp > 0.0 and s.mp < s.mp_max
 
-	var total_h := P_SUB_H + P_GAP + P_HP_H
-	if has_sub:
-		total_h += P_GAP + P_SUB_H
+	if not has_hp and not has_energy and not has_rage and not has_mana:
+		return
 
-	var stack_top := cursor - total_h
+	var x := _vp_center.x - P_BAR_W * 0.5
 
-	# Energy (top).
-	_draw_bar(x, stack_top, P_BAR_W, P_SUB_H, s.energy_pct(), COLOR_ENERGY)
-	stack_top += P_SUB_H + P_GAP
+	# Measure total stack height (top → bottom: energy, HP, rage/mana).
+	var total_h := 0.0
+	if has_energy:           total_h += P_SUB_H + P_GAP
+	if has_hp:               total_h += P_HP_H  + P_GAP
+	if has_rage or has_mana: total_h += P_SUB_H + P_GAP
+	total_h = maxf(0.0, total_h - P_GAP)
 
-	# HP (middle).
-	_draw_bar(x, stack_top, P_BAR_W, P_HP_H, s.hp_pct(), _hp_color(s.hp_pct()))
-	stack_top += P_HP_H + P_GAP
+	var stack_top := _vp_size.y - P_PAD_BOT - total_h
 
-	# Rage or mana (bottom — only when non-zero).
+	if has_energy:
+		_draw_bar(x, stack_top, P_BAR_W, P_SUB_H, _int_pct(s.energy, s.energy_max), COLOR_ENERGY)
+		stack_top += P_SUB_H + P_GAP
+
+	if has_hp:
+		_draw_bar(x, stack_top, P_BAR_W, P_HP_H, _int_pct(s.hp, s.hp_max), _hp_color(s.hp_pct()))
+		stack_top += P_HP_H + P_GAP
+
 	if has_rage:
-		_draw_bar(x, stack_top, P_BAR_W, P_SUB_H, s.rage_pct(), COLOR_RAGE)
+		_draw_bar(x, stack_top, P_BAR_W, P_SUB_H, _int_pct(s.rage, s.rage_max), COLOR_RAGE)
 	elif has_mana:
-		_draw_bar(x, stack_top, P_BAR_W, P_SUB_H, s.mp_pct(), COLOR_MANA)
+		_draw_bar(x, stack_top, P_BAR_W, P_SUB_H, _int_pct(s.mp, s.mp_max), COLOR_MANA)
 
 
 # =============================================================================
@@ -186,16 +191,13 @@ func _draw_creature_bars() -> void:
 
 		var s : Stats = creature.stats
 
-		# Don't show bars when HP is full and creature is idle/non-combat.
-		var state = creature.state
-		var idle : bool = (
-			state == creature.State.IDLE_NEUTRAL or
-			state == creature.State.WANDER       or
-			state == creature.State.NOTICE       or
-			state == creature.State.EXIT_STANCE  or
-			state == creature.State.RETURNING
-		)
-		if idle and s.hp >= s.hp_max:
+		# Each bar only visible when below its maximum.
+		var has_hp     := int(s.hp)     < int(s.hp_max)
+		var has_energy := int(s.energy) < int(s.energy_max)
+		var has_rage   := s.rage > 0.0 and s.rage < s.rage_max
+		var has_mana   := s.spr > 0 and s.mp_max > 0.0 and s.mp > 0.0 and s.mp < s.mp_max
+
+		if not has_hp and not has_energy and not has_rage and not has_mana:
 			continue
 
 		# Convert world position to screen space.
@@ -203,30 +205,27 @@ func _draw_creature_bars() -> void:
 		var bx : float   = sp.x - C_BAR_W * 0.5
 		var by : float   = sp.y - C_OFFSET
 
-		# Stack: energy (if not full) → HP → rage/mana (if > 0)
-		var energy_pct := s.energy_pct()
-		var has_energy := energy_pct < 1.0
-		var has_rage   := s.rage > 0.0
-		var has_mana   := s.spr > 0 and s.mp_max > 0.0 and s.mp < s.mp_max
-		var has_sub    := has_rage or has_mana
+		# Measure total stack height.
+		var total_h := 0.0
+		if has_energy:           total_h += C_SUB_H + C_GAP
+		if has_hp:               total_h += C_HP_H  + C_GAP
+		if has_rage or has_mana: total_h += C_SUB_H + C_GAP
+		total_h = maxf(0.0, total_h - C_GAP)
 
-		var cursor_y := by
-		if has_energy:
-			cursor_y -= C_SUB_H + C_GAP
-		if has_sub:
-			cursor_y -= C_SUB_H + C_GAP
+		var cursor_y := by - total_h
 
 		if has_energy:
-			_draw_bar(bx, cursor_y, C_BAR_W, C_SUB_H, energy_pct, COLOR_ENERGY)
+			_draw_bar(bx, cursor_y, C_BAR_W, C_SUB_H, _int_pct(s.energy, s.energy_max), COLOR_ENERGY)
 			cursor_y += C_SUB_H + C_GAP
 
-		_draw_bar(bx, cursor_y, C_BAR_W, C_HP_H, s.hp_pct(), _hp_color(s.hp_pct()))
-		cursor_y += C_HP_H + C_GAP
+		if has_hp:
+			_draw_bar(bx, cursor_y, C_BAR_W, C_HP_H, _int_pct(s.hp, s.hp_max), _hp_color(s.hp_pct()))
+			cursor_y += C_HP_H + C_GAP
 
 		if has_rage:
-			_draw_bar(bx, cursor_y, C_BAR_W, C_SUB_H, s.rage_pct(), COLOR_RAGE)
+			_draw_bar(bx, cursor_y, C_BAR_W, C_SUB_H, _int_pct(s.rage, s.rage_max), COLOR_RAGE)
 		elif has_mana:
-			_draw_bar(bx, cursor_y, C_BAR_W, C_SUB_H, s.mp_pct(), COLOR_MANA)
+			_draw_bar(bx, cursor_y, C_BAR_W, C_SUB_H, _int_pct(s.mp, s.mp_max), COLOR_MANA)
 
 
 # =============================================================================
@@ -250,6 +249,14 @@ func _hp_color(pct: float) -> Color:
 	if pct > 0.75:   return COLOR_HP_HIGH
 	elif pct > 0.25: return COLOR_HP_MID
 	else:            return COLOR_HP_LOW
+
+
+# Called: _draw_player_bars(), _draw_creature_bars().
+func _int_pct(val: float, max_val: float) -> float:
+
+	if max_val <= 0.0:
+		return 0.0
+	return clampf(float(int(val)) / max_val, 0.0, 1.0)
 
 
 # Called: _draw_creature_bars().

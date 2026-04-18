@@ -70,13 +70,6 @@ var sprite      : AnimatedSprite2D		# init game._build_scene().
 var stats       : Stats           		# set game._load_json().
 var abilities 	: Array[Ability] = []	# init load_animations().
 
-# ── Combat feedback buffers ────────────────────────────────────────────────────
-
-# Set in _physics_process(), read and cleared by combat_feedback._read_player().
-var _cf_dot     : float         = 0.0
-var _cf_expired : Array[String] = []
-
-
 # ── Signals ────────────────────────────────────────────────────────────────────
 
 # This signal is connected in game._build_scene() with _on_player_attack().
@@ -241,11 +234,8 @@ func _physics_process(dt: float) -> void:
 		if not in_combat:
 			stats.regen(dt)
 	
-		# Update effects, buffer dot/expired for combat_feedback, then apply.
-		var _dot := stats.update_effects(dt)
-		_cf_dot     = _dot
-		_cf_expired = stats.effects.expired_names.duplicate()
-		take_damage(_dot, true)
+		# Update effects and take dot damage.
+		take_damage(stats.update_effects(dt), true)
 
 
 # Called: _physics_process().

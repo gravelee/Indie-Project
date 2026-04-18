@@ -16,7 +16,7 @@ extends Node2D
 #   |-- CharacterBody2D    <- Player physics + movement  (player.gd).
 #   |-- AnimatedSprite2D   <- Player visual sprite.
 #   |-- StaticBody2D ...   <- One per bush (bush.gd), added at load time.
-#   |-- CharacterBody2D .. <- One per rat  (rat.gd),  added at load time.
+#   |-- CharacterBody2D .. <- One per creature  (creature.gd),  added at load time.
 #   +-- CanvasLayer
 #         |-- Node2D       <- HUD bars (hud.gd).
 #         |-- Node2D       <- Floating combat numbers (combat_feedback.gd).
@@ -40,7 +40,9 @@ const PATH_PLAYER_SCRIPT          := "res://player.gd"
 const PATH_HUD_SCRIPT             := "res://hud.gd"
 const PATH_COMBAT_FEEDBACK_SCRIPT := "res://combat_feedback.gd"
 const PATH_STAT_PANEL_SCRIPT      := "res://stat_panel.gd"
+const PATH_DEBUG_OVERLAY_SCRIPT   := "res://debug_overlay.gd"
 const PATH_BUSH_SCRIPT            := "res://bush.gd"
+const PATH_CREATURE_SCRIPT		  := "res://creature.gd"
 const PATH_TILESET        		  := "res://assets/tilemaps/leaf/leaf.png"
 const PATH_MAP_TERRAIN    		  := "res://assets/maps/level_01/level_01_terrain.txt"
 const PATH_MAP_ENTITIES   		  := "res://assets/maps/level_01/level_01_entities_test.txt"
@@ -69,6 +71,7 @@ var player_sprite     : AnimatedSprite2D	# init _build_scene().
 var hud               : Node2D				# init _build_scene().
 var combat_feedback   : Node2D				# init _build_scene().
 var stat_panel        : Node2D				# init _build_scene().
+var debug_overlay     : Node2D				# init _build_scene().
 var pathfinder        : Pathfinder			# init _build_pathfinder().
 var rotatable_sprites : Array      = []		# init _spawn_bush().
 var obstacle_map      : Dictionary = {}		# init _spawn_bush().
@@ -95,10 +98,13 @@ func _ready() -> void:
 	_load_entities()
 	
 	hud.player_stats = player.stats
-	
+
+	debug_overlay.init(player, creatures, obstacle_map, pathfinder, _map_cols, _map_rows)
+
 	hud.init(player, creatures)
 	combat_feedback.init(player, creatures)
 	stat_panel.init(player, creatures)
+	stat_panel.debug_overlay = debug_overlay
 	player.init()
 
 
@@ -118,6 +124,7 @@ func _process(delta: float) -> void:
 	_update_sprites()
 	_update_z_sort()
 	_update_dynamic_blockers(delta)
+	pathfinder.update(delta)
 	_update_player_combat()
 	
 	if _angle_dirty:
@@ -136,6 +143,7 @@ func _process(delta: float) -> void:
 func _build_scene() -> void:
 
 	tilemap = TileMap.new()
+	tilemap.position = Vector2(-TILE_SIZE * 0.5, -TILE_SIZE * 0.5)
 	tilemap.z_index = TERRAIN_Z
 	tilemap.tile_set = _create_tileset()
 	add_child(tilemap)
@@ -178,6 +186,11 @@ func _build_scene() -> void:
 	stat_panel = Node2D.new()
 	stat_panel.set_script(load(PATH_STAT_PANEL_SCRIPT))
 	hud_layer.add_child(stat_panel)
+
+	# World-space debug overlay — must be a direct child of game, not CanvasLayer.
+	debug_overlay = Node2D.new()
+	debug_overlay.set_script(load(PATH_DEBUG_OVERLAY_SCRIPT))
+	add_child(debug_overlay)
 
 
 # Called: _build_scene().
@@ -281,7 +294,7 @@ func _load_entities() -> void:
 
 			if tile_id == 1:                  # 1 = player spawn
 				player.position = world_pos
-			elif tile_id in TILE_TYPE_MAP:    # 2 = rat, 3 = snake, …
+			elif tile_id in TILE_TYPE_MAP:    # 2 = rat, 3 = snake, ...
 				_spawn_creature(world_pos, row, col, tile_id)
 			elif tile_id == 101:              # 101 = bush
 				_spawn_bush(world_pos)
@@ -293,35 +306,37 @@ func _load_entities() -> void:
 # Called: _load_entities().
 func _spawn_creature(world_pos: Vector2, row: int, col: int, tile_id: int) -> void:
 
-	var key       := Vector2i(row, col)
+	# Read the json file.
+	var key       	:= Vector2i(row, col)
 	if not _creature_configs.has(key):
 		push_error("No JSON config for creature at row %d col %d." % [row, col])
 		return
-	var cfg       : Dictionary = _creature_configs[key]
-	var type_name : String     = TILE_TYPE_MAP[tile_id]
-	if cfg["type"] != type_name:
-		push_error("Type mismatch at row %d col %d: map=%s json=%s." % [row, col, type_name, cfg["type"]])
+	var cfg       	: Dictionary = _creature_configs[key]
+	var type_id 	: String     = TILE_TYPE_MAP[tile_id]
+	if cfg["type"] != type_id:
+		push_error("Type mismatch at row %d col %d: map=%s json=%s." % [row, col, type_id, cfg["type"]])
 		return
 
-	var creature  := CharacterBody2D.new()
-	creature.set_script(load("res://" + type_name + ".gd"))
-	var col_shape := CollisionShape2D.new()
-	var shape      := CircleShape2D.new()
+	# Create and add creature as child.
+	var creature  	:= CharacterBody2D.new()
+	creature.set_script(load(PATH_CREATURE_SCRIPT))
+	var col_shape	:= CollisionShape2D.new()
+	var shape      	:= CircleShape2D.new()
 	shape.radius   = 20.0
 	col_shape.shape = shape
 	creature.add_child(col_shape)
 	creature.position = world_pos
-	add_child(creature)   # triggers _ready() which creates sprite
+	add_child(creature)
 
-	creature.configure(cfg, world_pos)
-	creature.player       = player
-	creature.camera_angle = world_angle
-	creature.pathfinder   = pathfinder
+	# Init creature.
+	creature.init(cfg, player, world_angle, pathfinder)
 
+	# Creature.queue_free() also calls:
 	creature.tree_exiting.connect(func():
 		creature_sprites.erase(creature.sprite)
 		creatures.erase(creature)
 	)
+	# Update lists.
 	creature_sprites.append(creature.sprite)
 	creatures.append(creature)
 
@@ -457,7 +472,7 @@ func _update_z_sort() -> void:
 func _update_dynamic_blockers(delta: float) -> void:
 
 	_blocker_timer += delta
-	if _blocker_timer < 1.0:
+	if _blocker_timer < 0.3:
 		return
 	_blocker_timer = 0.0
 	_creature_tile_set.clear()
