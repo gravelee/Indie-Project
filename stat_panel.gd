@@ -78,8 +78,9 @@ var _dbg_obstacle_col : bool   = false
 var _dbg_tile_grid    : bool   = false
 var _dbg_pf_grid      : bool   = false
 var _dbg_pf_grid2     : bool   = false
-var _dbg_cre_paths    : bool   = false
-var _dbg_home_markers : bool   = false
+var _dbg_cre_paths      : bool   = false
+var _dbg_home_markers   : bool   = false
+var _dbg_player_attack  : bool   = false
 
 # Creature debug toggles (creature panel)
 var _dbg_cre_attack_dist : bool = false
@@ -440,10 +441,11 @@ func _build_lines(entity: CharacterBody2D, p_prefix: String = "") -> Array:
 			var returning_v : bool  = entity.get("is_returning")    == true
 			var max_dist_v  : bool  = entity.get("home_max_dist")   == true
 			var fleeing_v   : bool  = entity.get("fleeing")         == true
-			var in_wait_v   : bool  = entity.get("_in_wait")        == true
-			var wait_cnt    : int   = entity.get("_wait_count")      if entity.get("_wait_count")      != null else 0
-			var wait_tmr    : float = entity.get("_wait_timer")      if entity.get("_wait_timer")      != null else 0.0
-			var wait_dmg    : float = entity.get("_wait_damage_acc") if entity.get("_wait_damage_acc") != null else 0.0
+			var in_wait_v     : bool  = entity.get("_wait")            == true
+			var wait_cnt      : int   = entity.get("_wait_counter")   if entity.get("_wait_counter")   != null else 0
+			var wait_tmr      : float = entity.get("_wait_timer")     if entity.get("_wait_timer")     != null else 0.0
+			var wait_interval : float = entity.get("_wait_interval")  if entity.get("_wait_interval")  != null else 0.0
+			var wait_dmg      : float = entity.get("_wait_damage_acc")if entity.get("_wait_damage_acc")!= null else 0.0
 
 			# Home / AI flags
 			var orig_home_txt   : String
@@ -464,12 +466,12 @@ func _build_lines(entity: CharacterBody2D, p_prefix: String = "") -> Array:
 
 			# Wait cycle
 			lines.append(["divider"])
-			lines.append(["row", "IN WAIT",  "true" if in_wait_v else "false",
+			lines.append(["row", "WAIT",      "true" if in_wait_v else "false",
 						  Color(0.86, 0.24, 0.24) if in_wait_v else C_LABEL])
-			lines.append(["row", "WAIT CNT", str(wait_cnt), C_VALUE if wait_cnt > 0 else C_LABEL])
-			lines.append(["row", "WAIT TMR", "%.2f" % wait_tmr])
-			if wait_dmg > 0.0:
-				lines.append(["row", "WAIT DMG", "%.1f" % wait_dmg])
+			lines.append(["row", "WAIT CNT",  str(wait_cnt),          C_VALUE if wait_cnt > 0 else C_LABEL])
+			lines.append(["row", "WAIT TMR",  "%.2f" % wait_tmr])
+			lines.append(["row", "WAIT INTV", "%.2f" % wait_interval, C_VALUE if in_wait_v else C_LABEL])
+			lines.append(["row", "WAIT DMG",  "%.1f" % wait_dmg])
 		lines.append(["divider"])
 
 	# ── Creature debug toggles (creatures only) ───────────────────────────────
@@ -493,7 +495,8 @@ func _build_lines(entity: CharacterBody2D, p_prefix: String = "") -> Array:
 		var dbg_collapsed : bool = _collapsed.get(p_prefix + "dbg", false)
 		lines.append(["section", "▶ DEBUG" if dbg_collapsed else "▼ DEBUG", "dbg"])
 		if not dbg_collapsed:
-			lines.append(["toggle", "dbg_cre_col",     "Creature Collisions", _dbg_creature_col])
+			lines.append(["toggle", "dbg_player_attack", "Attack Area",         _dbg_player_attack])
+			lines.append(["toggle", "dbg_cre_col",       "Creature Collisions", _dbg_creature_col])
 			lines.append(["toggle", "dbg_ply_col",     "Player Collision",    _dbg_player_col])
 			lines.append(["toggle", "dbg_obs_col",     "Obstacle Collisions", _dbg_obstacle_col])
 			lines.append(["toggle", "dbg_grid",        "Tile Grid",           _dbg_tile_grid])
@@ -571,6 +574,9 @@ func _toggle_debug(key: String) -> void:
 	if not debug_overlay:
 		return
 	match key:
+		"dbg_player_attack":
+			_dbg_player_attack                      = not _dbg_player_attack
+			debug_overlay.show_player_attack_area   = _dbg_player_attack
 		"dbg_cre_col":
 			_dbg_creature_col                  = not _dbg_creature_col
 			debug_overlay.show_creature_col    = _dbg_creature_col

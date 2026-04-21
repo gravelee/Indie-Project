@@ -68,6 +68,7 @@ var tilemap           : TileMap				# init _build_scene(), set _load_terrain().
 var camera            : Camera2D			# init _build_scene().
 var player            : CharacterBody2D		# init _build_scene().
 var player_sprite     : AnimatedSprite2D	# init _build_scene().
+var weapon_sprite     : AnimatedSprite2D	# init _build_scene().
 var hud               : Node2D				# init _build_scene().
 var combat_feedback   : Node2D				# init _build_scene().
 var stat_panel        : Node2D				# init _build_scene().
@@ -90,7 +91,7 @@ var _blocker_timer    : float      = 0.0   	# set _update_dynamic_blockers().
 
 # INIT
 func _ready() -> void:
-
+	print("------------------- GAME INITIALIZATION --------------------")
 	_build_scene()
 	_load_json()
 	_load_terrain()
@@ -165,7 +166,12 @@ func _build_scene() -> void:
 	player_sprite.z_as_relative = false
 	add_child(player_sprite)
 
-	player.sprite = player_sprite
+	weapon_sprite = AnimatedSprite2D.new()
+	weapon_sprite.z_as_relative = false
+	add_child(weapon_sprite)
+
+	player.sprite        = player_sprite
+	player.weapon_sprite  = weapon_sprite
 	player.load_animations()
 	
 	# attack signal is connected with _on_player_attack().
@@ -432,8 +438,13 @@ func _rotate_camera() -> void:
 func _update_sprites() -> void:
 
 	# Always: keep sprite and camera locked to the physics body position.
-	player_sprite.global_position = player.global_position
-	camera.global_position        = player.global_position
+	player_sprite.global_position  = player.global_position
+	camera.global_position         = player.global_position
+	if weapon_sprite.visible:
+		weapon_sprite.global_position  = player.global_position
+		# Sword rotation = camera counter-rotation + per-facing offset (updated every frame
+		# because either world_angle or sword_facing_deg can change independently).
+		weapon_sprite.rotation_degrees = -world_angle + player.sword_facing_deg
 
 	# Only on rotation: update angles.
 	if _angle_dirty:
@@ -463,6 +474,9 @@ func _update_z_sort() -> void:
 
 	# Always: player and creatures move every frame so depth must stay current.
 	player_sprite.z_index = int((player.position.x * cached_sin_a + player.position.y * cached_cos_a) / Z_DEPTH_SCALE)
+	if weapon_sprite.visible:
+		var sword_center := player.global_position + Vector2(-48.0, -48.0).rotated(weapon_sprite.rotation)
+		weapon_sprite.z_index = int((sword_center.x * cached_sin_a + sword_center.y * cached_cos_a) / Z_DEPTH_SCALE)
 	for i in range(creatures.size()):
 		var pos : Vector2 = (creatures[i] as Node2D).position
 		creature_sprites[i].z_index = int((pos.x * cached_sin_a + pos.y * cached_cos_a) / Z_DEPTH_SCALE)
@@ -472,7 +486,7 @@ func _update_z_sort() -> void:
 func _update_dynamic_blockers(delta: float) -> void:
 
 	_blocker_timer += delta
-	if _blocker_timer < 0.3:
+	if _blocker_timer < 0.15:
 		return
 	_blocker_timer = 0.0
 	_creature_tile_set.clear()

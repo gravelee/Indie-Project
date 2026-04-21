@@ -46,6 +46,8 @@ const COLOR_DYN_BLOCKER_FILL := Color(1.00, 0.55, 0.00, 0.22)
 const COLOR_DYN_BLOCKER_LINE := Color(1.00, 0.55, 0.00, 0.55)
 const COLOR_TEMP_BLOCK_FILL  := Color(1.00, 0.10, 0.50, 0.25)
 const COLOR_TEMP_BLOCK_LINE  := Color(1.00, 0.10, 0.50, 0.60)
+const COLOR_ATK_AREA_FILL    := Color(1.00, 0.85, 0.10, 0.15)   # amber — player attack cone
+const COLOR_ATK_AREA_LINE    := Color(1.00, 0.85, 0.10, 0.75)
 
 const TILE_SIZE      := 32
 const ARC_PTS        := 48
@@ -53,6 +55,10 @@ const DRAW_INTERVAL  := 0.1   # 10 fps — enough for debug readability
 const FILL_MAX_RADIUS := 600.0  # circles larger than this draw arc-only (no pixel fill)
 
 var _draw_timer : float = 0.0
+
+# Mirrors of game.gd attack constants — used only for debug drawing.
+const _ATTACK_RADIUS      := 96.0
+const _ATTACK_HALF_CONE   := 45.0   # degrees, ± from facing direction
 
 # Mirrors of creature.gd constants — used only for debug drawing.
 const _CRE_ATTACK_DIST := 60.0
@@ -74,6 +80,8 @@ var show_cre_paths       : bool = false   # creature A* waypoint paths
 var show_home_markers    : bool = false   # creature home position markers
 
 # Creature debug ranges / blockers
+var show_player_attack_area : bool = false   # attack cone from player position + facing
+
 var show_cre_attack_dist : bool = false
 var show_cre_notice_dist : bool = false
 var show_cre_notice_dir  : bool = false
@@ -158,6 +166,8 @@ func _draw() -> void:
 		_draw_obstacle_collisions()
 	if show_creature_col:
 		_draw_creature_collisions()
+	if show_player_attack_area:
+		_draw_player_attack_area()
 	if show_player_col:
 		_draw_player_collision()
 
@@ -313,6 +323,32 @@ func _draw_creature_collisions() -> void:
 		var r := _get_collision_radius(creature)
 		draw_circle(creature.position, r, COLOR_CREATURE_FILL)
 		draw_arc(creature.position, r, 0.0, TAU, ARC_PTS, COLOR_CREATURE_LINE, 1.5)
+
+
+# Called: _draw(). Draws the player attack cone — 96 px radius, ±45° from facing direction.
+func _draw_player_attack_area() -> void:
+
+	if not is_instance_valid(player):
+		return
+	var dir      : Vector2 = player._facing_world_direction()
+	var base_ang : float   = dir.angle()
+	var half_ang : float   = deg_to_rad(_ATTACK_HALF_CONE)
+	const PTS    : int     = 24
+
+	# Filled sector polygon: center + arc points.
+	var poly := PackedVector2Array()
+	poly.append(player.position)
+	for i in range(PTS + 1):
+		var a : float = base_ang - half_ang + 2.0 * half_ang * i / PTS
+		poly.append(player.position + Vector2(cos(a), sin(a)) * _ATTACK_RADIUS)
+	draw_colored_polygon(poly, COLOR_ATK_AREA_FILL)
+
+	# Outline: two edge lines from center + arc.
+	var left_edge  := player.position + Vector2(cos(base_ang - half_ang), sin(base_ang - half_ang)) * _ATTACK_RADIUS
+	var right_edge := player.position + Vector2(cos(base_ang + half_ang), sin(base_ang + half_ang)) * _ATTACK_RADIUS
+	draw_line(player.position, left_edge,  COLOR_ATK_AREA_LINE, 1.5)
+	draw_line(player.position, right_edge, COLOR_ATK_AREA_LINE, 1.5)
+	draw_arc(player.position, _ATTACK_RADIUS, base_ang - half_ang, base_ang + half_ang, PTS, COLOR_ATK_AREA_LINE, 1.5)
 
 
 # Called: _draw().

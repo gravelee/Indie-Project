@@ -36,18 +36,19 @@ const WANDER_DURATION_MAX  := 3.0
 # ── Pathfinding settings ───────────────────────────────────────────────────────
 
 const TILE_SIZE            := 32
-const PATH_INTERVAL_MIN    := 0.8
-const PATH_INTERVAL_MAX    := 1.2
+const PATH_INTERVAL_MIN    := 0.4
+const PATH_INTERVAL_MAX    := 0.6
 const WAYPOINT_REACH_SQ    := (TILE_SIZE * 0.5) * (TILE_SIZE * 0.5)
 
-# ── Stuck detection ────────────────────────────────────────────────────────────
-const STUCK_SAMPLE_INTERVAL   := 0.4    # seconds between position samples.
-const STUCK_MIN_DIST_SQ       := 64.0   # 8 px²; moved less than this = stuck.
-const WAIT_BASE_TIME          := 1.0    # base wait duration (seconds).
-const WAIT_TIME_GROWTH        := 0.5    # extra seconds added per wait cycle.
-const WAIT_MAX_CYCLES         := 4      # effective wait count before give-up.
-const WAIT_PROGRESS_THRESHOLD := 48.0   # pixels moved since first wait; less = no real progress.
-const BLOCK_TIMER_DURATION	  := 1.0
+# ── Stuck / Collision detection ────────────────────────────────────────────────
+
+const STUCK_SAMPLE_INTERVAL   	:= 0.2    # seconds between position samples.
+const STUCK_MIN_DIST_SQ       	:= 64.0   # 8 px²; moved less than this = stuck.
+const WAIT_INTERVAL_INCREASE	:= 0.5
+const WAIT_MAX_COUNTER			:= 10
+const WAIT_INTERVAL_START		:= 0.5
+const COLLISION_INTERVAL_MIN    := 0.15
+const COLLISION_INTERVAL_MAX    := 0.25
 
 
 # ── Other ──────────────────────────────────────────────────────────────────────
@@ -106,8 +107,8 @@ var facing_right : bool  = false
 var in_combat    : bool  = false
 var anim_done    : bool  = false
 var alive        : bool  = true
-var corpse_alpha : float = 255.0
 var is_inspected : bool  = false   # set stat_panel. Prevents queue_free while panel is open.
+var corpse_alpha : float = 255.0
 
 
 # ── Wander ─────────────────────────────────────────────────────────────────────
@@ -129,37 +130,34 @@ var temp_home       : bool    = false
 var is_returning    : bool    = false
 var fleeing         : bool    = false
 var home_max_dist   : bool    = false
-var notice_cooldown : float   = 0.0
 var out_of_energy   : bool    = false
+var notice_cooldown : float   = 0.0
 
 
 # ── Pathfinding ────────────────────────────────────────────────────────────────
 
-var pathfinder    : Pathfinder    	# set init().
-var path          : Array   = []  	# set _move_smart().
-var path_timer    : float   = 0.0 	# set _move_smart().
-var path_interval : float   = 0.0 	# set _ready().
+var pathfinder    		: Pathfinder    	# set init().
+var path          		: Array   	= []  	# set _move_smart().
+var path_timer    		: float   	= PATH_INTERVAL_MAX # set _move_smart().
+var path_interval 		: float   	= 0.0 	# set _ready().
+var interval_expansion	: float 	= 0.0 # set _move_smart()
+var waypoint_blocked	: bool 		= false
 
 
-# ── Stuck detection ────────────────────────────────────────────────────────────
+# ── Stuck / Collision system ───────────────────────────────────────────────────
 
 var _stuck_timer       		: float   = 0.0
 var _stuck_pos         		: Vector2 = Vector2.ZERO
-var _stuck_detected   		: bool     = false
-var wait_damage_threshold	: float# damage units that count as one extra effective wait cycle.
-var block_timer				: float = 0.0
-
-
-# ── Wait cycle ─────────────────────────────────────────────────────────────────
-
-var _wait_anim           : bool    = false
-var _wait_timer          : float   = 0.0
-var _wait_count          : int     = 0     			# total wait cycles entered this session.
-var _wait_on_chase       : bool    = false 			# true = chase wait, false = returning wait.
-var _wait_origin_pos     : Vector2 = Vector2.ZERO   # position at first wait entry.
-var _wait_damage_acc     : float   = 0.0            # damage taken across wait cycles.
-var _saved_is_returning  : bool    = false          # eased during returning wait.
-var _saved_home_max_dist : bool    = false          # eased during returning wait.
+var _wait                	: bool    = false
+var _wait_counter			: int	  = 0
+var _wait_timer				: float   = 0.0
+var _wait_interval			: float   = WAIT_INTERVAL_START
+var _wait_damage_acc     	: float   = 0.0            # damage taken across wait cycles.
+var _wait_damage_threshold	: float		# damage units that count as one extra effective wait cycle.
+var _saved_is_returning  	: bool    = false          # eased during returning wait.
+var _saved_home_max_dist 	: bool    = false          # eased during returning wait.
+var _collision_timer		: float	  = 0.0
+var _collision_interval 	: float
 
 
 # ── References ─────────────────────────────────────────────────────────────────
@@ -199,9 +197,10 @@ var _move_dy : float = 1.0   # set _update_facing(), _move_toward().
 # Called: game._spawn_creature().
 func init(cfg: Dictionary, player: CharacterBody2D, camera_angle: float, pathfinder: Pathfinder) -> void:
 	
-	wander_timer    = randf_range(0.0, 1.0)
-	wander_interval = randf_range(WANDER_INTERVAL_MIN, WANDER_INTERVAL_MAX)
-	path_interval   = randf_range(PATH_INTERVAL_MIN,   PATH_INTERVAL_MAX)
+	wander_timer    	= randf_range(0.0, 1.0)
+	wander_interval 	= randf_range(WANDER_INTERVAL_MIN, WANDER_INTERVAL_MAX)
+	path_interval   	= randf_range(PATH_INTERVAL_MIN,   PATH_INTERVAL_MAX)
+	_collision_interval = randf_range(COLLISION_INTERVAL_MIN,   COLLISION_INTERVAL_MAX)
 	
 	type 		 = MAP_STRING_TYPE[cfg["type"]]
 	
@@ -216,7 +215,7 @@ func init(cfg: Dictionary, player: CharacterBody2D, camera_angle: float, pathfin
 	fleeing      = cfg["fleeing"]
 	
 	stats.effects     		= StatusEffect.EffectManager.new()
-	wait_damage_threshold 	= maxf(1.0, stats.hp_max * 10.0 / 100.0)
+	_wait_damage_threshold 	= maxf(1.0, stats.hp_max * 3.0 / 100.0)
 	
 	
 	sprite_path = SPRITE_PATH + MAP_TYPE[type] + "/"
@@ -292,6 +291,18 @@ func _sync_anim() -> void:
 
 	sprite.flip_h = facing_right
 
+	# CHASE and RETURNING animate based on actual movement after move_and_slide(),
+	# not intended velocity — so creatures blocked by obstacles show idle animation.
+	var target_anim : String
+	if state == State.CHASE:
+		target_anim = STATE_ANIM[State.IDLE_ATTACK][0] if _wait else STATE_ANIM[State.CHASE][0]
+	elif state == State.RETURNING:
+		target_anim = STATE_ANIM[State.IDLE_NEUTRAL][0] if _wait else STATE_ANIM[State.RETURNING][0]
+	else:
+		return
+	if sprite.animation != target_anim:
+		sprite.play(target_anim)
+
 
 # Called: sprite.animation_finished signal.
 func _on_anim_finished() -> void:
@@ -299,31 +310,18 @@ func _on_anim_finished() -> void:
 		anim_done = true
 
 
-# Called: _update_state(), _wander(), _snap_to_home(), _begin_death().
+# Called: _update_state(), _wander(), _snap_to_home(), _exit_wait(), _begin_death().
 func _set_state(new_state: State) -> void:
 
 	if state == new_state:
 		return
 	
-	# Stuck detection system check.
-	if _wait_anim:
-		_wait_anim = false
-		if not _wait_on_chase:
-			is_returning  = _saved_is_returning
-			home_max_dist = _saved_home_max_dist
-
 	state     = new_state
 	anim_done = false
 	in_combat = new_state in COMBAT_STATES
 	
 	if state != State.DEAD and state != State.ATTACK:
 		sprite.play(STATE_ANIM[state][0])
-		
-	# Seed stuck detection position.
-	if state in MOVING_STATES:
-		_stuck_pos      		= position
-		_stuck_timer    		= 0.0
-		_stuck_detected 		= false
 
 
 # =============================================================================
@@ -427,18 +425,10 @@ func _update_state(dt: float) -> void:
 			# creature enters exit stance state.
 			elif dist_sq > CHASE_DIST_SQ:
 				_set_state(State.EXIT_STANCE)
-			# If the player is still within chasing distance the
-			# creature move smart towards the player (not stuck).
-			elif not _wait_anim:
-				_move_smart(player.position, stats.mspd, dt)
-				#if _stuck_detected:
-					#_enter_wait(true)
-			# Waiting out a stuck cycle — play idle_attack animation in place.
+			# The player is still within chasing distance so the 
+			# creature moves smart towards the player.
 			else:
-				_wait_timer -= dt
-				var effective := _wait_count + int(_wait_damage_acc / wait_damage_threshold)
-				if _wait_timer <= 0.0 or effective >= WAIT_MAX_CYCLES:
-					_exit_wait()
+				_move_smart(player.position, stats.mspd, dt)
 
 		State.EXIT_STANCE:
 			
@@ -456,23 +446,14 @@ func _update_state(dt: float) -> void:
 			# Calculates the distance to home position and forced.
 			var dist_home_sq := position.distance_squared_to(home_position)
 			var forced       := is_returning or home_max_dist or out_of_energy or not player_ok
-			# If the player is out of notice distance or the creature is
-			# forced to return home if it is next to home snaps to it otherwise
-			# it moves towards its home (original or temporary) position.
+			# If the player is out of notice distance or the creature is forced to return home.
 			if forced or dist_sq > NOTICE_DIST_SQ:
+				# Creature near its home, snap to home.
 				if dist_home_sq <= HOME_DIST_SQ:
 					_snap_to_home()
-				# Normal return movement.
-				elif not _wait_anim:
-					_move_smart(home_position, FLEE_SPEED, dt)
-					#if _stuck_detected:
-						#_enter_wait(false)
-				# Waiting out a stuck cycle — play idle_neutral animation in place.
+				# The creature moves smart towards home.
 				else:
-					_wait_timer -= dt
-					var effective := _wait_count + int(_wait_damage_acc / wait_damage_threshold)
-					if _wait_timer <= 0.0 or effective >= WAIT_MAX_CYCLES:
-						_exit_wait()
+					_move_smart(home_position, FLEE_SPEED, dt)
 					
 			# If player is within notice distance and the creature is not forced
 			# the creature updates its facing.
@@ -493,11 +474,6 @@ func _update_state(dt: float) -> void:
 				else:
 					_set_state(State.IDLE_NEUTRAL)
 
-		State.DEATH:
-			# If anim_done then the creature enters dead state.
-			if anim_done:
-				_set_state(State.DEAD)
-
 
 # =============================================================================
 # MOVEMENT
@@ -506,61 +482,144 @@ func _update_state(dt: float) -> void:
 # LOOP
 func _physics_process(dt: float) -> void:
 
-	if is_dead(dt):
+	if _is_dead_or_dying(dt):
+		return
+	
+	_update_state(dt)
+	_update_status(dt)
+	_update_movement(dt)
+	_sync_anim()
+	_check_wait(dt)
+	_check_collisions(dt)
+	
+
+# Called: _physics_process().
+func _update_status(dt: float) -> void:
+	
+	if notice_cooldown > 0.0:
+		notice_cooldown -= dt
+	if stats.energy < 1:
+		out_of_energy = true
+	# Update abilities tick timer.
+	for ability in abilities:
+		ability.tick(dt)
+	# Update stats ( hp, energy, rage, mp).
+	if not in_combat:
+		stats.regen(dt)
+	# Update effects and take dot damage.
+	take_damage(stats.update_effects(dt), true)
+
+
+# Called: _physics_process().
+func _update_movement(dt: float) -> void:
+
+	# If not in a moving state.
+	if state not in MOVING_STATES:
+		_stuck_timer    = 0.0
+		velocity = Vector2.ZERO
 		return
 
-	_update_stuck(dt)
-	_update_state(dt)
-
-	_sync_anim()
+	# We are in a moving state (creature is actively moving).
+	_stuck_timer += dt
+	if _stuck_timer >= STUCK_SAMPLE_INTERVAL:
+		_stuck_timer    = 0.0
+		# Check if position has minimum changed since last sample.
+		if position.distance_squared_to(_stuck_pos) < STUCK_MIN_DIST_SQ:
+			# Position not changed. Stuck.
+			_enter_wait(state == State.CHASE)
+		else:
+			# Exit waiting.
+			_exit_wait(false)
+		# Update stuck position.
+		_stuck_pos = position
 		
-	if state != State.DEATH:
+	#if _wait:
+	#	_stuck_timer    = 0.0
+	#	velocity = Vector2.ZERO
+	#	return
 
-		if notice_cooldown > 0.0:
-			notice_cooldown -= dt
-		if stats.energy < 1:
-			out_of_energy = true
-		# Update abilities tick timer.
-		for ability in abilities:
-			ability.tick(dt)
-			
-		# Update stats ( hp, energy, rage, mp).
-		if not in_combat:
-			stats.regen(dt)
+	# Do the actual movement.
+	move_and_slide()
+
+
+# Called: _physics_process()
+func _check_wait(dt: float) -> void:
+	
+	if not _wait:
+		return
+	
+	_wait_timer += dt
+	if _wait_timer >= _wait_interval:
+		_wait_timer = 0.0
+		_wait_counter += 1
+		_wait_interval += WAIT_INTERVAL_INCREASE
 		
-		# Update effects and take dot damage.
-		take_damage(stats.update_effects(dt), true)
+		var damage_effectiveness = int (_wait_damage_acc / _wait_damage_threshold)
+		if damage_effectiveness >= WAIT_MAX_COUNTER or _wait_counter >= WAIT_MAX_COUNTER:
+			_exit_wait(true)
 
-	if state not in MOVING_STATES or _wait_anim:
-		velocity = Vector2.ZERO
-	else:
-		move_and_slide()
-		_on_collision(dt)
+
+# Called: _physics_process().
+func _check_collisions(dt: float) -> void:
+
+	# If no collision return.
+	if get_slide_collision_count() == 0:
+		return
+
+	# Wandering collisions immediately pick a new wander direction.
+	if state == State.WANDER:
+		force_wander = true
+		return
+
+	_collision_timer += dt
+	# If the creature is in chasing or returning state, wating and collision timer is up and creature has a path.
+	if (_collision_timer >= _collision_interval) and _wait and (state == State.CHASE or state == State.RETURNING) and not path.is_empty():
+		_collision_timer = 0.0
+		for i in get_slide_collision_count():
+			var col     := get_slide_collision(i)
+			var blocker := col.get_collider()
+			# If the blocker is another creature then emp-block "this" creatures 
+			# next waypoint tile because it is unreachable.
+			if blocker is CharacterBody2D and blocker != player:
+				pathfinder.add_temp_block(path[0])
+				waypoint_blocked = true
+				path.clear()
+				break
 
 
 # Called: _update_state() during CHASE and RETURNING.
 func _move_smart(target_pos: Vector2, speed: float, dt: float) -> void:
 
+	# If path_timer is up or a waypoint is blocked find new path.
+	var path_check = false
 	path_timer += dt
-	if path_timer >= path_interval or path.is_empty():
+	if (path_timer >= path_interval + interval_expansion or waypoint_blocked):
 		path_timer = 0.0
+		path_check = true
+		waypoint_blocked = false
 		path = pathfinder.find_path(position, target_pos)
 
-	# Only on deadlock terrain.
-	if path.is_empty():
+	# If deadlock (or too far away) increase path_timer interval and just _move_towards the target.
+	if path.is_empty() and path_check:
+		interval_expansion += 0.5
 		_move_toward(target_pos, speed)
 		return
+	# No deadlock (or too far away), reset the path timer interval expansion.
+	if interval_expansion > 0.0:
+		interval_expansion = 0.0
 
-	# Pop waypoints as they are reached.
-	if position.distance_squared_to(path[0]) < WAYPOINT_REACH_SQ:
-		path.pop_front()
-	
-	# If no other waypoints — move directly toward target rather than coasting.
-	if path.is_empty():
-		_move_toward(target_pos, speed)
-		return
-	# Move towards the next waypoint.
-	_move_toward(path[0], speed)
+	# If path exists.
+	if not path.is_empty():
+		# Pop waypoint if reached.
+		if position.distance_squared_to(path[0]) < WAYPOINT_REACH_SQ:
+			path.pop_front()
+		# If path still not empty.
+		if not path.is_empty():
+			# Move towards the next waypoint.
+			_move_toward(path[0], speed)
+			return
+	# If no path is found or last waypoint has been reached.
+	_move_toward(target_pos, speed)
 
 
 # Called: _move_smart().
@@ -571,13 +630,7 @@ func _move_toward(target_pos: Vector2, speed: float) -> void:
 	if len_sq < 1.0:
 		velocity = Vector2.ZERO
 		return
-	
-	var new_right := (direction.x * _cos_a - direction.y * _sin_a) > 0
-	if new_right != facing_right:
-		facing_right = new_right
-		_move_dx = direction.x
-		_move_dy = direction.y
-		
+	_update_facing(direction.x, direction.y)
 	velocity = direction / sqrt(len_sq) * speed
 
 
@@ -624,7 +677,6 @@ func _snap_to_home(new_home_position : Vector2 = home_position) -> void:
 	wander_timer      = 0.0
 	wander_elapsed    = 0.0
 	force_wander      = false
-	print("Path cleared!")
 	path.clear()
 	path_timer = 0.0
 	if temp_home:
@@ -633,137 +685,64 @@ func _snap_to_home(new_home_position : Vector2 = home_position) -> void:
 	_set_state(State.IDLE_NEUTRAL)
 
 
-# Called: _physics_process() after move_and_slide().
-func _on_collision(dt: float) -> void:
-
-	# If no collision return.
-	if get_slide_collision_count() == 0:
-		return
-
-	# Wandering collisions immediately pick a new wander direction.
-	if state == State.WANDER:
-		force_wander = true
-		return
-	
-	block_timer += dt
-	# In chasing or returning states if the blocker is another creature, 
-	# temp-block the next waypoint tile of this creature because it is unreachable.
-	if (state == State.CHASE or state == State.RETURNING) and block_timer > BLOCK_TIMER_DURATION:
-		block_timer = 0.0
-		for i in get_slide_collision_count():
-			var col     := get_slide_collision(i)
-			var blocker := col.get_collider()
-			if blocker is CharacterBody2D and blocker != player:
-				if not path.is_empty():
-					print("Add temp block!")
-					pathfinder.add_temp_block(path[0])
-					path.clear()
-				break
-
-
 # =============================================================================
-# STUCK DETECTION
+# STUCK HANDLE
 # =============================================================================
 
-# Called: _physics_process().
-func _update_stuck(dt: float) -> void:
-
-	# Only sample when actively moving and not paused in a wait cycle.
-	if state not in MOVING_STATES or _wait_anim:
-		_stuck_timer    = 0.0
-		_stuck_detected = false
-		return
-
-	_stuck_timer += dt
-	if _stuck_timer < STUCK_SAMPLE_INTERVAL:
-		return
-
-	_stuck_timer    = 0.0
-	_stuck_detected = position.distance_squared_to(_stuck_pos) < STUCK_MIN_DIST_SQ
-	_stuck_pos = position
-
-
-# Called: _update_state().
+# Called: _update_movement().
 func _enter_wait(on_chase: bool) -> void:
-
-	# Record origin position only on the first wait of a stuck session.
-	if _wait_count == 0:
-		_wait_origin_pos = position
-		_wait_damage_acc = 0.0
-
-	_wait_on_chase    		= on_chase
-	_wait_anim           	= true
-	_stuck_detected   		= false
-	_wait_timer        		= WAIT_BASE_TIME + _wait_count * WAIT_TIME_GROWTH
-	_wait_count       		+= 1
-
+	
+	_wait       		= true
+	_wait_damage_acc 	= 0.0
+		
 	if on_chase:
-		# Stand in place using idle_attack animation while waiting.
-		sprite.play(STATE_ANIM[State.IDLE_ATTACK][0])
-	# On returning.
+		0
+		# Stand in place using idle_attack animation while waiting in chase state.
+		#sprite.play(STATE_ANIM[State.IDLE_ATTACK][0])
 	else:
 		# Ease forced-returning flags so creature can defend itself if player approaches.
 		_saved_is_returning  = is_returning
 		_saved_home_max_dist = home_max_dist
 		is_returning         = false
 		home_max_dist        = false
-		# Stand in place using idle_neutral animation while waiting.
-		sprite.play(STATE_ANIM[State.IDLE_NEUTRAL][0])
+		# Stand in place using idle_neutral animation while waiting in returning state.
+		#sprite.play(STATE_ANIM[State.IDLE_NEUTRAL][0])
 
 
-# Called: _update_state().
-func _exit_wait() -> void:
+# Called: _check_wait(), _update_movement().
+func _exit_wait(give_up: bool) -> void:
 
-	_wait_anim           = false
-
-	var effective_waits := _wait_count + int(_wait_damage_acc / wait_damage_threshold)
-	var no_progress     := position.distance_to(_wait_origin_pos) < WAIT_PROGRESS_THRESHOLD
-	var give_up         := effective_waits >= WAIT_MAX_CYCLES and no_progress
-
-	if _wait_on_chase:
-		if give_up:
-			_wait_count      = 0
-			_wait_damage_acc = 0.0
-			_set_state(State.RETURNING)
-		else:
-			# Made enough progress — reset counters and resume.
-			if not no_progress:
-				_wait_count      = 0
-				_wait_origin_pos = position
-			sprite.play(STATE_ANIM[State.CHASE][0])
-	# Wait on returning.
-	else:
+	_wait = false
+	_wait_counter = 0
+	_wait_interval = WAIT_INTERVAL_START
+	# If creature in chase state and gives up.
+	if state == State.CHASE and give_up:
+		_set_state(State.RETURNING)
+	# If creature in returning state and gives up.
+	elif state == State.RETURNING and give_up:
 		# Restore eased returning flags.
 		is_returning  = _saved_is_returning
 		home_max_dist = _saved_home_max_dist
-
-		if give_up:
-			_wait_count      = 0
-			_wait_damage_acc = 0.0
-			if temp_home:
-				# Treat current position as the new home and settle here.
-				home_position = position
-				_snap_to_home()
-			else:
-				# Teleport back to home.
-				var home_tile := Vector2i(int(home_position.x / TILE_SIZE), int(home_position.y / TILE_SIZE)) 
-				if pathfinder._grid.is_point_solid(home_tile):
-					# If home_position is not free get the nearest free.
-					_snap_to_home(pathfinder._nearest_walkable(home_tile))
-				else:
-					_snap_to_home()
+		
+		if temp_home:
+			# Treat current position as the new home and settle here.
+			home_position = position
+			_snap_to_home()
 		else:
-			if not no_progress:
-				_wait_count      = 0
-				_wait_origin_pos = position
-			sprite.play(STATE_ANIM[State.RETURNING][0])
+			# Teleport back to home.
+			var home_tile := Vector2i(int(home_position.x / TILE_SIZE), int(home_position.y / TILE_SIZE)) 
+			if pathfinder._grid.is_point_solid(home_tile):
+				# If home_position is not free get the nearest free.
+				_snap_to_home(pathfinder._nearest_walkable(home_tile))
+			else:
+				_snap_to_home()
 
 
 # =============================================================================
 # FACING
 # =============================================================================
 
-# Called: _update_state(), _wander().
+# Called: _update_state(), _move_towards(), _wander().
 func _update_facing(world_dx: float, world_dy: float) -> void:
 
 	# Uses cached trig — no cos/sin calls here.
@@ -801,7 +780,7 @@ func take_damage(raw_damage: float, dot: bool = false, is_magic: bool = false, i
 
 	var damage : float = stats.take_damage(raw_damage, dot, is_magic, is_crit)
 
-	if _wait_anim:
+	if _wait:
 		_wait_damage_acc += damage
 
 	if not stats.is_alive():
@@ -819,12 +798,19 @@ func _begin_death() -> void:
 
 
 # Called: _physics_process().
-func is_dead(dt: float) -> bool:
-	
+func _is_dead_or_dying(dt: float) -> bool:
+
+	if state == State.DEATH:
+		# If anim_done then the creature enters dead state.
+		if anim_done:
+			_set_state(State.DEAD)
+		return true
+
 	if state == State.DEAD:
-		corpse_alpha = maxf(0.0, corpse_alpha - 300.0 * dt)
-		sprite.modulate = Color(1.0, 1.0, 1.0, corpse_alpha / 255.0)
-		if corpse_alpha <= 0.0 and not is_inspected:
-			queue_free()
+		if not is_inspected:
+			corpse_alpha = maxf(0.0, corpse_alpha - 300.0 * dt)
+			sprite.modulate = Color(1.0, 1.0, 1.0, corpse_alpha / 255.0)
+			if corpse_alpha <= 0.0:
+				queue_free()
 		return true
 	return false

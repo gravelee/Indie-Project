@@ -13,7 +13,9 @@ extends RefCounted
 #   - Handle physics  (Godot engine does that via move_and_slide).
 # =============================================================================
 
-const TILE_SIZE := 32
+const TILE_SIZE      := 32
+const TEMP_BLOCK_DURATION := 2.0
+const MAX_PATH_TILES := 120
 
 
 # ── Internal ──────────────────────────────────────────────────────────────────
@@ -27,8 +29,14 @@ var _solid_counts    	: Dictionary = {}   # set_tile_solid().
 var _dynamic_blockers	: Dictionary = {}   #as game._update_dynamic_blockers().
 # Tracks which exact tiles are solid (no dilation). For debug_overlay.
 var _grid_centers    	: Dictionary = {}   # set_tile_solid().
-# Temporary creature-collision blocks. tile → seconds_remaining.
-var _temp_blocks     	: Dictionary = {}   # add_temp_block(), update().
+# Temporary creature-collision blocks. Tile → seconds_remaining.
+var _temp_block_timer  : Dictionary = {}   # add_temp_block(), update().
+# How many times each tile has been updated before timer is up.
+var _temp_block_update  : Dictionary = {}   # add_temp_block(), update().
+# How many times each tile has been re-blocked (after timer is up).
+var _temp_block_times   : Dictionary = {}   # add_temp_block(), update().
+# How much time since _temp_block_times[tile] is to be reseted.
+var _temp_block_duration: Dictionary = {}   # update().
 
 
 # =============================================================================
@@ -93,34 +101,48 @@ func set_tile_solid(tile: Vector2i, solid: bool) -> void:
 # =============================================================================
 
 # Called: creature._on_collision().
-# Blocks the tile under world_pos for `duration` seconds so A* routes around it.
-# Ignored if the tile is already permanently solid.
-func add_temp_block(world_pos: Vector2, duration: float = 3.0) -> void:
+func add_temp_block(world_pos: Vector2) -> void:
 
+	# Blocks the creatures next waypoint so A* routes around it. Ignored if 
+	# the tile is already permanently solid. 
 	var tile := _world_to_tile(world_pos)
 	if tile.x < 0 or tile.x >= _map_cols or tile.y < 0 or tile.y >= _map_rows:
 		return
 	if _solid_counts.has(tile):
-		return   # already a permanent obstacle — no need to track
-	if not _temp_blocks.has(tile):
+		return   # aAlready a permanent obstacle. No need to track.
+	if not _temp_block_timer.has(tile):
 		_grid.set_point_solid(tile, true)
-	_temp_blocks[tile] = duration   # refresh duration if already blocked
+	_temp_block_update[tile] = _temp_block_update.get(tile, 0) + 1
+	_temp_block_times[tile] = _temp_block_times.get(tile, 0)
+	_temp_block_timer[tile] = minf(TEMP_BLOCK_DURATION  
+		+ (_temp_block_times[tile] + _temp_block_update[tile] - 1) * 2, 32)
 
 
 # Called: game._process().
 func update(dt: float) -> void:
 
-	if _temp_blocks.is_empty():
+	if _temp_block_timer.is_empty() and _temp_block_duration.is_empty():
 		return
-	var expired : Array = []
-	for tile in _temp_blocks:
-		_temp_blocks[tile] -= dt
-		if _temp_blocks[tile] <= 0.0:
-			expired.append(tile)
-	for tile in expired:
-		_temp_blocks.erase(tile)
-		if not _solid_counts.has(tile):
-			_grid.set_point_solid(tile, false)
+	var expired_couter   : Array = []
+	var expired_duration : Array = []
+	for tile in _temp_block_timer:
+		_temp_block_timer[tile] -= dt
+		if _temp_block_timer[tile] <= 0.0:
+			expired_couter.append(tile)
+	for tile in _temp_block_duration:
+		_temp_block_duration[tile] -= dt
+		if _temp_block_duration[tile] <= 0.0:
+			expired_duration.append(tile)
+	for tile in expired_duration:
+		_temp_block_times.erase(tile)
+		_temp_block_duration.erase(tile)
+	for tile in expired_couter:
+		_temp_block_update.erase(tile)
+		_temp_block_times[tile] = _temp_block_times.get(tile, 0) + 1
+		_temp_block_duration[tile] = 32
+		_temp_block_timer.erase(tile)
+		# There is no way that tile to be part of _solid_counts. Son no check.
+		_grid.set_point_solid(tile, false)
 
 
 # =============================================================================
@@ -139,23 +161,38 @@ func find_path(from_world: Vector2, to_world: Vector2) -> Array:
 	if from_tile == to_tile:
 		return []
 
-	# Targets tile solid. Happens when player is near an obstacle.
+	# 1. Pre-check: Chebyshev distance > MAX_PATH_TILES — too far, skip A*.                   
+	var cheb := maxi(absi(to_tile.x - from_tile.x), absi(to_tile.y - from_tile.y))            
+	if cheb > MAX_PATH_TILES:                                                                 
+		return []
+
+	# 2. Neighbor solidity heuristic — start A* from the more-enclosed side so                
+	#    the search exhausts a small blocked area fast instead of exploring open space.       
+	var from_score := _count_solid_neighbors(from_tile)
+	var to_score   := _count_solid_neighbors(to_tile)
+	var reversed   := to_score > from_score
+	
+	# If creature and player tiles are solid find nearest walkable.
 	if _grid.is_point_solid(to_tile):
 		to_tile = _nearest_walkable(to_tile)
-
-	# Creatures tile solid. Happens when creature is pushed into an obstacle.
-	if _grid.is_point_solid(from_tile):
-		from_tile = _nearest_walkable(from_tile)
-
-	# Temporarily marks all creature center tiles as solid so A* routes around them.
+		
+	# Temporarily marks all creature center tiles (except specific creature tile)
+	# as solid so A* routes around them.
 	for tile in _dynamic_blockers:
+		if tile == from_tile:
+			continue
 		_solid_counts[tile] = _solid_counts.get(tile, 0) + 1
 		_grid.set_point_solid(tile, true)
+	
+	var search_from := to_tile   if reversed else from_tile
+	var search_to   := from_tile if reversed else to_tile
 
-	var raw : PackedVector2Array = _grid.get_point_path(from_tile, to_tile)
+	var raw : PackedVector2Array = _grid.get_point_path(search_from, search_to)
 
-	# Unmarks all creature center tiles.
+	# Unmarks all creature center tiles (except specific creature tile).
 	for tile in _dynamic_blockers:
+		if tile == from_tile:
+			continue
 		var count : int = _solid_counts.get(tile, 1) - 1
 		if count <= 0:
 			_solid_counts.erase(tile)
@@ -163,16 +200,21 @@ func find_path(from_world: Vector2, to_world: Vector2) -> Array:
 		else:
 			_solid_counts[tile] = count
 	
-	# raw[0] is the from_tile anchor — the creature is already inside that tile so                        
-	# navigating back to it causes a momentary backward step. Drop it.
+	# 3. Path length cap — unreasonably long path means effectively unreachable, treat as dead+lock.
 	var path := Array(raw)
-	if path.size() > 1:
-		if path.size() < 4:
-			print("First cleared! from size<4.")
-		path.pop_front()
+	if path.size() > MAX_PATH_TILES:
+		return []
 		
+	# If we searched in reverse order, flip the path back to creature→player order.
+	if reversed:
+		path.reverse()
+		
+	# raw[0] is the search_from anchor — the creature is already inside that tile so
+	# navigating back to it causes a momentary backward step. Drop it.
+	if path.size() > 1:
+		path.pop_front()
 	# A list of waypoint coordinates (center of a tile) that builds a path from_tile to to_tile.
-	return path   
+	return path
 
 
 # =============================================================================
@@ -185,7 +227,23 @@ func _world_to_tile(world_pos: Vector2) -> Vector2i:
 	return Vector2i(int(world_pos.x / TILE_SIZE), int(world_pos.y / TILE_SIZE))
 
 
-# Called: find_path(), _exit_wait().
+# Called: find_path().                                                                             
+func _count_solid_neighbors(tile: Vector2i) -> int:                                              
+
+	# Counts solid tiles in the 8 neighbors of tile (out-of-bounds counts as solid).
+	var count := 0
+	for dx in range(-1, 2):
+		for dy in range(-1, 2):
+			if dx == 0 and dy == 0:
+				continue
+			var t := tile + Vector2i(dx, dy)
+			if t.x < 0 or t.x >= _map_cols or t.y < 0 or t.y >= _map_rows:
+				count += 1
+			elif _grid.is_point_solid(t) or _dynamic_blockers.has(t):
+				count += 1
+	return count
+
+# Called: find_path(), creature._exit_wait().
 func _nearest_walkable(tile: Vector2i) -> Vector2i:
 
 	# BFS outward until a non-solid tile is found.
@@ -242,4 +300,4 @@ func get_dynamic_blockers() -> Dictionary:
 func get_temp_blocks() -> Dictionary:
 
 	# Keys are tile coords; values are remaining seconds.
-	return _temp_blocks
+	return _temp_block_timer

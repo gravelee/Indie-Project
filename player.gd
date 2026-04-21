@@ -16,9 +16,11 @@ extends CharacterBody2D
 #   - Set z_index                 (game.gd does that).
 # =============================================================================
 
-const SPRITE_SIZE := 96
-const TILE_SIZE   := 32
-const SPRITE_PATH := "res://assets/spritesheets/player/"
+const SPRITE_SIZE       := 96
+const TILE_SIZE         := 32
+const SPRITE_PATH       := "res://assets/spritesheets/player/"
+const WEAPON_SPRITE_PATH:= "res://assets/spritesheets/wooden_sword/"
+const WEAPON_SPRITES	: Array = ["wooden_sword_attack", "wooden_sword_attack_opposite"]
 
 enum State  { SPAWN, IDLE_NEUTRAL, IDLE_ATTACK, WALKING, FORWARD_SLASH, DEATH, DEAD }
 enum Facing { SOUTH, NORTH, EAST, WEST }
@@ -44,6 +46,16 @@ const FACING_STR := {
 	Facing.EAST:  "east",  Facing.WEST:  "west"
 }
 
+# Rotation offset applied to the sword node so its 90° square sector aligns with the
+# attack cone. Derived from the pivot being at the lower-right corner of the 96x96 sprite:
+# at 0° the sector spans −90°→−180° (bisector −135°). Required offset = facing_angle + 135°.
+const FACING_SWORD_DEG := {
+	Facing.SOUTH: -135.0,
+	Facing.WEST:   -45.0,
+	Facing.NORTH:   45.0,
+	Facing.EAST:   135.0,
+}
+
 
 # ── State ──────────────────────────────────────────────────────────────────────
 
@@ -66,9 +78,12 @@ var camera_angle 	: float = 0.0:
 
 # ── References ─────────────────────────────────────────────────────────────────
 
-var sprite      : AnimatedSprite2D		# init game._build_scene().
-var stats       : Stats           		# set game._load_json().
-var abilities 	: Array[Ability] = []	# init load_animations().
+var sprite       : AnimatedSprite2D		# init game._build_scene().
+var weapon_sprite: AnimatedSprite2D		# init game._build_scene().
+var stats        : Stats           		# set game._load_json().
+var abilities 	 : Array[Ability] = []	# init load_animations().
+
+var sword_facing_deg : float = -135.0	# current sword rotation offset; updated in _set_facing().
 
 # ── Signals ────────────────────────────────────────────────────────────────────
 
@@ -90,6 +105,7 @@ func init() -> void:
 # Called: game._build_scene().
 func load_animations() -> void:
 
+	# Player body sprites.
 	var frames := SpriteFrames.new()
 	sprite.sprite_frames = frames
 
@@ -108,6 +124,18 @@ func load_animations() -> void:
 
 	sprite.animation_finished.connect(_on_anim_finished)
 	sprite.play("spawn")
+
+	# Player weapon sprites.
+	var weapon_frames := SpriteFrames.new()
+	weapon_sprite.sprite_frames = weapon_frames
+	
+	for key in WEAPON_SPRITES:
+		var texture : Texture2D = load(WEAPON_SPRITE_PATH + key + ".png")
+		_add_strip(weapon_frames, key, texture, false)
+	
+	weapon_sprite.offset  = Vector2(-48.0, -48.0)
+	weapon_sprite.visible = false
+	weapon_sprite.animation_finished.connect(func(): weapon_sprite.visible = false)
 
 
 # Called: load_animations().
@@ -153,6 +181,13 @@ func _set_state(new_state: State) -> void:
 	anim_done = false
 	if state != State.DEAD:
 		_rebuild_anim_key()
+		
+	if state == State.FORWARD_SLASH:
+		weapon_sprite.visible = true
+		if facing == Facing.NORTH or facing == Facing.EAST:
+			weapon_sprite.play(WEAPON_SPRITES[0])
+		else:
+			weapon_sprite.play(WEAPON_SPRITES[1])
 
 
 # Called: _handle_movement().
@@ -160,7 +195,8 @@ func _set_facing(new_facing: Facing) -> void:
 
 	if facing == new_facing:
 		return
-	facing = new_facing
+	facing           = new_facing
+	sword_facing_deg = FACING_SWORD_DEG[facing]
 	_rebuild_anim_key()
 
 
