@@ -24,7 +24,7 @@ extends Node2D
 # =============================================================================
 
 const TILE_SIZE 			:= 32
-const Z_DEPTH_SCALE 		:= 32
+const Z_DEPTH_SCALE 		:= 2	# Very smooth sprite overlap. Keep between [2-32].
 const TERRAIN_Z 			:= -4096
 const TILE_TYPE_MAP     	:= {2: "rat", 3: "snake"}
 
@@ -42,10 +42,11 @@ const PATH_COMBAT_FEEDBACK_SCRIPT := "res://combat_feedback.gd"
 const PATH_STAT_PANEL_SCRIPT      := "res://stat_panel.gd"
 const PATH_DEBUG_OVERLAY_SCRIPT   := "res://debug_overlay.gd"
 const PATH_BUSH_SCRIPT            := "res://bush.gd"
+const PATH_SMALL_TREE_SCRIPT      := "res://small_tree.gd"
 const PATH_CREATURE_SCRIPT		  := "res://creature.gd"
 const PATH_TILESET        		  := "res://assets/tilemaps/leaf/leaf.png"
 const PATH_MAP_TERRAIN    		  := "res://assets/maps/level_01/level_01_terrain.txt"
-const PATH_MAP_ENTITIES   		  := "res://assets/maps/level_01/level_01_entities_test.txt"
+const PATH_MAP_ENTITIES   		  := "res://assets/maps/level_01/level_01_entities.txt"
 const PATH_MAP_JSON       		  := "res://assets/maps/level_01/level_01.json"
 
 # ── Camera rotation state ──────────────────────────────────────────────────────
@@ -304,6 +305,8 @@ func _load_entities() -> void:
 				_spawn_creature(world_pos, row, col, tile_id)
 			elif tile_id == 101:              # 101 = bush
 				_spawn_bush(world_pos)
+			elif tile_id == 102:              # 102 = small tree
+				_spawn_small_tree(world_pos)
 		row += 1
 
 	file.close()
@@ -363,6 +366,22 @@ func _spawn_bush(world_pos: Vector2) -> void:
 	)
 	rotatable_sprites.append(bush.sprite)
 	obstacle_map[tile_key] = bush
+
+
+# Called: _load_entities().
+func _spawn_small_tree(world_pos: Vector2) -> void:
+
+	var tree     := StaticBody2D.new()
+	var tile_key := Vector2i(int(world_pos.x) / TILE_SIZE, int(world_pos.y) / TILE_SIZE)
+	tree.set_script(load(PATH_SMALL_TREE_SCRIPT))
+	tree.position = world_pos
+	add_child(tree)   # triggers small_tree._ready() which creates its sprite + collision
+	pathfinder.set_tile_solid(tile_key, true)
+	tree.tree_exiting.connect(func():
+		rotatable_sprites.erase(tree.sprite)
+		pathfinder.set_tile_solid(tile_key, false)
+	)
+	rotatable_sprites.append(tree.sprite)
 
 
 # Called: player._try_attack() who emits player.attack signal.
@@ -466,7 +485,9 @@ func _update_z_sort() -> void:
 		cached_sin_a  = sin(rad)
 		cached_cos_a  = cos(rad)
 		for sprite in rotatable_sprites:
-			var pos             := (sprite.get_parent() as Node2D).position
+			# Use parent.position + sprite.position so tall sprites (e.g. small_tree with
+			# sprite offset to trunk) depth-sort from their visual anchor, not their StaticBody2D.
+			var pos             : Vector2 = (sprite.get_parent() as Node2D).position + sprite.position
 			sprite.rotation_degrees = -world_angle
 			sprite.z_index          = int((pos.x * cached_sin_a + pos.y * cached_cos_a) / Z_DEPTH_SCALE)
 		for sprite in creature_sprites:
@@ -475,8 +496,13 @@ func _update_z_sort() -> void:
 	# Always: player and creatures move every frame so depth must stay current.
 	player_sprite.z_index = int((player.position.x * cached_sin_a + player.position.y * cached_cos_a) / Z_DEPTH_SCALE)
 	if weapon_sprite.visible:
-		var sword_center := player.global_position + Vector2(-48.0, -48.0).rotated(weapon_sprite.rotation)
-		weapon_sprite.z_index = int((sword_center.x * cached_sin_a + sword_center.y * cached_cos_a) / Z_DEPTH_SCALE)
+		match player.facing:
+			player.Facing.NORTH:
+				weapon_sprite.z_index = player_sprite.z_index - 1  # behind player, above northern obstacles
+			player.Facing.SOUTH:
+				weapon_sprite.z_index = player_sprite.z_index      # tree order puts weapon in front of player
+			_:  # EAST, WEST
+				weapon_sprite.z_index = player_sprite.z_index + 1  # in front of player and same-y obstacles
 	for i in range(creatures.size()):
 		var pos : Vector2 = (creatures[i] as Node2D).position
 		creature_sprites[i].z_index = int((pos.x * cached_sin_a + pos.y * cached_cos_a) / Z_DEPTH_SCALE)
