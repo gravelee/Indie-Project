@@ -3,56 +3,56 @@
     "player": {
         "str": 1, "agi": 1, "sta": 180,
         "int": 0, "spr": 0, "res": 100, "def": 100,
-        "bms": 180, "exp": 0,
+        "bms": 360, "exp": 0,
     },
     "creatures": [
     {
         "row": 4, "col": 6, "type": "rat",
         "str": 1, "agi": 0, "sta": 36,
         "int": 0, "spr": 30, "res": 30, "def": 100,
-        "bms": 150, "exp": 0, "home": true, "returning": false, "fleeing": false
+        "bms": 300, "exp": 0, "home": true, "returning": false, "fleeing": false
     },
     {
         "row": 5, "col": 92, "type": "rat",
         "str": 0, "agi": 1, "sta": 35,
         "int": 0, "spr": 30, "res": 31, "def": 100,
-        "bms": 150, "exp": 0, "home": true, "returning": true, "fleeing": false
+        "bms": 300, "exp": 0, "home": true, "returning": true, "fleeing": false
     },
     {
         "row": 6, "col": 54, "type": "rat",
         "str": 0, "agi": 0, "sta": 36,
         "int": 0, "spr": 30, "res": 31, "def": 100,
-        "bms": 150, "exp": 0, "home": false, "returning": false, "fleeing": false
+        "bms": 300, "exp": 0, "home": false, "returning": false, "fleeing": false
     },
     {
         "row": 23, "col": 4, "type": "rat",
         "str": 1, "agi": 0, "sta": 35,
         "int": 0, "spr": 30, "res": 30, "def": 100,
-        "bms": 150, "exp": 0, "home": false, "returning": true, "fleeing": false
+        "bms": 300, "exp": 0, "home": false, "returning": true, "fleeing": false
     },
     {
         "row": 42, "col": 82, "type": "snake",
         "str": 3, "agi": 2, "sta": 37,
         "int": 0, "spr": 30, "res": 31, "def": 100,
-        "bms": 170, "exp": 0, "home": true, "returning": false, "fleeing": false
+        "bms": 340, "exp": 0, "home": true, "returning": false, "fleeing": false
     },
     {
         "row": 69, "col": 9, "type": "snake",
         "str": 2, "agi": 1, "sta": 36,
         "int": 0, "spr": 30, "res": 31, "def": 103,
-        "bms": 170, "exp": 0, "home": true, "returning": true, "fleeing": false
+        "bms": 340, "exp": 0, "home": true, "returning": true, "fleeing": false
     },
     {
         "row": 77, "col": 47, "type": "snake",
         "str": 3, "agi": 2, "sta": 38,
         "int": 0, "spr": 30, "res": 31, "def": 100,
-        "bms": 170, "exp": 0, "home": false, "returning": false, "fleeing": false
+        "bms": 340, "exp": 0, "home": false, "returning": false, "fleeing": false
     },
     {
         "row": 91, "col": 95, "type": "snake",
         "str": 2, "agi": 3, "sta": 37,
         "int": 0, "spr": 30, "res": 31, "def": 103,
-        "bms": 170, "exp": 0, "home": false, "returning": true, "fleeing": false
+        "bms": 340, "exp": 0, "home": false, "returning": true, "fleeing": false
     }
     ]
 }

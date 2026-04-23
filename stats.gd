@@ -208,6 +208,9 @@ func take_damage(raw_damage: float, dot: bool = false, is_magic: bool = false, i
 		actual = floor(maxf(minimum, raw_damage - defense) + 0.4999)
 		
 	hp = maxf(0.0, hp - actual)
+	if not is_alive():
+		cleanse_all_effects()
+	
 	return actual
 	
 	
@@ -291,7 +294,7 @@ func cleanse_effect(effect_name: String) -> void:
 	effects.cleanse(effect_name)
 	
 
-# Called: creature._begin_death(), player._begin_death().
+# Called: take_damage(), creature._check_teleport().
 func cleanse_all_effects() -> void:
 	
 	for effect in effects._active.keys():

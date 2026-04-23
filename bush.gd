@@ -3,8 +3,10 @@ extends StaticBody2D
 
 # ── File paths ─────────────────────────────────────────────────────────────────
 
-const PATH_IDLE  := "res://assets/sprites/bush/bush.png"
-const PATH_DEATH := "res://assets/spritesheets/bush/death.png"
+const PATH_IDLE  := "res://assets/sprites/bush/"
+const BUSHES	 : Array = ["bush_1.png","bush_2.png","bush_3.png","bush_4.png"]
+const BUSHES_DEATH: Array = ["death_1.png","death_2.png","death_3.png","death_4.png"]
+const PATH_DEATH := "res://assets/spritesheets/bush/"
 
 
 # ── State ──────────────────────────────────────────────────────────────────────
@@ -54,8 +56,10 @@ func _load_animations() -> void:
 	frames.add_animation("idle")
 	frames.set_animation_loop("idle", true)
 	frames.set_animation_speed("idle", 1.0)
-
-	var idle_tex   : Texture2D = load(PATH_IDLE)
+	
+	var index = randi_range(0, BUSHES.size() - 1)
+	
+	var idle_tex   : Texture2D = load(PATH_IDLE + BUSHES[index])
 	var idle_atlas := AtlasTexture.new()
 	idle_atlas.atlas  = idle_tex
 	idle_atlas.region = Rect2(0, 0, idle_tex.get_width(), idle_tex.get_height())
@@ -66,7 +70,7 @@ func _load_animations() -> void:
 	frames.set_animation_speed("death", 8.0)
 
 	# Death animation setup.
-	var death_tex   : Texture2D = load(PATH_DEATH)
+	var death_tex   : Texture2D = load(PATH_DEATH + BUSHES_DEATH[index])
 	var frame_w     := death_tex.get_height()   # frames are square
 	var frame_count := death_tex.get_width() / frame_w
 

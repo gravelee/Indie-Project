@@ -6,7 +6,6 @@ const ANIMATION_SPEED 	:= 8
 
 # ── AI distances ───────────────────────────────────────────────────────────────
 
-const NOTICE_COOLDOWN  := 2.5
 const NOTICE_DIRECTION := 450.0
 const NOTICE_DIST      := 400.0
 const CHASE_DIST       := 10000.0#900.0
@@ -108,7 +107,7 @@ var in_combat    : bool  = false
 var anim_done    : bool  = false
 var alive        : bool  = true
 var is_inspected : bool  = false   # set stat_panel. Prevents queue_free while panel is open.
-var corpse_alpha : float = 255.0
+var sprite_alpha : float = 255.0
 
 
 # ── Wander ─────────────────────────────────────────────────────────────────────
@@ -129,9 +128,9 @@ var has_home        : bool    = false
 var temp_home       : bool    = false
 var is_returning    : bool    = false
 var fleeing         : bool    = false
+var give_up			: bool    = false
 var home_max_dist   : bool    = false
 var out_of_energy   : bool    = false
-var notice_cooldown : float   = 0.0
 
 
 # ── Pathfinding ────────────────────────────────────────────────────────────────
@@ -154,10 +153,11 @@ var _wait_timer				: float   = 0.0
 var _wait_interval			: float   = WAIT_INTERVAL_START
 var _wait_damage_acc     	: float   = 0.0            # damage taken across wait cycles.
 var _wait_damage_threshold	: float		# damage units that count as one extra effective wait cycle.
-var _saved_is_returning  	: bool    = false          # eased during returning wait.
-var _saved_home_max_dist 	: bool    = false          # eased during returning wait.
+var _wait_entry_state		: State
 var _collision_timer		: float	  = 0.0
 var _collision_interval 	: float
+var _teleport				: bool	  = false
+var _teleported				: bool    = false
 
 
 # ── References ─────────────────────────────────────────────────────────────────
@@ -288,11 +288,12 @@ func _load_animations() -> void:
 
 # Called: _physics_process().
 func _sync_anim() -> void:
-
+	
+	# Sync creature facing direction.
 	sprite.flip_h = facing_right
 
-	# CHASE and RETURNING animate based on actual movement after move_and_slide(),
-	# not intended velocity — so creatures blocked by obstacles show idle animation.
+	# CHASE and RETURNING animate based on actual movement 
+	# so creatures blocked by obstacles show idle animation.
 	var target_anim : String
 	if state == State.CHASE:
 		target_anim = STATE_ANIM[State.IDLE_ATTACK][0] if _wait else STATE_ANIM[State.CHASE][0]
@@ -310,194 +311,326 @@ func _on_anim_finished() -> void:
 		anim_done = true
 
 
-# Called: _update_state(), _wander(), _snap_to_home(), _exit_wait(), _begin_death().
+# Called: _update_state(), _try_attack(), take_damage().
 func _set_state(new_state: State) -> void:
 
 	if state == new_state:
 		return
 	
 	state     = new_state
-	anim_done = false
-	in_combat = new_state in COMBAT_STATES
+	in_combat = state in COMBAT_STATES
 	
+	anim_done = false
 	if state != State.DEAD and state != State.ATTACK:
 		sprite.play(STATE_ANIM[state][0])
 
 
 # =============================================================================
-# STATE MACHINE
+# STATE MACHINE - CREATURE STATUS
 # =============================================================================
 
 # Called: _physics_process().
 func _update_state(dt: float) -> void:
 
-	var player_ok 	: bool  = player.state != player.State.DEATH and player.state != player.State.DEAD
 	var dist_sq 	: float = position.distance_squared_to(player.position)
 
 	match state:
 
 		State.IDLE_NEUTRAL, State.WANDER:
-			# If the player is within creatures notice direction distance and the
-			# creature is in idle neutral then creature updates facing.
-			if player_ok and dist_sq < NOTICE_DIRECTION_SQ:
+
+			# Creature updates facing direction towards the player if:
+			# 1) Player is alive AND
+			# 2) Creature is within notice direction distance AND 
+			# 3) Creature is in IDLE_NEUTRAL state.
+			if player.alive and dist_sq < NOTICE_DIRECTION_SQ:
 				if state == State.IDLE_NEUTRAL:
 					_update_facing(player.position.x - position.x, player.position.y - position.y)
-				# If the player is within creatures notice distance and 
-				# notice cooldown is up then creature enters notice state.
-				if dist_sq < NOTICE_DIST_SQ and notice_cooldown <= 0.0:
+				# Creature also enters NOTICE state if:
+				# 1) Creature is within notice distance.
+				if dist_sq < NOTICE_DIST_SQ:
 					_set_state(State.NOTICE)
 					return
-			# Creature can wander while in wander state or player not ok or in idle neutral state 
-			# but only if the players distance is bigger than notice direction distance.
-			if state == State.WANDER or not player_ok or dist_sq  > NOTICE_DIRECTION_SQ:
+			# Creature can always start wandering while in WANDER state.
+			# Creature can start wandering while in IDLE_NEUTRAL state only if:
+			# 1) Player is dead (no other conditions) OR
+			# 2) Player is alive but players distance is bigger than notice direction distance.
+			if state == State.WANDER or not player.alive or (player.alive and dist_sq  > NOTICE_DIRECTION_SQ):
 				var signal_ := _wander(dt)
 				if signal_ == "start": _set_state(State.WANDER)
 				elif signal_ == "done": _set_state(State.IDLE_NEUTRAL)
 
+		# PROBABLY
+		# 1) Player is alive AND
+		# 2) Creature is within notice direction distance AND
+		# 3) Creature is within notice distance.
 		State.NOTICE:
-			# If the player is within attack distance creature 
-			# bypasses notice anim_done and enters enter stance state.
-			if dist_sq < ATTACK_DIST_SQ:
+
+			# Creature immediately enters ENTER_STANCE state if:
+			# 1) Player is alive AND
+			# 2) Creature is within attack range.
+			if player.alive and dist_sq < ATTACK_DIST_SQ:
 				_set_state(State.ENTER_STANCE)
+			# Otherwise creature is waiting for NOTICE animation to complete.
 			elif anim_done:
-				# If the player is still within notice distance after 
-				# anim_done the creature enters enter stance state.
-				if dist_sq < NOTICE_DIST_SQ:
+				# Creature enters ENTER_STANCE state if:
+				# 1) Player is alive AND
+				# 2) Player is within notice distance.
+				if player.alive and dist_sq < NOTICE_DIST_SQ:
 					_set_state(State.ENTER_STANCE)
-				# If the player has left notice distance while anim_done
-				# then the creature enters idle neutral state.
+				# 1) Player is dead OR
+				# 2) Player is out of notice disance.
+				# Then the creature enters IDLE_NEUTRAL state.
 				else:
 					_set_state(State.IDLE_NEUTRAL)
 
+		# PROBABLY
+		# 1) Player is alive AND creature is within attack range OR
+		# 2) Player is alive AND creature is within notice range OR
+		#    [3+4+5+6+7] OR
+		# 3) Player is alive AND
+		# 4) Creature has energy AND
+		# 5) Creature does not give up ( 27.5 sec passed or 30% damage recieved while waiting) AND
+		# 6) Creature has not reached max distance to home AND
+		# 7) Creature is within notice distance.
+		# 	[8+9+10+11+12+13].
+		# 8) Creature has energy AND
+		# 9) Creature does not give up ( 27.5 sec passed or 30% damage recieved while waiting) AND
+		# 10) Creature is not returning AND
+		# 11) Creature has not reached max distance to home AND
+		# 12) Creature is within notice distance AND
+		# 13) Creature is out of attack range.
 		State.ENTER_STANCE:
-			# If creatures has no initial home it sets one here.
+
+			# Creatures sets temporary home if it has no home position.
 			if not has_home:
+				# Set home current creature position.
 				home_position = position
 				temp_home     = true
+			# Creature is waiting for ENTER_STANCE animation to complete.
 			if anim_done:
-				# When ani_done the creature updates its facing.
+				# Creature updates its facing direction towards the player.
 				_update_facing(player.position.x - position.x, player.position.y - position.y)
-				# If the player is within attack distance after anim_done the
-				# creature enters idle attack state.
-				if dist_sq < ATTACK_DIST_SQ:
+				# Creature enters EXIT_STANCE state if:
+				# 1) Player is dead.
+				if not player.alive:
+					_set_state(State.EXIT_STANCE)
+				# 1) Player is alive.
+				# Creature enters IDLE_ATTACK state if:
+				# 1) Creature is within attack range.
+				elif dist_sq < ATTACK_DIST_SQ:
 					_set_state(State.IDLE_ATTACK)
-				# If the player is within notice distance after anim_done the
-				# creature enters chase state.
+				# 1) Player is alive AND
+				# 2) Player is out of attack distance.
+				# Creature enters CHASE state if:
+				# 1) Player is within notice distance.
 				elif dist_sq < NOTICE_DIST_SQ: 
 					_set_state(State.CHASE)
-				# If the player is out of notice distance after anim_done the
-				# creature enters exit stance state.
+				# 1) Player is alive AND
+				# 2) Player is out of notice distance.
+				# Then creature enters EXIT_STANCE state.
 				else:                           
 					_set_state(State.EXIT_STANCE)
 
 		State.IDLE_ATTACK:
-			# If the player is not okay or the creature is 
-			# out of energy it enters returning state.
-			if not player_ok or out_of_energy:
-				_set_state(State.RETURNING)
-			# If the player is within attack distance then the
-			# creatures tries to attack.
-			elif dist_sq < ATTACK_DIST_SQ:
-				_try_attack()
-			# If the player is within chasing distance 
-			# the creature enters chase state.
-			elif dist_sq < CHASE_DIST_SQ:
-				_set_state(State.CHASE)
-			# If the player is out of chasing distance
-			# the creatures enters exit stance state.
-			else:
+
+			# Creature calculates the distance to home position.
+			var dist_home_sq := position.distance_squared_to(home_position)
+			# Creature enters EXIT_STANCE state if:
+			# 1) Player is dead OR
+			# 2) Creature is out of energy OR
+			# 3) Creature has reached max distance to home.
+			# "3*" In IDLE_ATTACK state creature does not move itself but
+			# 	   it may be moved by the player (knockback) or by the terrain.
+			if not player.alive or out_of_energy or dist_home_sq > HOME_MAX_DIST_SQ:
+				if dist_home_sq > HOME_MAX_DIST_SQ:
+					home_max_dist = true
 				_set_state(State.EXIT_STANCE)
+			# 1) Player is alive AND
+			# 2) Creature has energy AND
+			# 3) Creature has not reached max distance to home AND
+			# 4) Creature is out of attack range.
+			# Creature enters CHASE state if:
+			# 1) Player is within chase distance.
+			elif dist_sq >= ATTACK_DIST_SQ:
+				if dist_sq < CHASE_DIST_SQ:
+					_set_state(State.CHASE)
+				# 1) Player is alive AND
+				# 2) Creature has energy AND
+				# 3) Creature has not reached max distance to home AND
+				# 4) Creature is out of chase range.
+				# Then creature enters EXIT_STANCE state.
+				else:
+					_set_state(State.EXIT_STANCE)
 
 		State.CHASE:
-			# Calculates the distance to home position.
+	
+			# Creature calculates the distance to home position.
 			var dist_home_sq := position.distance_squared_to(home_position)
-			# If the creature has reached the maximum distance
-			# from home it enters exit stance state.
-			if dist_home_sq > HOME_MAX_DIST_SQ:
-				home_max_dist = true
+			# Creature enters EXIT_STANCE state if:
+			# 1) Player is dead OR
+			# 2) Creature is out of energy OR
+			# 3) Creature gives up ( 27.5 sec passed or 30% damage recieved while waiting) OR
+			# 4) Creature has reached max distance to home OR
+			# 5) Creature is out of chase distance.
+			# "2*" In CHASE state creature does not use energy itself but
+			# 	   it may be depleted by a players ability.
+			if not player.alive or out_of_energy or give_up or dist_home_sq > HOME_MAX_DIST_SQ or dist_sq > CHASE_DIST_SQ:
+				if dist_home_sq > HOME_MAX_DIST_SQ:
+					home_max_dist = true
 				_set_state(State.EXIT_STANCE)
-			# If the player is within attack distance then the
-			# creature updates its facing and enters idle attack state.
+			# 1) Player is alive AND
+			# 2) Creature has energy AND
+			# 3) Creature does not give up ( 27.5 sec passed or 30% damage recieved while waiting) AND
+			# 4) Creature has not reached max distance to home AND
+			# 5) Creature is within chase distance.
+			# Creature updates facing direction towards the player AND enters IDLE_ATTACK state if:
+			# 1) Creature is within attack range.
 			elif dist_sq < ATTACK_DIST_SQ:
 				_update_facing(player.position.x - position.x, player.position.y - position.y)
 				_set_state(State.IDLE_ATTACK)
-			# If the player is out of chasing distance the
-			# creature enters exit stance state.
-			elif dist_sq > CHASE_DIST_SQ:
-				_set_state(State.EXIT_STANCE)
-			# The player is still within chasing distance so the 
-			# creature moves smart towards the player.
-			else:
-				_move_smart(player.position, stats.mspd, dt)
 
+		# PROBABLY
+		# 1) Player is dead OR
+		# 2) Player is alive AND creature is out of notice distance OR
+		#	 [3+4+5] OR
+		# 3) Player is dead OR
+		# 4) Creature is out of energy OR
+		# 5) Creature has reached max distance to home.
+		#	 [6+7+8+9] OR
+		# 6) Player is alive AND
+		# 7) Creature has energy AND
+		# 8) Creature has not reached max distance to home AND
+		# 9) Creature is out of chase range.
+		#	 [10+11+12+13+14] OR
+		# 10) Player is dead OR
+		# 11) Creature is out of energy OR
+		# 12) Creature gives up ( 27.5 sec passed or 30% damage recieved while waiting) OR
+		# 13) Creature has reached max distance to home OR
+		# 14) Creature is out of chase distance.
 		State.EXIT_STANCE:
 			
+			# Creature is waiting for EXIT_STANCE animation to complete.
 			if anim_done:
-				# When anim_done if the player is within notice distance and 
-				# creature not home_max_dist the creature enters enter stance state.
-				if dist_sq < NOTICE_DIST_SQ and not home_max_dist: 
+				# Creature enters ENTER_STANCE state if:
+				# 1) Player is alive AND
+				# 2) Creature has energy AND
+				# 3) Creature does not give up ( 27.5 sec passed or 30% damage recieved while waiting) AND
+				# 4) Creature has not reached max distance to home AND
+				# 5) Creature is within notice distance.
+				if player.alive and not out_of_energy and not give_up and not home_max_dist and dist_sq < NOTICE_DIST_SQ: 
 					_set_state(State.ENTER_STANCE)
-				# When anim_done if the player is out of notice distance
-				# the creature enters returning state.
+				# 1) Player is dead OR
+				# 2) Creature is out of energy OR
+				# 3) Creature gives up ( 27.5 sec passed or 30% damage recieved while waiting) OR
+				# 4) Creature has reached max distance to home OR
+				# 5) Creature is out of notice distance.
+				# Then creature enters RETURNING state.
 				else:                         
 					_set_state(State.RETURNING)
 
 		State.RETURNING:
-			# Calculates the distance to home position and forced.
+
+			# Creature calculates the distance to home position.
 			var dist_home_sq := position.distance_squared_to(home_position)
-			var forced       := is_returning or home_max_dist or out_of_energy or not player_ok
-			# If the player is out of notice distance or the creature is forced to return home.
-			if forced or dist_sq > NOTICE_DIST_SQ:
-				# Creature near its home, snap to home.
+			# Creature snaps to home and enters IDLE_NEUTRAL state if:
+			# 1) Player is dead OR
+			# 2) Creature is out of energy OR
+			# 3) Creature gives up ( 27.5 sec passed or 30% damage recieved while waiting) OR
+			# 4) Creature is returning OR
+			# 5) Creature has reached max distance to home OR
+			# 6) Creature is out of notice distance AND
+			# 7) Creature has reached home.
+			if not player.alive or out_of_energy or give_up or is_returning or home_max_dist or dist_sq > NOTICE_DIST_SQ:
 				if dist_home_sq <= HOME_DIST_SQ:
 					_snap_to_home()
-				# The creature moves smart towards home.
-				else:
-					_move_smart(home_position, FLEE_SPEED, dt)
-					
-			# If player is within notice distance and the creature is not forced
-			# the creature updates its facing.
+					_set_state(State.IDLE_NEUTRAL)
+			# 1) Player is alive AND
+			# 2) Creature has energy AND
+			# 3) Creature does not give up ( 27.5 sec passed or 30% damage recieved while waiting) AND
+			# 4) Creature is not returning AND
+			# 5) Creature has not reached max distance to home AND
+			# 6) Creature is within notice distance.
+			# Then creature updates facing direction towards the player.
 			else:
 				_update_facing(player.position.x - position.x, player.position.y - position.y)
-				# If player is within attack distance the creature enters idle attack state.
+				# Creature also enters IDLE_ATTACK state if:
+				# 1) Creatures is within attack range.
 				if dist_sq < ATTACK_DIST_SQ:
 					_set_state(State.IDLE_ATTACK)
-				# Otherwise the creature enters enter stance state.
+				# 1) Creature is out of attack range.
+				# Then creature enters ENTER_STANCE state.
 				else:
 					_set_state(State.ENTER_STANCE)
 
 		State.ATTACK:
-			# If anim_done the creature enters idle attacke or neutral.
+
+			# Creature is waiting for ATTACK animation to complete.
 			if anim_done:
+				# Creature enters IDLE_ATTACK state if:
+				# 1) Creature is in combat.
 				if in_combat:
 					_set_state(State.IDLE_ATTACK)
+				# 1) Creature is out of combat.
+				# Then creature enters IDLE_NEUTRAL state.
 				else:
 					_set_state(State.IDLE_NEUTRAL)
 
+		State.DEATH:
 
-# =============================================================================
-# MOVEMENT
-# =============================================================================
+			# Creature is waiting for DEATH animation to complete.
+			if anim_done:
+				# Then creature enters DEAD state.
+				_set_state(State.DEAD)
 
-# LOOP
-func _physics_process(dt: float) -> void:
+		State.DEAD:
 
-	if _is_dead_or_dying(dt):
-		return
+			# Creatures corpse fades out if:
+			# 1) Creatures corpse is not inspected.
+			if not is_inspected:
+				if _change_alpha(dt):
+					queue_free()
+
+
+# Called: _physics_process().
+func _execute_state(dt: float) -> void:
 	
-	_update_state(dt)
-	_update_status(dt)
-	_update_movement(dt)
-	_sync_anim()
-	_check_wait(dt)
-	_check_collisions(dt)
-	
+	match state:
+		
+		State.IDLE_ATTACK:
+			
+			# 1) Player is alive AND
+			# 2) Creature has energy AND
+			# 3) Creature has not reached max distance to home AND
+			# 4) Creature is within attack range.
+			_try_attack()
+				
+		State.CHASE:
+			
+			# 1) Player is alive AND
+			# 2) Creature has energy AND
+			# 3) Creature does not give up ( 27.5 sec passed or 30% damage recieved while waiting) AND
+			# 4) Creature has not reached max distance to home AND
+			# 5) Creature is within chase distance AND
+			# 6) Creature is out of attack range.
+			# Then creature moves smart towards the player.
+			_move_smart(player.position, stats.mspd, dt)
+			
+		State.RETURNING:
+			
+			# 1) Player is dead OR
+			# 2) Creature is out of energy OR
+			# 3) Creature gives up ( 27.5 sec passed or 30% damage recieved while waiting) OR
+			# 4) Creature is returning OR
+			# 5) Creature has reached max distance to home OR
+			# 6) Creature is out of notice distance AND
+			# 7) Creature has not reached home yet.
+			# Then creature moves smart towards home.
+			_move_smart(home_position, FLEE_SPEED, dt)
+
 
 # Called: _physics_process().
 func _update_status(dt: float) -> void:
 	
-	if notice_cooldown > 0.0:
-		notice_cooldown -= dt
 	if stats.energy < 1:
 		out_of_energy = true
 	# Update abilities tick timer.
@@ -510,6 +643,25 @@ func _update_status(dt: float) -> void:
 	take_damage(stats.update_effects(dt), true)
 
 
+# =============================================================================
+# MOVEMENT
+# =============================================================================
+
+# LOOP
+func _physics_process(dt: float) -> void:
+
+	_update_state(dt)
+	
+	if alive:
+		_execute_state(dt)
+		_update_status(dt)
+		_update_movement(dt)
+		_sync_anim()
+		_check_wait(dt)
+		_check_teleport(dt)
+		_check_collisions(dt)
+
+
 # Called: _physics_process().
 func _update_movement(dt: float) -> void:
 
@@ -519,75 +671,71 @@ func _update_movement(dt: float) -> void:
 		velocity = Vector2.ZERO
 		return
 
-	# We are in a moving state (creature is actively moving).
+	# Wander has its own collision recovery (force_wander). Skip stuck detection.
+	if state == State.WANDER:
+		move_and_slide()
+		return
+
+	# CHASE and RETURNING: sample position to detect stuck.
 	_stuck_timer += dt
 	if _stuck_timer >= STUCK_SAMPLE_INTERVAL:
 		_stuck_timer    = 0.0
-		# Check if position has minimum changed since last sample.
+		# Check if position has minimum changed since last sample. If not..
 		if position.distance_squared_to(_stuck_pos) < STUCK_MIN_DIST_SQ:
-			# Position not changed. Stuck.
-			_enter_wait(state == State.CHASE)
+			# If not waiting already.
+			if not _wait:
+				# Position not changed. Stuck.
+				_wait             = true
+				_wait_entry_state = state
+		# Minimum movement exists.
 		else:
-			# Exit waiting.
-			_exit_wait(false)
+			# If waiting.
+			if _wait:
+				# Exit waiting.
+				_wait            = false
+				_wait_counter    = 0
+				_wait_damage_acc = 0.0
+				_wait_interval   = WAIT_INTERVAL_START
 		# Update stuck position.
 		_stuck_pos = position
-		
-	#if _wait:
-	#	_stuck_timer    = 0.0
-	#	velocity = Vector2.ZERO
-	#	return
 
 	# Do the actual movement.
 	move_and_slide()
 
 
-# Called: _physics_process()
-func _check_wait(dt: float) -> void:
-	
-	if not _wait:
-		return
-	
-	_wait_timer += dt
-	if _wait_timer >= _wait_interval:
-		_wait_timer = 0.0
-		_wait_counter += 1
-		_wait_interval += WAIT_INTERVAL_INCREASE
-		
-		var damage_effectiveness = int (_wait_damage_acc / _wait_damage_threshold)
-		if damage_effectiveness >= WAIT_MAX_COUNTER or _wait_counter >= WAIT_MAX_COUNTER:
-			_exit_wait(true)
+# Called: _update_state().
+func _wander(dt: float) -> String:
+
+	# Returns "start" to enter wander state, "done" to return to idle, "" to continue.
+	if state == State.IDLE_NEUTRAL:
+		wander_timer += dt
+		if wander_timer >= wander_interval:
+			wander_timer    = 0.0
+			wander_interval = randf_range(WANDER_INTERVAL_MIN, WANDER_INTERVAL_MAX)
+			if randf() < WANDER_CHANCE:
+				force_wander = true
+				return "start"
+		return ""
+
+	# Currently wandering — resolve direction first, then apply velocity.
+	if force_wander:
+		force_wander    = false
+		var angle       := randf() * TAU
+		wander_dx       = cos(angle)
+		wander_dy       = sin(angle)
+		wander_elapsed  = 0.0
+		wander_duration = randf_range(WANDER_DURATION_MIN, WANDER_DURATION_MAX)
+		_update_facing(wander_dx, wander_dy)
+
+	wander_elapsed += dt
+	velocity = Vector2(wander_dx, wander_dy) * stats.mspd
+
+	if wander_elapsed >= wander_duration:
+		return "done"
+	return ""
 
 
-# Called: _physics_process().
-func _check_collisions(dt: float) -> void:
-
-	# If no collision return.
-	if get_slide_collision_count() == 0:
-		return
-
-	# Wandering collisions immediately pick a new wander direction.
-	if state == State.WANDER:
-		force_wander = true
-		return
-
-	_collision_timer += dt
-	# If the creature is in chasing or returning state, wating and collision timer is up and creature has a path.
-	if (_collision_timer >= _collision_interval) and _wait and (state == State.CHASE or state == State.RETURNING) and not path.is_empty():
-		_collision_timer = 0.0
-		for i in get_slide_collision_count():
-			var col     := get_slide_collision(i)
-			var blocker := col.get_collider()
-			# If the blocker is another creature then emp-block "this" creatures 
-			# next waypoint tile because it is unreachable.
-			if blocker is CharacterBody2D and blocker != player:
-				pathfinder.add_temp_block(path[0])
-				waypoint_blocked = true
-				path.clear()
-				break
-
-
-# Called: _update_state() during CHASE and RETURNING.
+# Called: _update_state().
 func _move_smart(target_pos: Vector2, speed: float, dt: float) -> void:
 
 	# If path_timer is up or a waypoint is blocked find new path.
@@ -635,107 +783,128 @@ func _move_toward(target_pos: Vector2, speed: float) -> void:
 
 
 # Called: _update_state().
-func _wander(dt: float) -> String:
+func _snap_to_home() -> void:
 
-	# Returns "start" to enter wander state, "done" to return to idle, "" to continue.
-	if state == State.IDLE_NEUTRAL:
-		wander_timer += dt
-		if wander_timer >= wander_interval:
-			wander_timer    = 0.0
-			wander_interval = randf_range(WANDER_INTERVAL_MIN, WANDER_INTERVAL_MAX)
-			if randf() < WANDER_CHANCE:
-				force_wander = true
-				return "start"
-		return ""
-
-	# Currently wandering — resolve direction first, then apply velocity.
-	if force_wander:
-		force_wander    = false
-		var angle       := randf() * TAU
-		wander_dx       = cos(angle)
-		wander_dy       = sin(angle)
-		wander_elapsed  = 0.0
-		wander_duration = randf_range(WANDER_DURATION_MIN, WANDER_DURATION_MAX)
-		_update_facing(wander_dx, wander_dy)
-
-	wander_elapsed += dt
-	velocity = Vector2(wander_dx, wander_dy) * stats.mspd
-
-	if wander_elapsed >= wander_duration:
-		return "done"
-	return ""
-
-
-# Called: _update_state().
-func _snap_to_home(new_home_position : Vector2 = home_position) -> void:
-
-	position          = new_home_position
 	velocity          = Vector2.ZERO
-	home_max_dist     = false
 	out_of_energy     = false
-	notice_cooldown   = NOTICE_COOLDOWN
+	give_up			  = false
+	home_max_dist     = false
 	wander_timer      = 0.0
 	wander_elapsed    = 0.0
 	force_wander      = false
 	path.clear()
-	path_timer = 0.0
+	path_timer 		  = 0.0
+	interval_expansion= 0.0
 	if temp_home:
 		home_position = Vector2.ZERO
 		temp_home     = false
-	_set_state(State.IDLE_NEUTRAL)
 
 
 # =============================================================================
 # STUCK HANDLE
 # =============================================================================
 
-# Called: _update_movement().
-func _enter_wait(on_chase: bool) -> void:
+
+# Called: _physics_process()
+func _check_wait(dt: float) -> void:
 	
-	_wait       		= true
-	_wait_damage_acc 	= 0.0
+	if not _wait:
+		return
+	
+	_wait_timer += dt
+	if _wait_timer >= _wait_interval:
+		_wait_timer = 0.0
+		_wait_counter += 1
+		_wait_interval += WAIT_INTERVAL_INCREASE
 		
-	if on_chase:
-		0
-		# Stand in place using idle_attack animation while waiting in chase state.
-		#sprite.play(STATE_ANIM[State.IDLE_ATTACK][0])
-	else:
-		# Ease forced-returning flags so creature can defend itself if player approaches.
-		_saved_is_returning  = is_returning
-		_saved_home_max_dist = home_max_dist
-		is_returning         = false
-		home_max_dist        = false
-		# Stand in place using idle_neutral animation while waiting in returning state.
-		#sprite.play(STATE_ANIM[State.IDLE_NEUTRAL][0])
+		# If creature is stuck for more than 27.5 seconds or takes 30% total damage while in wait.
+		var damage_effectiveness = int (_wait_damage_acc / _wait_damage_threshold)
+		if damage_effectiveness >= WAIT_MAX_COUNTER or _wait_counter >= WAIT_MAX_COUNTER:
+			give_up 		 = true
+			_wait            = false
+			_wait_counter    = 0
+			_wait_damage_acc = 0.0
+			_wait_interval   = WAIT_INTERVAL_START
+			
+			# If creature was in returning state while it got stuck.
+			if _wait_entry_state == State.RETURNING:
+				_teleport 	  = true
+				# If home_position is not free set new home position the nearest free.
+				var home_tile := Vector2i(int(home_position.x / TILE_SIZE), int(home_position.y / TILE_SIZE)) 
+				if pathfinder._grid.is_point_solid(home_tile):
+					var new_home_grid = pathfinder._nearest_walkable(home_tile)
+					home_position = Vector2(new_home_grid.x * TILE_SIZE + TILE_SIZE / 2, 
+						new_home_grid.y * TILE_SIZE + TILE_SIZE / 2)
 
 
-# Called: _check_wait(), _update_movement().
-func _exit_wait(give_up: bool) -> void:
+# Called: _physics_process().
+func _check_teleport(dt:float):
 
-	_wait = false
-	_wait_counter = 0
-	_wait_interval = WAIT_INTERVAL_START
-	# If creature in chase state and gives up.
-	if state == State.CHASE and give_up:
-		_set_state(State.RETURNING)
-	# If creature in returning state and gives up.
-	elif state == State.RETURNING and give_up:
-		# Restore eased returning flags.
-		is_returning  = _saved_is_returning
-		home_max_dist = _saved_home_max_dist
-		
-		if temp_home:
-			# Treat current position as the new home and settle here.
-			home_position = position
-			_snap_to_home()
-		else:
+	if not _teleport:
+		return
+
+	if not _teleported:
+		# If alpha = 0.0
+		if _change_alpha(dt):
 			# Teleport back to home.
-			var home_tile := Vector2i(int(home_position.x / TILE_SIZE), int(home_position.y / TILE_SIZE)) 
-			if pathfinder._grid.is_point_solid(home_tile):
-				# If home_position is not free get the nearest free.
-				_snap_to_home(pathfinder._nearest_walkable(home_tile))
-			else:
-				_snap_to_home()
+			_teleported = true
+			position    = home_position
+			stats.cleanse_all_effects()
+			path.clear()
+	# Teleported.
+	else:
+		# If alpha = 255.0
+		if _change_alpha(dt, true):
+			_teleport = false
+			_teleported = false
+
+
+# Called: _physics_process().
+func _check_collisions(dt: float) -> void:
+
+	# If no collision return.
+	if get_slide_collision_count() == 0:
+		return
+
+	# Wandering collisions immediately pick a new wander direction.
+	if state == State.WANDER:
+		force_wander = true
+		return
+
+	_collision_timer += dt
+	# If the creature is in chasing or returning state, wating and collision timer is up and creature has a path.
+	if (_collision_timer >= _collision_interval) and _wait and (state == State.CHASE or state == State.RETURNING) and not path.is_empty():
+		_collision_timer = 0.0
+		for i in get_slide_collision_count():
+			var col     := get_slide_collision(i)
+			var blocker := col.get_collider()
+			# If player is alive and the blocker is another creature then 
+			# temp-block "this" creatures next waypoint tile because it is unreachable.
+			if player.alive and blocker is CharacterBody2D and blocker != player:
+				pathfinder.add_temp_block(path[0])
+				waypoint_blocked = true
+				path.clear()
+				break
+			# If player is dead and the blocker is the player himself then
+			# temp-block "this" creatures next waypoint tile because it is unreachable.
+			elif not player.alive and blocker is CharacterBody2D and blocker == player:
+				pathfinder.add_temp_block(path[0])
+				waypoint_blocked = true
+				path.clear()
+				break
+
+
+# Called: _update_state(), _check_teleport().
+func _change_alpha(dt:float = 0.0, increase:bool = false) -> bool:
+	
+	if increase:
+		sprite_alpha = minf(255.0, sprite_alpha + 300.0 * dt)
+		sprite.modulate = Color(1.0, 1.0, 1.0, sprite_alpha / 255.0)
+		return sprite_alpha >= 255.0
+	else:
+		sprite_alpha = maxf(0.0, sprite_alpha - 300.0 * dt)
+		sprite.modulate = Color(1.0, 1.0, 1.0, sprite_alpha / 255.0)
+		return sprite_alpha <= 0.0
 
 
 # =============================================================================
@@ -770,12 +939,12 @@ func _try_attack() -> void:
 	if not chosen:
 		return
 	
-	chosen.use(stats, [player], dist)
 	_set_state(State.ATTACK)
 	sprite.play(chosen.anim)
-	
+	chosen.use(stats, [player], dist)
 
-# Called: ability.use().
+
+# Called: _update_status(), ability.use() (_try_attack()).
 func take_damage(raw_damage: float, dot: bool = false, is_magic: bool = false, is_crit: bool = false) -> float:
 
 	var damage : float = stats.take_damage(raw_damage, dot, is_magic, is_crit)
@@ -785,32 +954,6 @@ func take_damage(raw_damage: float, dot: bool = false, is_magic: bool = false, i
 
 	if not stats.is_alive():
 		alive = false
-		_begin_death()
+		_set_state(State.DEATH)
 
 	return damage
-
-
-# Called: take_damage().
-func _begin_death() -> void:
-
-	stats.cleanse_all_effects()
-	_set_state(State.DEATH)
-
-
-# Called: _physics_process().
-func _is_dead_or_dying(dt: float) -> bool:
-
-	if state == State.DEATH:
-		# If anim_done then the creature enters dead state.
-		if anim_done:
-			_set_state(State.DEAD)
-		return true
-
-	if state == State.DEAD:
-		if not is_inspected:
-			corpse_alpha = maxf(0.0, corpse_alpha - 300.0 * dt)
-			sprite.modulate = Color(1.0, 1.0, 1.0, corpse_alpha / 255.0)
-			if corpse_alpha <= 0.0:
-				queue_free()
-		return true
-	return false

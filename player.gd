@@ -172,7 +172,7 @@ func _on_anim_finished() -> void:
 		anim_done = true
 
 
-# Called: _update_state(), _handle_movement(), resolve_attack(), _begin_death().
+# Called: _update_state(), _handle_movement(), resolve_attack(), take_damage().
 func _set_state(new_state: State) -> void:
 
 	if state == new_state:
@@ -252,6 +252,7 @@ func _physics_process(dt: float) -> void:
 	_update_state()
 
 	if state == State.DEAD:
+		
 		return
 
 	# DEATH state is handled by guarding against ONE_SHOT_STATES.
@@ -361,13 +362,6 @@ func take_damage(raw_damage: float, dot: bool = false, is_magic: bool = false, i
 	
 	if not stats.is_alive():
 		alive = false
-		_begin_death()
+		_set_state(State.DEATH)
 	
 	return damage
-
-
-# Called: take_damage().
-func _begin_death() -> void:
-
-	stats.cleanse_all_effects()
-	_set_state(State.DEATH)

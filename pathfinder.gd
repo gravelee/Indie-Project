@@ -14,7 +14,7 @@ extends RefCounted
 # =============================================================================
 
 const TILE_SIZE      := 32
-const TEMP_BLOCK_DURATION := 2.0
+const TEMP_BLOCK_DURATION := 3
 const MAX_PATH_TILES := 120
 
 
@@ -52,7 +52,7 @@ func build(map_cols: int, map_rows: int) -> void:
 	_grid                = AStarGrid2D.new()
 	#_grid.cell_shape	 = AStarGrid2D.CELL_SHAPE_SQUARE
 	_grid.cell_size      = Vector2(TILE_SIZE, TILE_SIZE)
-	_grid.diagonal_mode  = AStarGrid2D.DIAGONAL_MODE_ALWAYS
+	_grid.diagonal_mode  = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES 
 	#_grid.jumping_enabled= true
 	_grid.region         = Rect2i(0, 0, map_cols, map_rows)
 	_grid.offset         = Vector2.ZERO
@@ -115,7 +115,7 @@ func add_temp_block(world_pos: Vector2) -> void:
 	_temp_block_update[tile] = _temp_block_update.get(tile, 0) + 1
 	_temp_block_times[tile] = _temp_block_times.get(tile, 0)
 	_temp_block_timer[tile] = minf(TEMP_BLOCK_DURATION  
-		+ (_temp_block_times[tile] + _temp_block_update[tile] - 1) * 2, 32)
+		+ (_temp_block_times[tile] + _temp_block_update[tile] - 1) * TEMP_BLOCK_DURATION, 32)
 
 
 # Called: game._process().
