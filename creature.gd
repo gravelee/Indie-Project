@@ -210,11 +210,7 @@ func init(stats: Dictionary, player: CharacterBody2D, camera_angle: float, pathf
 	path_interval   	= randf_range(PATH_INTERVAL_MIN,   PATH_INTERVAL_MAX)
 	_collision_interval = randf_range(COLLISION_INTERVAL_MIN,   COLLISION_INTERVAL_MAX)
 	
-	# Tiled maps all sprite coordinates from top left to down right.
-	# We map sprite coordinates from down left to top right.
-	# This creates a whole tile difference in the vertical axis between the two systems.
-	position = Vector2(stats["col"] * TILE_SIZE, stats["row"] * TILE_SIZE + TILE_SIZE)
-	
+	# Position is set by map.gd before init() is called (CSV scan order).
 	type = MAP_STRING_TYPE[stats["type"]]
 	
 	self.stats = Stats.new(stats["str"], stats["agi"], stats["sta"], stats["int"], 

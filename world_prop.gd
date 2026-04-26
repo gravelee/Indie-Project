@@ -74,7 +74,6 @@ func _load_animations() -> void:
 	else:
 		path = "res://assets/sprites/%s/%s_%s.png" % [sprite_name, SIZE_STR[size], sprite_name]
 	var tex  : Texture2D = load(path)
-	print(path)
 
 	# Visual centre of the texture relative to prop.position (Tiled bottom-left anchor).
 	var cx := tex.get_width()  / 2.0

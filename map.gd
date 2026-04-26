@@ -53,8 +53,9 @@ var player            : CharacterBody2D               # init _init_player().
 var player_sprite     : AnimatedSprite2D              # init _init_player().
 var weapon_sprite     : AnimatedSprite2D              # init _init_player().
 
-var creatures         : Dictionary = {}               # init _init_creatures().
-var creature_sprites  : Dictionary = {}               # init _init_creatures().
+var creatures         : Dictionary = {}               # init _load_entities().
+var creature_sprites  : Dictionary = {}               # init _load_entities().
+var _creature_queue   : Dictionary = {}               # type_str -> [[creature, stats]], consumed in _load_entities().
 
 var destructible_map  : Dictionary = {}               # init _spawn_prop().
 var obstacle_map      : Dictionary = {}               # init _spawn_prop().
@@ -250,13 +251,15 @@ func _on_player_attack(world_pos: Vector2, facing_direction: Vector2) -> void:
 # ALL CREATURE INITIALIZATION.
 # =============================================================================
 
-# Called: _ready().
+# Called: _ready(). 
 func _init_creatures() -> void:
-	
+
+	# Builds a per-type queue of unpositioned creatures.
+	# Positions and dict registration happen in _load_entities() (scan order).
 	var all_creature_stats : Array = _load_entity_stats(Entity_Type.CREATURE)
-	
+
 	for creature_stats in all_creature_stats:
-		
+
 		var creature  	:= CharacterBody2D.new()
 		creature.set_script(load(PATH_CREATURE_SCRIPT))
 		var col_shape	:= CollisionShape2D.new()
@@ -266,15 +269,31 @@ func _init_creatures() -> void:
 		creature.add_child(col_shape)
 		add_child(creature)
 
-		creature.init(creature_stats, player, 0.0, pathfinder)
+		var type_str : String = creature_stats["type"]
+		if not _creature_queue.has(type_str):
+			_creature_queue[type_str] = []
+		_creature_queue[type_str].append([creature, creature_stats])
 
-		var spawn_key := creature.position
-		creature.died.connect(func():
-			creature_sprites.erase(spawn_key)
-			creatures.erase(spawn_key)
-		)
-		creature_sprites[spawn_key] = creature.sprite
-		creatures[spawn_key] = creature
+
+# Called: _load_entities().
+func _load_creature_stats(tile_id: int, row: int, col: int, world_pos: Vector2) -> void:
+	
+	var type_id : String = Creature.TILE_TYPE_MAP[tile_id]
+	if not _creature_queue.has(type_id) or _creature_queue[type_id].is_empty():
+		push_error("No queued creature of type '%s' at row %d col %d." % [type_id, row, col])
+		return
+	var entry : Array = _creature_queue[type_id].pop_front()
+	var creature = entry[0]
+	var creature_stats : Dictionary = entry[1]
+	creature.position = world_pos
+	creature.init(creature_stats, player, 0.0, pathfinder)
+	var spawn_key := world_pos
+	creature.died.connect(func():
+		creature_sprites.erase(spawn_key)
+		creatures.erase(spawn_key)
+	)
+	creature_sprites[world_pos] = creature.sprite
+	creatures[world_pos] = creature
 
 
 # =============================================================================
@@ -305,28 +324,36 @@ func _load_entities() -> void:
 			if tile_id == 1:                        # 1 = player spawn
 				player.position = world_pos
 			elif tile_id in Creature.TILE_TYPE_MAP: # 2 = rat, 3 = snake, ...
-				if not creatures.has(world_pos):
-					push_error("Error, no creature detected at row %d col %d." % [row, col])
-					return
-				var type_id : String = Creature.TILE_TYPE_MAP[tile_id]
-				var creature_type = Creature.MAP_TYPE[creatures[world_pos].type]
-				if creature_type != type_id:
-					push_error("Error, creature type mismatch at row %d col %d: map=%s json=%s." 
-						% [row, col, type_id, creature_type])
-					return
-			elif tile_id == 101:              # 101 = large bush
-				_spawn_prop(world_pos, WorldProp.Size.LARGE, "bush", 4, true, true, true)
-			elif tile_id == 102:              # 102 = small tree
+				_load_creature_stats(tile_id, row, col, world_pos)
+			elif tile_id == 101:              # 101 = small bush
+				_spawn_prop(world_pos, WorldProp.Size.SMALL, "bush", 5, true, true, true)
+			elif tile_id == 102:              # 102 = medium bush
+				_spawn_prop(world_pos, WorldProp.Size.MEDIUM, "bush", 5, true, true, true)
+			elif tile_id == 103:              # 103 = large bush
+				_spawn_prop(world_pos, WorldProp.Size.LARGE, "bush", 5, true, true, true)
+			elif tile_id == 104:              # 104 = small leafy_bush
+				_spawn_prop(world_pos, WorldProp.Size.SMALL, "leafy_bush", 1, true, true, true)
+			elif tile_id == 105:              # 105 = medium leafy_bush
+				_spawn_prop(world_pos, WorldProp.Size.MEDIUM, "leafy_bush", 1, true, true, true)
+			elif tile_id == 106:              # 106 = large leafy_bush
+				_spawn_prop(world_pos, WorldProp.Size.LARGE, "leafy_bush", 1, true, true, true)
+			elif tile_id == 107:              # 107 = small spiky_bush
+				_spawn_prop(world_pos, WorldProp.Size.SMALL, "spiky_bush", 1, true, true, true)
+			elif tile_id == 108:              # 108 = medium spiky_bush
+				_spawn_prop(world_pos, WorldProp.Size.MEDIUM, "spiky_bush", 1, true, true, true)
+			elif tile_id == 109:              # 109 = large spiky_bush
+				_spawn_prop(world_pos, WorldProp.Size.LARGE, "spiky_bush", 1, true, true, true)
+			elif tile_id == 110:              # 110 = small tree
 				_spawn_prop(world_pos, WorldProp.Size.SMALL,  "tree", 1,  false, true, false)
-			elif tile_id == 103:              # 103 = medium tree
+			elif tile_id == 111:              # 111 = medium tree
 				_spawn_prop(world_pos, WorldProp.Size.MEDIUM, "tree", 1,  false, true, false)
-			elif tile_id == 104:              # 104 = large tree
+			elif tile_id == 112:              # 112 = large tree
 				_spawn_prop(world_pos, WorldProp.Size.LARGE,  "tree", 1,  false, true, false)
-			elif tile_id == 105:              # 105 = small grass
+			elif tile_id == 113:              # 113 = small grass
 				_spawn_prop(world_pos, WorldProp.Size.SMALL,  "grass", 1, true, false, false)
-			elif tile_id == 106:              # 106 = medium grass
+			elif tile_id == 114:              # 114 = medium grass
 				_spawn_prop(world_pos, WorldProp.Size.MEDIUM, "grass", 1, true, false, false)
-			elif tile_id == 107:              # 107 = large grass
+			elif tile_id == 115:              # 115 = large grass
 				_spawn_prop(world_pos, WorldProp.Size.LARGE,  "grass", 1, true, false, false)
 		row += 1
 	file.close()

@@ -189,8 +189,9 @@ func _update_z_sort() -> void:
 			sprite.z_index = int((wc_x * cached_sin_a + wc_y * cached_cos_a + prop.z_radius) / Z_DEPTH_SCALE)
 		
 	# Always: player and creatures move every frame so depth must stay current.
-	var y_center : float = map.player.position.y + ENTITY_MEDIUM_OFFSET
-	map.player_sprite.z_index = int((map.player.position.x * cached_sin_a + y_center * cached_cos_a) / Z_DEPTH_SCALE)
+	# Rotating-circle z for entities: ENTITY_MEDIUM_OFFSET added as a constant.
+	# This mirrors how prop z_radius works — offset stays positive at all angles.
+	map.player_sprite.z_index = int((map.player.position.x * cached_sin_a + map.player.position.y * cached_cos_a + ENTITY_MEDIUM_OFFSET) / Z_DEPTH_SCALE)
 	if map.weapon_sprite.visible:
 		match map.player.facing:
 			map.player.Facing.NORTH:
@@ -200,6 +201,5 @@ func _update_z_sort() -> void:
 			_:  # EAST, WEST
 				map.weapon_sprite.z_index = map.player_sprite.z_index + 1  # in front of player and same-y obstacles
 	for creature in map.creatures.values():
-		y_center = creature.position.y + ENTITY_MEDIUM_OFFSET
 		creature.sprite.z_index = int(
-			(creature.position.x * cached_sin_a + y_center * cached_cos_a) / Z_DEPTH_SCALE)
+			(creature.position.x * cached_sin_a + creature.position.y * cached_cos_a + ENTITY_MEDIUM_OFFSET) / Z_DEPTH_SCALE)

@@ -33,7 +33,11 @@ func _load_animations() -> void:
 	frames.add_animation("death")
 	frames.set_animation_loop("death", false)
 	frames.set_animation_speed("death", 8.0)
-	var death_path  : String    = "res://assets/spritesheets/%s/%s_death_%d.png" % [sprite_name, SIZE_STR[size], _variant_idx + 1]
+	var death_path  : String
+	if variant_count > 1:
+		death_path = "res://assets/spritesheets/%s/%s_death_%d.png" % [sprite_name, SIZE_STR[size], _variant_idx + 1]
+	else:
+		death_path = "res://assets/spritesheets/%s/%s_death.png" % [sprite_name, SIZE_STR[size]]
 	var death_tex   : Texture2D = load(death_path)
 	var frame_w     := death_tex.get_height()   # frames are square
 	var frame_count := death_tex.get_width() / frame_w
