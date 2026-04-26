@@ -24,7 +24,7 @@ window/size/mode=3
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/quick_folds/plugin.cfg")
+enabled=PackedStringArray("res://addons/quick_folds/plugin.cfg", "res://addons/script-tabs/plugin.cfg")
 
 [rendering]
 

@@ -49,6 +49,12 @@ const COLOR_TEMP_BLOCK_LINE  := Color(1.00, 0.10, 0.50, 0.60)
 const COLOR_ATK_AREA_FILL    := Color(1.00, 0.85, 0.10, 0.15)   # amber — player attack cone
 const COLOR_ATK_AREA_LINE    := Color(1.00, 0.85, 0.10, 0.75)
 
+# Prop z-score visualizer
+const COLOR_Z_LINE    := Color(0.40, 0.85, 0.85, 0.45)   # cyan arc — z_radius circle
+const COLOR_Z_NEAR    := Color(1.00, 0.95, 0.20, 0.90)   # yellow — unused (kept for palette)
+const COLOR_Z_FAR     := Color(1.00, 0.55, 0.10, 0.80)   # orange dot — weight_central centre
+const COLOR_Z_CURRENT := Color(0.25, 1.00, 0.55, 1.00)   # green — rotating hand + anchor point
+
 const TILE_SIZE      := 32
 const ARC_PTS        := 48
 const DRAW_INTERVAL  := 0.1   # 10 fps — enough for debug readability
@@ -73,6 +79,7 @@ const _CRE_HOME_MAX    := 2000.0
 var show_creature_col    : bool = false
 var show_player_col      : bool = false
 var show_obstacle_col    : bool = false
+var show_prop_z_score    : bool = false   # lerp visualizer for prop z-sort point
 var show_tile_grid       : bool = false
 var show_pf_grid         : bool = false   # A* pathfinding grid (dilated)
 var show_pf_grid2        : bool = false   # LOS grid (exact, no dilation)
@@ -93,12 +100,15 @@ var show_temp_blocks     : bool = false
 
 # ── References set by game._ready() via init() ───────────────────────────────
 
-var player       : CharacterBody2D
-var creatures    : Array      = []   # shared Array ref from game — always current.
-var obstacle_map : Dictionary = {}   # shared Dict ref from game — tile → StaticBody2D.
-var pathfinder   : Object     = null # Pathfinder ref from game.
-var map_cols     : int        = 0
-var map_rows     : int        = 0
+var player            : CharacterBody2D
+var creatures         : Dictionary = {}   # shared Dict ref from game — always current.
+var destructible_map  : Dictionary = {}   # shared Dict ref from game — tile → damageable StaticBody2D.
+var obstacle_map      : Dictionary = {}   # shared Dict ref from game — tile → non-damageable StaticBody2D.
+var rotatable_sprites : Array      = []   # shared Array ref from map — sprite nodes for all props.
+var pathfinder        : Object     = null # Pathfinder ref from game.
+var map_cols      : int        = 0
+var map_rows      : int        = 0
+var _world_angle  : float      = 0.0     # updated by game.gd via set_world_angle()
 
 
 # =============================================================================
@@ -106,16 +116,23 @@ var map_rows     : int        = 0
 # =============================================================================
 
 # Called: game._ready().
-func init(p_player: CharacterBody2D, p_creatures: Array,
-		  p_obstacle_map: Dictionary, p_pathfinder: Object,
-		  cols: int, rows: int) -> void:
+func init(p_player: CharacterBody2D, p_creatures: Dictionary,
+		  p_destructible_map: Dictionary, p_obstacle_map: Dictionary,
+		  p_pathfinder: Object, cols: int, rows: int,
+		  p_rotatable_sprites: Array) -> void:
 
-	player        = p_player
-	creatures     = p_creatures
-	obstacle_map  = p_obstacle_map
-	pathfinder    = p_pathfinder
+	player            = p_player
+	creatures         = p_creatures
+	destructible_map  = p_destructible_map
+	obstacle_map      = p_obstacle_map
+	rotatable_sprites = p_rotatable_sprites
+	pathfinder        = p_pathfinder
 	map_cols      = cols
 	map_rows      = rows
+
+
+func set_world_angle(angle: float) -> void:
+	_world_angle = angle
 	z_index       = 1000
 	z_as_relative = false
 	process_mode  = Node.PROCESS_MODE_ALWAYS
@@ -164,6 +181,8 @@ func _draw() -> void:
 		_draw_creature_paths()
 	if show_obstacle_col:
 		_draw_obstacle_collisions()
+	if show_prop_z_score:
+		_draw_prop_z_scores()
 	if show_creature_col:
 		_draw_creature_collisions()
 	if show_player_attack_area:
@@ -179,19 +198,19 @@ func _draw() -> void:
 # Called: _draw().
 func _draw_tile_grid() -> void:
 
-	# Offset by -half tile so grid lines land between tiles and obstacle positions
-	# (which are at col*TILE_SIZE, row*TILE_SIZE) sit at the center of each cell.
+	# tilemap.position = Vector2.ZERO, so tile (c,r) top-left is at (c*32, r*32).
+	# Grid lines are drawn exactly at tile boundaries: col*TILE_SIZE and row*TILE_SIZE.
 	var half := TILE_SIZE * 0.5
 	var w    := float(map_cols * TILE_SIZE)
 	var h    := float(map_rows * TILE_SIZE)
 
 	for col in range(map_cols + 1):
-		var x := float(col * TILE_SIZE) - half
-		draw_line(Vector2(x, -half), Vector2(x, h + half), COLOR_GRID, 2.0)
+		var x := float(col * TILE_SIZE)
+		draw_line(Vector2(x, -half), Vector2(x, h + half), COLOR_GRID, 3.0)
 
 	for row in range(map_rows + 1):
-		var y := float(row * TILE_SIZE) - half
-		draw_line(Vector2(-half, y), Vector2(w + half, y), COLOR_GRID, 2.0)
+		var y := float(row * TILE_SIZE)
+		draw_line(Vector2(-half, y), Vector2(w + half, y), COLOR_GRID, 3.0)
 
 
 # Called: _draw(). Draws solid tiles in the A* pathfinding grid (3x3 dilation).
@@ -199,11 +218,10 @@ func _draw_pf_grid() -> void:
 
 	if not pathfinder:
 		return
-	var half   := TILE_SIZE * 0.5
 	var solids : Dictionary = pathfinder.get_grid_solid_counts()
 	for tile in solids:
 		var rect := Rect2(
-			float(tile.x * TILE_SIZE) - half, float(tile.y * TILE_SIZE) - half,
+			float(tile.x * TILE_SIZE), float(tile.y * TILE_SIZE),
 			float(TILE_SIZE), float(TILE_SIZE))
 		draw_rect(rect, COLOR_PF_GRID_FILL)
 		draw_rect(rect, COLOR_PF_GRID_LINE, false, 1.0)
@@ -214,11 +232,10 @@ func _draw_grid_centers() -> void:
 
 	if not pathfinder:
 		return
-	var half   := TILE_SIZE * 0.5
 	var solids : Dictionary = pathfinder.get_grid2_solid_tiles()
 	for tile in solids:
 		var rect := Rect2(
-			float(tile.x * TILE_SIZE) - half, float(tile.y * TILE_SIZE) - half,
+			float(tile.x * TILE_SIZE), float(tile.y * TILE_SIZE),
 			float(TILE_SIZE), float(TILE_SIZE))
 		draw_rect(rect, COLOR_PF_GRID2_FILL)
 		draw_rect(rect, COLOR_PF_GRID2_LINE, false, 1.0)
@@ -229,11 +246,10 @@ func _draw_dyn_blockers() -> void:
 
 	if not pathfinder:
 		return
-	var half     := TILE_SIZE * 0.5
 	var blockers : Dictionary = pathfinder.get_dynamic_blockers()
 	for tile in blockers:
 		var rect := Rect2(
-			float(tile.x * TILE_SIZE) - half, float(tile.y * TILE_SIZE) - half,
+			float(tile.x * TILE_SIZE), float(tile.y * TILE_SIZE),
 			float(TILE_SIZE), float(TILE_SIZE))
 		draw_rect(rect, COLOR_DYN_BLOCKER_FILL)
 		draw_rect(rect, COLOR_DYN_BLOCKER_LINE, false, 1.0)
@@ -244,11 +260,10 @@ func _draw_temp_blocks() -> void:
 
 	if not pathfinder:
 		return
-	var half   := TILE_SIZE * 0.5
 	var blocks : Dictionary = pathfinder.get_temp_blocks()
 	for tile in blocks:
 		var rect := Rect2(
-			float(tile.x * TILE_SIZE) - half, float(tile.y * TILE_SIZE) - half,
+			float(tile.x * TILE_SIZE), float(tile.y * TILE_SIZE),
 			float(TILE_SIZE), float(TILE_SIZE))
 		draw_rect(rect, COLOR_TEMP_BLOCK_FILL)
 		draw_rect(rect, COLOR_TEMP_BLOCK_LINE, false, 1.0)
@@ -257,7 +272,7 @@ func _draw_temp_blocks() -> void:
 # Called: _draw(). Home-max-dist boundary circle (arc only — radius 2000 px is huge).
 func _draw_cre_home_max() -> void:
 
-	for creature in creatures:
+	for creature in creatures.values():
 		if not is_instance_valid(creature):
 			continue
 		if not creature.get("has_home"):
@@ -272,7 +287,7 @@ func _draw_cre_home_max() -> void:
 # Large radii draw arc-only — filling hundreds of thousands of pixels per creature kills fps.
 func _draw_cre_range(radius: float, fill_color: Color, line_color: Color) -> void:
 
-	for creature in creatures:
+	for creature in creatures.values():
 		if not is_instance_valid(creature):
 			continue
 		if radius <= FILL_MAX_RADIUS:
@@ -283,7 +298,7 @@ func _draw_cre_range(radius: float, fill_color: Color, line_color: Color) -> voi
 # Called: _draw(). Draws A* waypoint paths for all creatures.
 func _draw_creature_paths() -> void:
 
-	for creature in creatures:
+	for creature in creatures.values():
 		if not is_instance_valid(creature):
 			continue
 		var path = creature.get("path")
@@ -299,7 +314,7 @@ func _draw_creature_paths() -> void:
 # Called: _draw(). Draws home position marker for each creature in combat.
 func _draw_home_markers() -> void:
 
-	for creature in creatures:
+	for creature in creatures.values():
 		if not is_instance_valid(creature):
 			continue
 		if not creature.get("in_combat"):
@@ -317,7 +332,7 @@ func _draw_home_markers() -> void:
 # Called: _draw().
 func _draw_creature_collisions() -> void:
 
-	for creature in creatures:
+	for creature in creatures.values():
 		if not is_instance_valid(creature):
 			continue
 		var r := _get_collision_radius(creature)
@@ -364,18 +379,57 @@ func _draw_player_collision() -> void:
 # Called: _draw().
 func _draw_obstacle_collisions() -> void:
 
-	for tile in obstacle_map:
-		var obs : Node2D = obstacle_map[tile]
-		if not is_instance_valid(obs):
+	for map in [destructible_map, obstacle_map]:
+		for tile in map:
+			var obs : Node2D = map[tile]
+			if not is_instance_valid(obs):
+				continue
+			var r      := _get_collision_radius(obs)
+			var offset := _get_collision_offset(obs)
+			var center := obs.position + offset
+			draw_circle(center, r, COLOR_OBSTACLE_FILL)
+			draw_arc(center, r, 0.0, TAU, ARC_PTS, COLOR_OBSTACLE_LINE, 1.5)
+
+
+# Called: _draw(). Visualises the rotating-circle z-sort anchor for every prop.
+# Orange dot  = weight_central world position (circle centre).
+# Green dot   = z-sort anchor = screen-south tip of the circle (rotates with camera).
+# Green line  = "hand" from weight_central to the anchor.
+# Cyan arc    = full circle of radius z_radius around weight_central.
+func _draw_prop_z_scores() -> void:
+
+	var sin_a    : float   = sin(deg_to_rad(_world_angle))
+	var cos_a    : float   = cos(deg_to_rad(_world_angle))
+	var s_south  : Vector2 = Vector2(sin_a, cos_a)   # world-space screen-south direction
+
+	for sprite in rotatable_sprites:
+		var prop := sprite.get_parent() as WorldProp
+		if not is_instance_valid(prop):
 			continue
-		var r := _get_collision_radius(obs)
-		draw_circle(obs.position, r, COLOR_OBSTACLE_FILL)
-		draw_arc(obs.position, r, 0.0, TAU, ARC_PTS, COLOR_OBSTACLE_LINE, 1.5)
+
+		var wc_world : Vector2 = prop.position + prop.weight_central
+		var r        : float   = prop.z_radius
+		var z_pt     : Vector2 = wc_world + r * s_south   # anchor: screen-south tip of circle
+
+		draw_arc(wc_world, r, 0.0, TAU, 32, COLOR_Z_LINE, 0.8)
+		draw_line(wc_world, z_pt, COLOR_Z_CURRENT, 1.5)
+		draw_circle(wc_world, 3.0, COLOR_Z_FAR)
+		draw_circle(z_pt, 4.0, COLOR_Z_CURRENT)
+		draw_arc(z_pt, 7.0, 0.0, TAU, 16, COLOR_Z_CURRENT, 1.5)
 
 
 # =============================================================================
 # HELPERS
 # =============================================================================
+
+# Called: _draw_obstacle_collisions().
+func _get_collision_offset(node: Node) -> Vector2:
+
+	for child in node.get_children():
+		if child is CollisionShape2D:
+			return child.position
+	return Vector2.ZERO
+
 
 # Called: _draw_creature_collisions(), _draw_player_collision(), _draw_obstacle_collisions().
 func _get_collision_radius(node: Node) -> float:

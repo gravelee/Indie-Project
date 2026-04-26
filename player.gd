@@ -96,13 +96,17 @@ signal attack(world_pos: Vector2, facing_direction: Vector2)
 # =============================================================================
 
 # Called: game._ready().
-func init() -> void:
+func init(player_sprite: AnimatedSprite2D, weapon_sprite: AnimatedSprite2D) -> void:
 
+	sprite              = player_sprite
+	self.weapon_sprite  = weapon_sprite
 	stats.effects       = StatusEffect.EffectManager.new()
 	abilities.append(Ability.get_ability("player_slash", stats.level))
+	
+	load_animations()
 
 
-# Called: game._build_scene().
+# Called: init().
 func load_animations() -> void:
 
 	# Player body sprites.
@@ -330,7 +334,7 @@ func _try_attack() -> void:
 		return
 	if not abilities[0].check_resources(stats, 0):
 		return
-	# Signal attack is emmited. So it calls game._on_player_attack().
+	# Signal attack is emmited. So it calls map._on_player_attack().
 	attack.emit(position, _facing_world_direction())
 	
 	

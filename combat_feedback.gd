@@ -45,7 +45,7 @@ var _count     : int    = 0    # alternating drift direction index
 var _font      : Font   = null # set _ready(); shared across all numbers
 
 var _player      : CharacterBody2D   # set game._ready() via init().
-var _creatures   : Array   = []      # set game._ready() via init(); Array[CharacterBody2D]
+var _creatures   : Dictionary   = {} # set game._ready() via init().
 var _world_angle : float   = 0.0     # set game._process() via set_world_angle().
 var _vp_center   : Vector2 = Vector2.ZERO   # set _ready(), _on_viewport_resized().
 
@@ -63,7 +63,7 @@ func _ready() -> void:
 
 
 # Called: game._ready().
-func init(p_player: CharacterBody2D, p_creatures: Array) -> void:
+func init(p_player: CharacterBody2D, p_creatures: Dictionary) -> void:
 
 	_player    = p_player
 	_creatures = p_creatures
@@ -130,7 +130,7 @@ func _read_player() -> void:
 # Called: _process().
 func _read_creatures() -> void:
 
-	for creature in _creatures:
+	for creature in _creatures.values():
 		
 		var total_damage  = creature.stats.effects.total_damage
 		var expired_names = creature.stats.effects.expired_names

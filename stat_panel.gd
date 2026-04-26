@@ -54,7 +54,7 @@ const C_COMBAT_BORDER := Color(0.65, 0.12, 0.12, 0.90)   # red border when in co
 # ── References ────────────────────────────────────────────────────────────────
 
 var player    : CharacterBody2D   # set game._ready() via init().
-var creatures : Array = []        # set game._ready() via init().
+var creatures : Dictionary = {}   # set game._ready() via init().
 
 var _creature_entity : CharacterBody2D = null   # Currently open creature.
 var _player_open     : bool            = false
@@ -75,6 +75,7 @@ var debug_overlay     : Node2D = null   # set game._ready().
 var _dbg_creature_col : bool   = false
 var _dbg_player_col   : bool   = false
 var _dbg_obstacle_col : bool   = false
+var _dbg_prop_z       : bool   = false
 var _dbg_tile_grid    : bool   = false
 var _dbg_pf_grid      : bool   = false
 var _dbg_pf_grid2     : bool   = false
@@ -108,7 +109,7 @@ func _ready() -> void:
 
 
 # Called: game._ready().
-func init(p_player: CharacterBody2D, p_creatures: Array) -> void:
+func init(p_player: CharacterBody2D, p_creatures: Dictionary) -> void:
 
 	player    = p_player
 	creatures = p_creatures
@@ -165,7 +166,7 @@ func _handle_creature_click(click_pos: Vector2) -> void:
 
 	# Find any creature whose screen-space position is within 32px of the click.
 	var vp_center : Vector2 = get_viewport().get_visible_rect().size * 0.5
-	for creature in creatures:
+	for creature in creatures.values():
 		if not is_instance_valid(creature):
 			continue
 		var screen_pos : Vector2 = _world_to_screen(creature.position, vp_center, _world_angle)
@@ -499,6 +500,7 @@ func _build_lines(entity: CharacterBody2D, p_prefix: String = "") -> Array:
 			lines.append(["toggle", "dbg_cre_col",       "Creature Collisions", _dbg_creature_col])
 			lines.append(["toggle", "dbg_ply_col",     "Player Collision",    _dbg_player_col])
 			lines.append(["toggle", "dbg_obs_col",     "Obstacle Collisions", _dbg_obstacle_col])
+			lines.append(["toggle", "dbg_prop_z",      "Prop Z Score",        _dbg_prop_z])
 			lines.append(["toggle", "dbg_grid",        "Tile Grid",           _dbg_tile_grid])
 			lines.append(["toggle", "dbg_pf_grid",     "PF Grid (dilated)",   _dbg_pf_grid])
 			lines.append(["toggle", "dbg_pf_grid2",    "PF Grid2 (LOS)",      _dbg_pf_grid2])
@@ -586,6 +588,9 @@ func _toggle_debug(key: String) -> void:
 		"dbg_obs_col":
 			_dbg_obstacle_col                  = not _dbg_obstacle_col
 			debug_overlay.show_obstacle_col    = _dbg_obstacle_col
+		"dbg_prop_z":
+			_dbg_prop_z                        = not _dbg_prop_z
+			debug_overlay.show_prop_z_score    = _dbg_prop_z
 		"dbg_grid":
 			_dbg_tile_grid                     = not _dbg_tile_grid
 			debug_overlay.show_tile_grid       = _dbg_tile_grid

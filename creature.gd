@@ -1,3 +1,4 @@
+class_name Creature
 extends CharacterBody2D
 
 const SPRITE_SIZE 		:= 96
@@ -61,6 +62,11 @@ enum State {
 	CHASE, EXIT_STANCE, RETURNING, ATTACK, DEATH, DEAD
 }
 
+const TILE_TYPE_MAP := {
+	2: "rat", 
+	3: "snake"
+}
+
 const MAP_TYPE := {
 	Type.RAT	: "rat",
 	Type.SNAKE	: "snake"
@@ -100,6 +106,8 @@ const COMBAT_STATES := {
 
 
 # ── State ──────────────────────────────────────────────────────────────────────
+
+signal died
 
 var state        : State = State.IDLE_NEUTRAL
 var facing_right : bool  = false
@@ -195,34 +203,39 @@ var _move_dy : float = 1.0   # set _update_facing(), _move_toward().
 # =============================================================================
 
 # Called: game._spawn_creature().
-func init(cfg: Dictionary, player: CharacterBody2D, camera_angle: float, pathfinder: Pathfinder) -> void:
+func init(stats: Dictionary, player: CharacterBody2D, camera_angle: float, pathfinder: Pathfinder) -> void:
 	
 	wander_timer    	= randf_range(0.0, 1.0)
 	wander_interval 	= randf_range(WANDER_INTERVAL_MIN, WANDER_INTERVAL_MAX)
 	path_interval   	= randf_range(PATH_INTERVAL_MIN,   PATH_INTERVAL_MAX)
 	_collision_interval = randf_range(COLLISION_INTERVAL_MIN,   COLLISION_INTERVAL_MAX)
 	
-	type 		 = MAP_STRING_TYPE[cfg["type"]]
+	# Tiled maps all sprite coordinates from top left to down right.
+	# We map sprite coordinates from down left to top right.
+	# This creates a whole tile difference in the vertical axis between the two systems.
+	position = Vector2(stats["col"] * TILE_SIZE, stats["row"] * TILE_SIZE + TILE_SIZE)
 	
-	stats        = Stats.new(cfg["str"], cfg["agi"], cfg["sta"], 
-		cfg["int"], cfg["spr"], cfg["res"], cfg["def"], cfg["bms"], cfg["exp"])
+	type = MAP_STRING_TYPE[stats["type"]]
+	
+	self.stats = Stats.new(stats["str"], stats["agi"], stats["sta"], stats["int"], 
+		stats["spr"], stats["res"], stats["def"], stats["bms"], stats["exp"])
 		
-	if cfg["home"]:
+	if stats["home"]:
 		home_position = position
 		has_home      = true
 		
-	is_returning = cfg["returning"]
-	fleeing      = cfg["fleeing"]
+	is_returning = stats["returning"]
+	fleeing      = stats["fleeing"]
 	
-	stats.effects     		= StatusEffect.EffectManager.new()
-	_wait_damage_threshold 	= maxf(1.0, stats.hp_max * 3.0 / 100.0)
+	self.stats.effects     	= StatusEffect.EffectManager.new()
+	_wait_damage_threshold 	= maxf(1.0, self.stats.hp_max * 3.0 / 100.0)
 	
 	
 	sprite_path = SPRITE_PATH + MAP_TYPE[type] + "/"
 	
 	for attack_name in STATE_ANIM[State.ATTACK]:
 		if attack_name.split("_")[0] == MAP_TYPE[type]:
-			abilities.append(Ability.get_ability(attack_name, stats.level))
+			abilities.append(Ability.get_ability(attack_name, self.stats.level))
 	
 	self.player = player
 	self.camera_angle = camera_angle
@@ -461,6 +474,12 @@ func _update_state(dt: float) -> void:
 				# Then creature enters EXIT_STANCE state.
 				else:
 					_set_state(State.EXIT_STANCE)
+			# 1) Player is alive AND
+			# 2) Creature has energy AND
+			# 3) Creature has not reached max distance to home AND
+			# 4) Creature is within attack range.
+			else:
+				_update_facing(player.position.x - position.x, player.position.y - position.y)
 
 		State.CHASE:
 	
@@ -588,6 +607,7 @@ func _update_state(dt: float) -> void:
 			# 1) Creatures corpse is not inspected.
 			if not is_inspected:
 				if _change_alpha(dt):
+					died.emit()
 					queue_free()
 
 
@@ -597,7 +617,7 @@ func _execute_state(dt: float) -> void:
 	match state:
 		
 		State.IDLE_ATTACK:
-			
+
 			# 1) Player is alive AND
 			# 2) Creature has energy AND
 			# 3) Creature has not reached max distance to home AND

@@ -1,11 +1,6 @@
 
 {
-    "player": {
-        "str": 1, "agi": 1, "sta": 180,
-        "int": 0, "spr": 0, "res": 100, "def": 100,
-        "bms": 360, "exp": 0,
-    },
-    "creatures": [
+    "creature": [
     {
         "row": 4, "col": 6, "type": "rat",
         "str": 1, "agi": 0, "sta": 36,

@@ -30,20 +30,20 @@ var _dynamic_blockers	: Dictionary = {}   #as game._update_dynamic_blockers().
 # Tracks which exact tiles are solid (no dilation). For debug_overlay.
 var _grid_centers    	: Dictionary = {}   # set_tile_solid().
 # Temporary creature-collision blocks. Tile → seconds_remaining.
-var _temp_block_timer  : Dictionary = {}   # add_temp_block(), update().
+var _temp_block_timer  : Dictionary = {}   # add_temp_block(), update_temp_block().
 # How many times each tile has been updated before timer is up.
-var _temp_block_update  : Dictionary = {}   # add_temp_block(), update().
+var _temp_block_update  : Dictionary = {}   # add_temp_block(), update_temp_block().
 # How many times each tile has been re-blocked (after timer is up).
-var _temp_block_times   : Dictionary = {}   # add_temp_block(), update().
+var _temp_block_times   : Dictionary = {}   # add_temp_block(), update_temp_block().
 # How much time since _temp_block_times[tile] is to be reseted.
-var _temp_block_duration: Dictionary = {}   # update().
+var _temp_block_duration: Dictionary = {}   # update_temp_block().
 
 
 # =============================================================================
 # SETUP
 # =============================================================================
 
-# Called: game._build_pathfinder().
+# Called: map._build_pathfinder().
 func build(map_cols: int, map_rows: int) -> void:
 
 	_map_cols            = map_cols
@@ -60,21 +60,31 @@ func build(map_cols: int, map_rows: int) -> void:
 	_grid.update()
 
 
-# Called: game._update_dynamic_blockers().
+# Called: map._update_dynamic_blockers().
 func set_dynamic_blockers(tiles: Dictionary) -> void:
 
 	# Not by reference but by value. Because reference is been updated constantly.
 	_dynamic_blockers = tiles.duplicate()
 
 
-# Called: game._spawn_bush(), game._spawn_bush() tree_exiting.
-func set_tile_solid(tile: Vector2i, solid: bool) -> void:
+# Called: map._spawn_prop().
+func set_tile_solid(tile: Vector2i, size: int, solid: bool) -> void:
 
-	# Updates _grid.
-	# 3x3 square dilation: centre + all 8 neighbours marked as solid.
-	# A reference count per tile handles overlapping dilation zones between adjacent obstacles.
-	for dx in range(-1, 2):
-		for dy in range(-1, 2):
+	# We map sprite coordinates from down left to top right.
+	# size = 1 (small), 1 tile.
+	var range1 = range(0,1)
+	var range2 = range1
+	# size = 2 (medium), 2x2 tiles.
+	if size == 2:
+		range1 = range(0,2)
+		range2 = range(-1, 1)
+	# size = 3 (large), 3x3 tiles.
+	elif size == 3:
+		range1 = range(0, 3)
+		range2 = range(-2, 1)
+		
+	for dx in range1:
+		for dy in range2:
 			var t := tile + Vector2i(dx, dy)
 			if t.x < 0 or t.x >= _map_cols or t.y < 0 or t.y >= _map_rows:
 				continue
@@ -118,8 +128,8 @@ func add_temp_block(world_pos: Vector2) -> void:
 		+ (_temp_block_times[tile] + _temp_block_update[tile] - 1) * TEMP_BLOCK_DURATION, 32)
 
 
-# Called: game._process().
-func update(dt: float) -> void:
+# Called: map._process().
+func update_temp_block(dt: float) -> void:
 
 	if _temp_block_timer.is_empty() and _temp_block_duration.is_empty():
 		return
@@ -242,6 +252,7 @@ func _count_solid_neighbors(tile: Vector2i) -> int:
 			elif _grid.is_point_solid(t) or _dynamic_blockers.has(t):
 				count += 1
 	return count
+
 
 # Called: find_path(), creature._exit_wait().
 func _nearest_walkable(tile: Vector2i) -> Vector2i:

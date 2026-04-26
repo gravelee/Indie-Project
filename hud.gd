@@ -47,7 +47,7 @@ const COLOR_MANA       := Color(0.31, 0.47, 1.00)
 
 var player_stats  : Stats              # set game._ready().
 var player        : CharacterBody2D    # set game._ready() via init().
-var creatures     : Array  = []        # set game._ready() via init(); Array[CharacterBody2D]
+var creatures     : Dictionary  = {}   # set game._ready() via init().
 var world_angle   : float  = 0.0       # set game._process() via set_world_angle().
 
 
@@ -85,7 +85,7 @@ func _on_viewport_resized() -> void:
 
 
 # Called: game._ready() after player and creatures are set up.
-func init(p_player: CharacterBody2D, p_creatures: Array) -> void:
+func init(p_player: CharacterBody2D, p_creatures: Dictionary) -> void:
 
 	player    = p_player
 	creatures = p_creatures
@@ -184,8 +184,8 @@ func _draw_creature_bars() -> void:
 	if not player:
 		return
 
-	for creature in creatures:
-
+	for creature in creatures.values():
+		
 		if not creature.alive:
 			continue
 
