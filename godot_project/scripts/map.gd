@@ -25,6 +25,7 @@ const PATH_CREATURE_STATS         := "res://assets/maps/level_01/creature_stats.
 const PATH_MAP_ENTITIES   		  := "res://assets/maps/level_01/level_01_Entities.csv"
 const PATH_PROP_SCRIPT            := "res://scripts/props/world_prop.gd"
 const PATH_DESTRUCTIBLE_SCRIPT    := "res://scripts/props/destructible.gd"
+const PATH_REACTIVE_SCRIPT        := "res://scripts/props/reactive_prop.gd"
 
 
 # ── Other ──────────────────────────────────────────────────────────────────────
@@ -360,11 +361,11 @@ func _load_entities() -> void:
 			elif tile_id == 117:              # 117 = 3×2 tree  h=2
 				_spawn_prop(world_pos, 3, 2, "tree", "mystic", 2, 1, false, true, false)
 			elif tile_id == 118:              # 118 = 1×1 grass
-				_spawn_prop(world_pos, 1, 1, "grass", "classic", 0, 1, true, false, false)
+				_spawn_prop(world_pos, 1, 1, "grass", "classic", 0, 1, true, false, false, true)
 			elif tile_id == 119:              # 119 = 2×2 grass
-				_spawn_prop(world_pos, 2, 2, "grass", "classic", 0, 1, true, false, false)
+				_spawn_prop(world_pos, 2, 2, "grass", "classic", 0, 1, true, false, false, true)
 			elif tile_id == 120:              # 120 = 3×3 grass
-				_spawn_prop(world_pos, 3, 3, "grass", "classic", 0, 1, true, false, false)
+				_spawn_prop(world_pos, 3, 3, "grass", "classic", 0, 1, true, false, false, true)
 		row += 1
 	file.close()
 
@@ -372,10 +373,11 @@ func _load_entities() -> void:
 # Called: _load_entities().
 # cols/rows = tile footprint. height_ext = 0 for standard height, 1/2/… for progressively taller variants.
 func _spawn_prop(world_pos: Vector2, cols: int, rows: int, sprite_type: String, sprite_name: String,
-	height_ext: int, variant_count: int, central_rotation: bool, has_collision: bool, destructible: bool) -> void:
+	height_ext: int, variant_count: int, central_rotation: bool, has_collision: bool, destructible: bool, reactive: bool = false) -> void:
 
 	var prop             := WorldProp.new()
-	prop.set_script(load(PATH_DESTRUCTIBLE_SCRIPT if destructible else PATH_PROP_SCRIPT))
+	var script_path      := PATH_DESTRUCTIBLE_SCRIPT if destructible else (PATH_REACTIVE_SCRIPT if reactive else PATH_PROP_SCRIPT)
+	prop.set_script(load(script_path))
 	prop.position         = world_pos
 	prop.cols             = cols
 	prop.rows             = rows
