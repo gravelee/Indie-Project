@@ -1,0 +1,50 @@
+{
+    "Map/SizeTest": {
+        "height": 4300,
+        "width": 2
+    },
+    "activeFile": "map.tmx",
+    "expandedProjectPaths": [
+    ],
+    "file.lastUsedOpenFilter": "All Files (*)",
+    "fileStates": {
+        "all_entities_obstacles_player.tsx": {
+            "scaleInDock": 1,
+            "scaleInEditor": 1
+        },
+        "leaf32.tsx": {
+            "scaleInDock": 1
+        },
+        "map.tmx": {
+            "scale": 1.0252,
+            "selectedLayer": 1,
+            "viewCenter": {
+                "x": 481.857198595396,
+                "y": 330.6671868903628
+            }
+        }
+    },
+    "last.exportedFilePath": "/Users/Grproth/Desktop/Indie Project/indie-project/assets/maps/level_01",
+    "last.externalTilesetPath": "/Users/Grproth/Desktop/indie_game/tilemaps/level1",
+    "last.imagePath": "/Users/Grproth/Desktop/Indie Project/indie-project/assets/maps",
+    "map.height": 100,
+    "map.lastUsedExportFilter": "CSV files (*.csv)",
+    "map.lastUsedFormat": "tmx",
+    "map.width": 100,
+    "openFiles": [
+        "map.tmx",
+        "all_entities_obstacles_player.tsx"
+    ],
+    "project": "level1.tiled-project",
+    "property.type": "int",
+    "recentFiles": [
+        "all_entities_obstacles_player.tsx",
+        "map.tmx"
+    ],
+    "tileset.lastUsedFilter": "Tiled tileset files (*.tsx *.xml)",
+    "tileset.lastUsedFormat": "tsx",
+    "tileset.tileSize": {
+        "height": 96,
+        "width": 96
+    }
+}
