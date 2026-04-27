@@ -14,9 +14,9 @@ var sprite_type       : String
 var sprite_name       : String
 var has_collision     : bool  = true
 var central_rotation  : bool  = true
-var weight_central    : Vector2   # tile-footprint centre, used for collision and rotation pivot.
+var weight_central    : Vector2        # tile-footprint centre, used for collision and rotation pivot.
 var empty_bottom      : int    = 0     # transparent rows at canvas bottom — set in _load_animations().
-var z_radius          : float  = 0.0  # radius of the z-sort circle = |weight_central.y| - empty_bottom.
+var z_radius          : float  = 0.0   # radius of the z-sort circle = |weight_central.y| - empty_bottom.
 var height_ext        : int   = 0      # 0=standard, 1=one extension taller, 2=two, … — int scales to any height.
 var variant_count     : int   = 1      # >1 enables random variant suffix in sprite path.
 var _variant_idx      : int   = 0      # chosen in _load_animations().

@@ -311,3 +311,16 @@ func get_temp_blocks() -> Dictionary:
 
 	# Keys are tile coords; values are remaining seconds.
 	return _temp_block_timer
+
+
+# Called: debug_overlay._draw_path_grid().
+func get_walkable_tiles() -> Array:
+
+	# Returns all tile coords that are not solid in _grid.
+	var result : Array = []
+	for y in range(_map_rows):
+		for x in range(_map_cols):
+			var tile := Vector2i(x, y)
+			if not _grid.is_point_solid(tile):
+				result.append(tile)
+	return result

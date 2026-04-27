@@ -2,7 +2,7 @@ class_name Creature
 extends CharacterBody2D
 
 const SPRITE_SIZE 		:= 96
-const SPRITE_PATH		:= "res://assets/spritesheets/"
+const SPRITE_PATH		:= "res://assets/spritesheets/creatures/"
 const ANIMATION_SPEED 	:= 8
 
 # ── AI distances ───────────────────────────────────────────────────────────────
@@ -956,6 +956,9 @@ func _try_attack() -> void:
 		return
 	
 	_set_state(State.ATTACK)
+	# Sometimes when the creature enters attack range its path keeps a couple of waypoints. 
+	# We clear them.
+	path.clear()	
 	sprite.play(chosen.anim)
 	chosen.use(stats, [player], dist)
 

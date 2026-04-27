@@ -19,7 +19,7 @@ extends CharacterBody2D
 const SPRITE_SIZE       := 96
 const TILE_SIZE         := 32
 const SPRITE_PATH       := "res://assets/spritesheets/player/"
-const WEAPON_SPRITE_PATH:= "res://assets/spritesheets/wooden_sword/"
+const WEAPON_SPRITE_PATH:= "res://assets/spritesheets/weapons/wooden_sword/"
 const WEAPON_SPRITES	: Array = ["wooden_sword_attack", "wooden_sword_attack_opposite"]
 
 enum State  { SPAWN, IDLE_NEUTRAL, IDLE_ATTACK, WALKING, FORWARD_SLASH, DEATH, DEAD }

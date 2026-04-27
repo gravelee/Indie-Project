@@ -1,7 +1,7 @@
 class_name StatusEffect
 extends RefCounted
 
-const _Statuses := preload("res://statuses.gd")
+const _Statuses := preload("res://scripts/entities/statuses.gd")
 
 
 # ── Roll helper ───────────────────────────────────────────────────────────────

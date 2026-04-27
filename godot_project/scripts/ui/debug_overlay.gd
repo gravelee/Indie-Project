@@ -232,19 +232,34 @@ func _draw_pf_grid() -> void:
 		draw_rect(rect, COLOR_PF_GRID_LINE, false, 1.0)
 
 
-# Called: _draw(). PF grid shifted by half a tile — shows where path waypoints land (tile centers).
+# Called: _draw(). Walkable tile centers as dots + yellow lines to each walkable neighbor.
+# Each edge drawn once: only checks neighbours in the +x, +y, +x+y, -x+y directions.
 func _draw_path_grid() -> void:
 
 	if not pathfinder:
 		return
-	var solids : Dictionary = pathfinder.get_grid_solid_counts()
-	var half   := float(TILE_SIZE) / 2.0
-	for tile in solids:
-		var rect := Rect2(
-			tile.x * TILE_SIZE + half, tile.y * TILE_SIZE + half,
-			float(TILE_SIZE), float(TILE_SIZE))
-		draw_rect(rect, COLOR_PATH_GRID_FILL)
-		draw_rect(rect, COLOR_PATH_GRID_LINE, false, 1.0)
+	var walkable : Array = pathfinder.get_walkable_tiles()
+	var half     := float(TILE_SIZE) / 2.0
+
+	# Build lookup set for O(1) neighbour check.
+	var walkable_set : Dictionary = {}
+	for tile in walkable:
+		walkable_set[tile] = true
+
+	# Draw edges — 4 half-directions so each pair is visited once.
+	var dirs := [Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(-1, 1)]
+	for tile in walkable:
+		var from := Vector2(tile.x * TILE_SIZE + half, tile.y * TILE_SIZE + half)
+		for dir in dirs:
+			var nb : Vector2i = tile + dir
+			if walkable_set.has(nb):
+				var to := Vector2(nb.x * TILE_SIZE + half, nb.y * TILE_SIZE + half)
+				draw_line(from, to, COLOR_PATH_GRID_LINE, 1.0)
+
+	# Draw dots on top so they're visible over the lines.
+	for tile in walkable:
+		var center := Vector2(tile.x * TILE_SIZE + half, tile.y * TILE_SIZE + half)
+		draw_circle(center, 2.0, COLOR_PATH_DOT)
 
 
 # Called: _draw(). Draws solid tiles in the LOS grid (exact center, no dilation).

@@ -498,14 +498,14 @@ func _build_lines(entity: CharacterBody2D, p_prefix: String = "") -> Array:
 		lines.append(["section", "▶ DEBUG" if dbg_collapsed else "▼ DEBUG", "dbg"])
 		if not dbg_collapsed:
 			lines.append(["toggle", "dbg_player_attack", "Attack Area",         _dbg_player_attack])
+			lines.append(["toggle", "dbg_ply_col",       "Player Collision",    _dbg_player_col])
 			lines.append(["toggle", "dbg_cre_col",       "Creature Collisions", _dbg_creature_col])
-			lines.append(["toggle", "dbg_ply_col",     "Player Collision",    _dbg_player_col])
-			lines.append(["toggle", "dbg_obs_col",     "Obstacle Collisions", _dbg_obstacle_col])
-			lines.append(["toggle", "dbg_prop_z",      "Prop Z Score",        _dbg_prop_z])
-			lines.append(["toggle", "dbg_grid",        "Tile Grid",           _dbg_tile_grid])
-			lines.append(["toggle", "dbg_pf_grid",     "PF Grid (dilated)",   _dbg_pf_grid])
-			lines.append(["toggle", "dbg_pf_grid2",    "PF Grid2 (LOS)",      _dbg_pf_grid2])
-			lines.append(["toggle", "dbg_path_grid",   "Path Grid",           _dbg_path_grid])
+			lines.append(["toggle", "dbg_obs_col",       "Prop Collisions",     _dbg_obstacle_col])
+			lines.append(["toggle", "dbg_prop_z",        "Prop Z Score Point",  _dbg_prop_z])
+			lines.append(["toggle", "dbg_pf_grid",       "Prop Solid Grid",     _dbg_pf_grid])
+			lines.append(["toggle", "dbg_pf_grid2",      "Prop Anchor Grid",    _dbg_pf_grid2])
+			lines.append(["toggle", "dbg_grid",          "Tile Grid",           _dbg_tile_grid])
+			lines.append(["toggle", "dbg_path_grid",     "Waypoint Graph",      _dbg_path_grid])
 		lines.append(["divider"])
 
 	# ── Active effects (last) ─────────────────────────────────────────────────
@@ -581,36 +581,30 @@ func _toggle_debug(key: String) -> void:
 		"dbg_player_attack":
 			_dbg_player_attack                      = not _dbg_player_attack
 			debug_overlay.show_player_attack_area   = _dbg_player_attack
-		"dbg_cre_col":
-			_dbg_creature_col                  = not _dbg_creature_col
-			debug_overlay.show_creature_col    = _dbg_creature_col
 		"dbg_ply_col":
 			_dbg_player_col                    = not _dbg_player_col
 			debug_overlay.show_player_col      = _dbg_player_col
+		"dbg_cre_col":
+			_dbg_creature_col                  = not _dbg_creature_col
+			debug_overlay.show_creature_col    = _dbg_creature_col
 		"dbg_obs_col":
 			_dbg_obstacle_col                  = not _dbg_obstacle_col
 			debug_overlay.show_obstacle_col    = _dbg_obstacle_col
 		"dbg_prop_z":
 			_dbg_prop_z                        = not _dbg_prop_z
 			debug_overlay.show_prop_z_score    = _dbg_prop_z
-		"dbg_grid":
-			_dbg_tile_grid                     = not _dbg_tile_grid
-			debug_overlay.show_tile_grid       = _dbg_tile_grid
 		"dbg_pf_grid":
 			_dbg_pf_grid                       = not _dbg_pf_grid
 			debug_overlay.show_pf_grid         = _dbg_pf_grid
 		"dbg_pf_grid2":
 			_dbg_pf_grid2                      = not _dbg_pf_grid2
 			debug_overlay.show_pf_grid2        = _dbg_pf_grid2
+		"dbg_grid":
+			_dbg_tile_grid                     = not _dbg_tile_grid
+			debug_overlay.show_tile_grid       = _dbg_tile_grid
 		"dbg_path_grid":
 			_dbg_path_grid                     = not _dbg_path_grid
 			debug_overlay.show_path_grid       = _dbg_path_grid
-		"dbg_cre_paths":
-			_dbg_cre_paths                     = not _dbg_cre_paths
-			debug_overlay.show_cre_paths       = _dbg_cre_paths
-		"dbg_home_markers":
-			_dbg_home_markers                  = not _dbg_home_markers
-			debug_overlay.show_home_markers    = _dbg_home_markers
 		"dbg_cre_attack_dist":
 			_dbg_cre_attack_dist               = not _dbg_cre_attack_dist
 			debug_overlay.show_cre_attack_dist = _dbg_cre_attack_dist
@@ -626,6 +620,12 @@ func _toggle_debug(key: String) -> void:
 		"dbg_cre_home_max":
 			_dbg_cre_home_max                  = not _dbg_cre_home_max
 			debug_overlay.show_cre_home_max    = _dbg_cre_home_max
+		"dbg_home_markers":
+			_dbg_home_markers                  = not _dbg_home_markers
+			debug_overlay.show_home_markers    = _dbg_home_markers
+		"dbg_cre_paths":
+			_dbg_cre_paths                     = not _dbg_cre_paths
+			debug_overlay.show_cre_paths       = _dbg_cre_paths
 		"dbg_dyn_blockers":
 			_dbg_dyn_blockers                  = not _dbg_dyn_blockers
 			debug_overlay.show_dyn_blockers    = _dbg_dyn_blockers

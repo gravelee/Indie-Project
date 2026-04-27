@@ -1,7 +1,7 @@
 class_name Ability
 extends RefCounted
 
-const _AbilityData := preload("res://abilities.gd")
+const _AbilityData := preload("res://scripts/entities/abilities.gd")
 
 
 # ── Fields ────────────────────────────────────────────────────────────────────

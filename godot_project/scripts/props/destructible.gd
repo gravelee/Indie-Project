@@ -36,7 +36,7 @@ func _load_animations() -> void:
 	# Size prefix mirrors world_prop.gd: "{cols}x{rows}" — e.g. "1x1_death_3.png".
 	var size_str    := "%dx%d" % [cols, rows]
 	var v_part      := ("_%d" % [_variant_idx + 1]) if variant_count > 1 else ""
-	var death_path  := "res://assets/spritesheets/%s/%s/%s_death%s.png" % [sprite_type, sprite_name, size_str, v_part]
+	var death_path  := "res://assets/spritesheets/props/%s/%s/%s_death%s.png" % [sprite_type, sprite_name, size_str, v_part]
 	var death_tex   : Texture2D = load(death_path)
 	var frame_w     := death_tex.get_height()   # frames are square
 	var frame_count := death_tex.get_width() / frame_w

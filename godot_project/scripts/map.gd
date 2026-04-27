@@ -16,15 +16,15 @@ const ATTACK_SEARCH_R     := 3   # ceili(ATTACK_RADIUS / TILE_SIZE)
 const PATH_TILESET                := "res://assets/tilemaps/leaf/leaf.png"
 const PATH_MAP_TERRAIN            := "res://assets/maps/level_01/level_01_Terain.csv"
 
-const PATH_PLAYER_SCRIPT          := "res://player.gd"
+const PATH_PLAYER_SCRIPT          := "res://scripts/entities/player.gd"
 const PATH_PLAYER_STATS           := "res://assets/player_stats.json"
 
-const PATH_CREATURE_SCRIPT		  := "res://creature.gd"
+const PATH_CREATURE_SCRIPT		  := "res://scripts/entities/creature.gd"
 const PATH_CREATURE_STATS         := "res://assets/maps/level_01/creature_stats.json"
 
 const PATH_MAP_ENTITIES   		  := "res://assets/maps/level_01/level_01_Entities.csv"
-const PATH_PROP_SCRIPT            := "res://world_prop.gd"
-const PATH_DESTRUCTIBLE_SCRIPT    := "res://destructible.gd"
+const PATH_PROP_SCRIPT            := "res://scripts/props/world_prop.gd"
+const PATH_DESTRUCTIBLE_SCRIPT    := "res://scripts/props/destructible.gd"
 
 
 # ── Other ──────────────────────────────────────────────────────────────────────

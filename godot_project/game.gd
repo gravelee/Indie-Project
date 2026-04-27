@@ -7,11 +7,11 @@ const ENTITY_MEDIUM_OFFSET := 48.0	# Medium size = 3x3 (32px tile), 48 = 1.5 til
 
 # ── File paths ─────────────────────────────────────────────────────────────────
 
-const PATH_MAP_SCRIPT             := "res://map.gd"
-const PATH_HUD_SCRIPT             := "res://hud.gd"
-const PATH_COMBAT_FEEDBACK_SCRIPT := "res://combat_feedback.gd"
-const PATH_STAT_PANEL_SCRIPT      := "res://stat_panel.gd"
-const PATH_DEBUG_OVERLAY_SCRIPT   := "res://debug_overlay.gd"
+const PATH_MAP_SCRIPT             := "res://scripts/map.gd"
+const PATH_HUD_SCRIPT             := "res://scripts/ui/hud.gd"
+const PATH_COMBAT_FEEDBACK_SCRIPT := "res://scripts/ui/combat_feedback.gd"
+const PATH_STAT_PANEL_SCRIPT      := "res://scripts/ui/stat_panel.gd"
+const PATH_DEBUG_OVERLAY_SCRIPT   := "res://scripts/ui/debug_overlay.gd"
 
 
 # ── Camera rotation state ──────────────────────────────────────────────────────
