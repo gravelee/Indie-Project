@@ -83,7 +83,7 @@ func _build_scene() -> void:
 	
 	hud.player_stats = map.player.stats
 
-	debug_overlay.init(map.player, map.creatures, map.destructible_map, map.obstacle_map, map.pathfinder, map._map_cols, map._map_rows, map.rotatable_sprites)
+	debug_overlay.init(map.player, map.creatures, map.destructible_map, map.invulnerable_map, map.pathfinder, map._map_cols, map._map_rows, map.rotatable_sprites)
 
 	hud.init(map.player, map.creatures)
 	combat_feedback.init(map.player, map.creatures)

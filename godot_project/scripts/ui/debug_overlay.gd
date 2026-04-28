@@ -106,12 +106,12 @@ var show_temp_blocks     : bool = false
 var player            : CharacterBody2D
 var creatures         : Dictionary = {}   # shared Dict ref from game — always current.
 var destructible_map  : Dictionary = {}   # shared Dict ref from game — tile → damageable StaticBody2D.
-var obstacle_map      : Dictionary = {}   # shared Dict ref from game — tile → non-damageable StaticBody2D.
+var invulnerable_map  : Dictionary = {}   # shared Dict ref from game — tile → non-damageable StaticBody2D.
 var rotatable_sprites : Array      = []   # shared Array ref from map — sprite nodes for all props.
 var pathfinder        : Object     = null # Pathfinder ref from game.
-var map_cols      : int        = 0
-var map_rows      : int        = 0
-var _world_angle  : float      = 0.0     # updated by game.gd via set_world_angle()
+var map_cols          : int        = 0
+var map_rows          : int        = 0
+var _world_angle      : float      = 0.0     # updated by game.gd via set_world_angle()
 
 
 # =============================================================================
@@ -120,25 +120,28 @@ var _world_angle  : float      = 0.0     # updated by game.gd via set_world_angl
 
 # Called: game._ready().
 func init(p_player: CharacterBody2D, p_creatures: Dictionary,
-		  p_destructible_map: Dictionary, p_obstacle_map: Dictionary,
+		  p_destructible_map: Dictionary, p_invulnerable_map: Dictionary,
 		  p_pathfinder: Object, cols: int, rows: int,
 		  p_rotatable_sprites: Array) -> void:
 
 	player            = p_player
 	creatures         = p_creatures
 	destructible_map  = p_destructible_map
-	obstacle_map      = p_obstacle_map
+	invulnerable_map  = invulnerable_map
 	rotatable_sprites = p_rotatable_sprites
 	pathfinder        = p_pathfinder
-	map_cols      = cols
-	map_rows      = rows
-
-
-func set_world_angle(angle: float) -> void:
-	_world_angle = angle
+	map_cols          = cols
+	map_rows          = rows
+	
 	z_index       = 1000
 	z_as_relative = false
 	process_mode  = Node.PROCESS_MODE_ALWAYS
+
+
+# Called: game._process()
+func set_world_angle(angle: float) -> void:
+	
+	_world_angle = angle
 
 
 # =============================================================================
@@ -414,7 +417,7 @@ func _draw_player_collision() -> void:
 # Called: _draw().
 func _draw_obstacle_collisions() -> void:
 
-	for map in [destructible_map, obstacle_map]:
+	for map in [destructible_map, invulnerable_map]:
 		for tile in map:
 			var obs : Node2D = map[tile]
 			if not is_instance_valid(obs):

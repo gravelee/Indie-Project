@@ -24,8 +24,8 @@ const PATH_CREATURE_STATS         := "res://assets/maps/level_01/creature_stats.
 
 const PATH_MAP_ENTITIES   		  := "res://assets/maps/level_01/level_01_Entities.csv"
 const PATH_PROP_SCRIPT            := "res://scripts/props/world_prop.gd"
-const PATH_DESTRUCTIBLE_SCRIPT    := "res://scripts/props/destructible.gd"
-const PATH_REACTIVE_SCRIPT        := "res://scripts/props/reactive_prop.gd"
+const PATH_OBSTACLE_SCRIPT        := "res://scripts/props/obstacle_prop.gd"
+const PATH_TERRAIN_SCRIPT         := "res://scripts/props/terrain_prop.gd"
 
 
 # ── Other ──────────────────────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ var creature_sprites  : Dictionary = {}               # init _load_entities().
 var _creature_queue   : Dictionary = {}               # type_str -> [[creature, stats]], consumed in _load_entities().
 
 var destructible_map  : Dictionary = {}               # init _spawn_prop().
-var obstacle_map      : Dictionary = {}               # init _spawn_prop().
+var invulnerable_map  : Dictionary = {}               # init _spawn_prop().
 var rotatable_sprites : Array      = []               # init _spawn_prop().
 
 
@@ -216,7 +216,7 @@ func _on_player_attack(world_pos: Vector2, facing_direction: Vector2) -> void:
 			var key      := Vector2i(player_tile.x + dx, player_tile.y + dy)
 			if not destructible_map.has(key):
 				continue
-			var obstacle := destructible_map[key] as WorldProp
+			var obstacle := destructible_map[key] as DamageableProp
 			if not obstacle.alive:
 				continue
 			var to_obs : Vector2 = (obstacle.position + obstacle.weight_central) - world_pos
@@ -361,22 +361,27 @@ func _load_entities() -> void:
 			elif tile_id == 117:              # 117 = 3×2 tree  h=2
 				_spawn_prop(world_pos, 3, 2, "tree", "mystic", 2, 1, false, true, false)
 			elif tile_id == 118:              # 118 = 1×1 grass
-				_spawn_prop(world_pos, 1, 1, "grass", "classic", 0, 1, true, false, false, true)
+				_spawn_prop(world_pos, 1, 1, "grass", "classic", 0, 1, true, false, true)
 			elif tile_id == 119:              # 119 = 2×2 grass
-				_spawn_prop(world_pos, 2, 2, "grass", "classic", 0, 1, true, false, false, true)
+				_spawn_prop(world_pos, 2, 2, "grass", "classic", 0, 1, true, false, true)
 			elif tile_id == 120:              # 120 = 3×3 grass
-				_spawn_prop(world_pos, 3, 3, "grass", "classic", 0, 1, true, false, false, true)
+				_spawn_prop(world_pos, 3, 3, "grass", "classic", 0, 1, true, false, true)
 		row += 1
 	file.close()
 
 
 # Called: _load_entities().
-# cols/rows = tile footprint. height_ext = 0 for standard height, 1/2/… for progressively taller variants.
 func _spawn_prop(world_pos: Vector2, cols: int, rows: int, sprite_type: String, sprite_name: String,
-	height_ext: int, variant_count: int, central_rotation: bool, has_collision: bool, destructible: bool, reactive: bool = false) -> void:
+	height_ext: int, variant_count: int, central_rotation: bool, has_collision: bool, destructible: bool) -> void:
 
 	var prop             := WorldProp.new()
-	var script_path      := PATH_DESTRUCTIBLE_SCRIPT if destructible else (PATH_REACTIVE_SCRIPT if reactive else PATH_PROP_SCRIPT)
+	var script_path      : String
+	if (destructible and has_collision):
+		script_path = PATH_OBSTACLE_SCRIPT
+	elif (destructible and not has_collision):
+		script_path = PATH_TERRAIN_SCRIPT
+	else:	# All other cases are handled by WorldProp.
+		script_path = PATH_PROP_SCRIPT
 	prop.set_script(load(script_path))
 	prop.position         = world_pos
 	prop.cols             = cols
@@ -387,28 +392,30 @@ func _spawn_prop(world_pos: Vector2, cols: int, rows: int, sprite_type: String, 
 	prop.variant_count    = variant_count
 	prop.central_rotation = central_rotation
 	prop.has_collision    = has_collision
-	add_child(prop)   # triggers world_prop._ready() which creates sprite + optional collision
+	add_child(prop)
 
-	if has_collision:
-		# Pathfinder maps the grid coordinates from top left to down right.
-		# We map sprite coordinates from down left to top right.
-		# This creates a whole tile difference in the vertical axis between the two systems.
-		var tile_key = Vector2i(int(world_pos.x) / TILE_SIZE, int(world_pos.y) / TILE_SIZE - 1)
+	# Pathfinder maps the grid coordinates from top left to down right.
+	# We map sprite coordinates from down left to top right.
+	# This creates a whole tile difference in the vertical axis between the two systems.
+	var tile_key = Vector2i(int(world_pos.x) / TILE_SIZE, int(world_pos.y) / TILE_SIZE - 1)
+	if destructible:
+		if has_collision:
+			pathfinder.set_tile_solid(tile_key, cols, rows, true)
+		prop.died.connect(func():
+			destructible_map.erase(tile_key)
+			if has_collision:
+				rotatable_sprites.erase(prop.sprite)
+				pathfinder.set_tile_solid(tile_key, cols, rows, false)
+		)
+		destructible_map[tile_key] = prop
+	elif has_collision:
 		pathfinder.set_tile_solid(tile_key, cols, rows, true)
-		if destructible:
-			prop.died.connect(func():
-				destructible_map.erase(tile_key)
-				rotatable_sprites.erase(prop.sprite)
-				pathfinder.set_tile_solid(tile_key, cols, rows, false)
-			)
-			destructible_map[tile_key] = prop
-		else:
-			prop.tree_exiting.connect(func():
-				obstacle_map.erase(tile_key)
-				rotatable_sprites.erase(prop.sprite)
-				pathfinder.set_tile_solid(tile_key, cols, rows, false)
-			)
-			obstacle_map[tile_key] = prop
+		prop.tree_exiting.connect(func():
+			invulnerable_map.erase(tile_key)
+			rotatable_sprites.erase(prop.sprite)
+			pathfinder.set_tile_solid(tile_key, cols, rows, false)
+		)
+		invulnerable_map[tile_key] = prop
 	#else:
 		# No collision, not destructible — nothing to clean up until fully freed.
 	rotatable_sprites.append(prop.sprite)

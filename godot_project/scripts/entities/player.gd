@@ -64,6 +64,7 @@ var facing    : Facing = Facing.SOUTH
 var in_combat : bool   = false
 var anim_done : bool   = false
 var alive     : bool   = true
+var moving    : bool   = false
 
 # Cached animation key to rebuilt only when state or facing changes.
 var _anim_key 		: String = "spawn"
@@ -311,8 +312,18 @@ func _handle_movement() -> void:
 		if state == State.WALKING:
 			_set_state(State.IDLE_ATTACK if in_combat else State.IDLE_NEUTRAL)
 		velocity = Vector2.ZERO
-
+	
+	_update_moving()
 	move_and_slide()
+
+
+# Called: _handle_movement().
+func _update_moving() -> void:
+	
+	if velocity != Vector2.ZERO:
+		moving = true
+	else:
+		moving = false
 
 
 # =============================================================================

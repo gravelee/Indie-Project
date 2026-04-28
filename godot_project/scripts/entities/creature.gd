@@ -9,9 +9,9 @@ const ANIMATION_SPEED 	:= 8
 
 const NOTICE_DIRECTION := 450.0
 const NOTICE_DIST      := 400.0
-const CHASE_DIST       := 10000.0#900.0
+const CHASE_DIST       := 900.0
 const ATTACK_DIST      := 60.0
-const HOME_MAX_DIST    := 20000.0#2000.0
+const HOME_MAX_DIST    := 2000.0
 const HOME_DIST        := 16.0
 const FLEE_SPEED       := 240.0
 
@@ -26,11 +26,12 @@ const HOME_DIST_SQ        := HOME_DIST        * HOME_DIST
 
 # ── Wander settings ────────────────────────────────────────────────────────────
 
-const WANDER_CHANCE        := 1.00
-const WANDER_INTERVAL_MIN  := 0.9
-const WANDER_INTERVAL_MAX  := 1.1
-const WANDER_DURATION_MIN  := 0.5
-const WANDER_DURATION_MAX  := 3.0
+const WANDER_CHANCE           := 1.0
+const WANDER_INTERVAL_MIN     := 0.9
+const WANDER_INTERVAL_MAX     := 1.1
+const WANDER_DURATION_MIN     := 0.5
+const WANDER_DURATION_MAX     := 3.0
+const WANDER_BUMP_RADIUS_SQ   := 1024.0   # 32 px — props within one tile bump on direction change.
 
 
 # ── Pathfinding settings ───────────────────────────────────────────────────────
@@ -116,12 +117,13 @@ var anim_done    : bool  = false
 var alive        : bool  = true
 var is_inspected : bool  = false   # set stat_panel. Prevents queue_free while panel is open.
 var sprite_alpha : float = 255.0
+var moving       : bool  = false
 
 
 # ── Wander ─────────────────────────────────────────────────────────────────────
 
 var wander_timer    : float = 0.0
-var wander_interval : float = 1.0
+var wander_interval : float
 var wander_elapsed  : float = 0.0
 var wander_duration : float = 0.0
 var wander_dx       : float = 0.0
@@ -688,35 +690,42 @@ func _update_movement(dt: float) -> void:
 		return
 
 	# Wander has its own collision recovery (force_wander). Skip stuck detection.
-	if state == State.WANDER:
-		move_and_slide()
-		return
+	if not state == State.WANDER:
+		
+		# CHASE and RETURNING: sample position to detect stuck.
+		_stuck_timer += dt
+		if _stuck_timer >= STUCK_SAMPLE_INTERVAL:
+			_stuck_timer    = 0.0
+			# Check if position has minimum changed since last sample. If not..
+			if position.distance_squared_to(_stuck_pos) < STUCK_MIN_DIST_SQ:
+				# If not waiting already.
+				if not _wait:
+					# Position not changed. Stuck.
+					_wait             = true
+					_wait_entry_state = state
+			# Minimum movement exists.
+			else:
+				# If waiting.
+				if _wait:
+					# Exit waiting.
+					_wait            = false
+					_wait_counter    = 0
+					_wait_damage_acc = 0.0
+					_wait_interval   = WAIT_INTERVAL_START
+			# Update stuck position.
+			_stuck_pos = position
 
-	# CHASE and RETURNING: sample position to detect stuck.
-	_stuck_timer += dt
-	if _stuck_timer >= STUCK_SAMPLE_INTERVAL:
-		_stuck_timer    = 0.0
-		# Check if position has minimum changed since last sample. If not..
-		if position.distance_squared_to(_stuck_pos) < STUCK_MIN_DIST_SQ:
-			# If not waiting already.
-			if not _wait:
-				# Position not changed. Stuck.
-				_wait             = true
-				_wait_entry_state = state
-		# Minimum movement exists.
-		else:
-			# If waiting.
-			if _wait:
-				# Exit waiting.
-				_wait            = false
-				_wait_counter    = 0
-				_wait_damage_acc = 0.0
-				_wait_interval   = WAIT_INTERVAL_START
-		# Update stuck position.
-		_stuck_pos = position
-
-	# Do the actual movement.
+	_update_moving()
 	move_and_slide()
+
+
+# Called: _update_movement().
+func _update_moving() -> void:
+	
+	if velocity != Vector2.ZERO:
+		moving = true
+	else:
+		moving = false
 
 
 # Called: _update_state().
@@ -742,6 +751,7 @@ func _wander(dt: float) -> String:
 		wander_elapsed  = 0.0
 		wander_duration = randf_range(WANDER_DURATION_MIN, WANDER_DURATION_MAX)
 		_update_facing(wander_dx, wander_dy)
+		_bump_nearby_props()
 
 	wander_elapsed += dt
 	velocity = Vector2(wander_dx, wander_dy) * stats.mspd
@@ -749,6 +759,14 @@ func _wander(dt: float) -> String:
 	if wander_elapsed >= wander_duration:
 		return "done"
 	return ""
+
+
+# Called: _wander() on direction change.
+func _bump_nearby_props() -> void:
+
+	for prop in get_tree().get_nodes_in_group("react_props"):
+		if (prop.position - position).length_squared() < WANDER_BUMP_RADIUS_SQ:
+			prop.trigger_reaction()
 
 
 # Called: _update_state().

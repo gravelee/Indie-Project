@@ -33,7 +33,7 @@ var _timer        		: float  = 0.0	# update tick(), set use().
 # Called: get_ability().
 func _init(
 	p_name: String, p_level: int, p_damage_mult: float, p_cooldown: float,
-	p_range: float, p_hp_cost: float, p_energy_cost: float, p_rage_cost: float, p_mp_cost: float,
+	p_range: float, p_hp_cost: int, p_energy_cost: int, p_rage_cost: int, p_mp_cost: int,
 	p_effect_name: String, p_effect_chance: float, p_anim: String,
 	p_is_magic: bool, p_description: String
 ) -> void:
@@ -207,10 +207,6 @@ static func get_ability(ability_name: String, p_level: int = 1) -> Ability:
 			"damage_mult"  : damage_mult   += gain
 			"cooldown"     : p_cooldown     = maxf(1.0, p_cooldown - gain)
 			"range_"       : range_        += gain
-			"hp_cost"      : hp_cost       += gain
-			"energy_cost"  : energy_cost   += gain
-			"rage_cost"    : rage_cost     += gain
-			"mp_cost"      : mp_cost       += gain
 			"effect_chance": effect_chance += gain
 
 	return Ability.new(

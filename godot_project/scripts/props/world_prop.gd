@@ -12,6 +12,7 @@ var cols              : int  = 1           # tile footprint width  (x axis).
 var rows              : int  = 1           # tile footprint height (y axis).
 var sprite_type       : String
 var sprite_name       : String
+var states            : Array = ["idle_alive"]
 var has_collision     : bool  = true
 var central_rotation  : bool  = true
 var weight_central    : Vector2        # tile-footprint centre, used for collision and rotation pivot.
@@ -26,8 +27,8 @@ var _variant_idx      : int   = 0      # chosen in _load_animations().
 # SETUP
 # =============================================================================
 
-# INIT
-func _ready() -> void:
+# Called: destructable._ready(), reactive_prop._ready().
+func _ready() -> void:	# states never empty.
 
 	# Footprint centre: half the tile width right, half the tile height up from the bottom-left anchor.
 	weight_central = Vector2(cols * TILE_SIZE / 2.0, -(rows * TILE_SIZE / 2.0))
@@ -44,42 +45,47 @@ func _ready() -> void:
 	sprite = AnimatedSprite2D.new()
 	sprite.z_as_relative = false
 	add_child(sprite)
-
+	
+	# Calls: destructable._load_animations(), reactive_prop._load_animations().
 	_load_animations()
-	sprite.play("idle")
+	sprite.play(states[0]) # idle_alive is the first state to play.
 
 
 # =============================================================================
 # ANIMATIONS
 # =============================================================================
 
-# Called: _ready().
+# Called: destructable._load_animations(), reactive_prop._load_animations().
 func _load_animations() -> void:
 
 	var frames := SpriteFrames.new()
 	sprite.sprite_frames = frames
-
-	frames.add_animation("idle")
-	frames.set_animation_loop("idle", true)
-	frames.set_animation_speed("idle", 1.0)
-
 	_variant_idx = randi_range(0, variant_count - 1)
+	
+	for state in states:
+		
+		frames.add_animation(state)
+		frames.set_animation_loop(state, true)
+		frames.set_animation_speed(state, 1.0)
+		var size_str := "%dx%d" % [cols, rows]
+		var h_part   := ("_h%d" % height_ext) if height_ext > 0 else ""
+		var v_part   := ("_v%d" % [_variant_idx + 1]) if variant_count > 1 else ""
+		var path     := "res://assets/sprites/%s/%s/%s/%s%s%s.png" % [sprite_type, sprite_name, state, size_str, h_part, v_part]
+		print(path)
+		var tex  : Texture2D = load(path)
+		var atlas  := AtlasTexture.new()
+		atlas.atlas  = tex
+		atlas.region = Rect2(0, 0, tex.get_width(), tex.get_height())
+		frames.add_frame(state, atlas)
 
-	# Size prefix: "{cols}x{rows}" — e.g. "2x3" for a 2-wide 3-tall prop.
-	# height_ext suffix: omitted when 0, "_h1", "_h2", … for taller variants.
-	#   h=0, variant=1 → 3x2_mystic.png
-	#   h=1, variant=1 → 3x2_mystic_h1.png
-	#   h=0, variant=5 → 3x2_mystic_3.png  (random)
-	#   h=2, variant=3 → 3x2_mystic_h2_1.png  (random + height)
-	var size_str := "%dx%d" % [cols, rows]
-	var h_part   := ("_h%d" % height_ext) if height_ext > 0 else ""
-	var v_part   := ("_%d" % [_variant_idx + 1]) if variant_count > 1 else ""
-	var path : String
-	path = "res://assets/sprites/%s/%s/%s_%s%s%s.png" % [sprite_type, sprite_name, size_str, sprite_name, h_part, v_part]
+		# Position, offset, and z-sort are derived from the primary (alive) sprite only.     
+		if state == states[0]:  
+			set_prop_attr(tex)
 
-	print(path)
-	var tex  : Texture2D = load(path)
 
+# Called: _load_animations().
+func set_prop_attr(tex : Texture2D) -> void:
+	
 	# Visual centre of the texture relative to prop.position (Tiled bottom-left anchor).
 	var cx := tex.get_width()  / 2.0
 	var cy := -tex.get_height() / 2.0
@@ -105,8 +111,3 @@ func _load_animations() -> void:
 	# Radius of the z-sort circle: distance from weight_central to the bottom visible pixel.
 	# weight_central.y is negative (above prop.position), so -weight_central.y gives its magnitude.
 	z_radius = -weight_central.y - float(empty_bottom)
-
-	var atlas  := AtlasTexture.new()
-	atlas.atlas  = tex
-	atlas.region = Rect2(0, 0, tex.get_width(), tex.get_height())
-	frames.add_frame("idle", atlas)

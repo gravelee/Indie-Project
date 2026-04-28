@@ -9,8 +9,7 @@ class_name AbilityData
 # Scale / Scale_value:
 #   Parallel arrays — field name and how much it gains from level 1 to 100.
 #   At level 1 gain = 0; at level 100 gain = scale_value.
-#   Supported fields: "damage_mult", "cooldown" (reduced), "range_",
-#                     "mp_cost", "rage_cost", "energy_cost", "effect_chance"
+#   Supported fields: "damage_mult", "cooldown" (reduced), "range_", "effect_chance".
 # =============================================================================
 
 const MELEE_ATTACK_RANGE := 60
