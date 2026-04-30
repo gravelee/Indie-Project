@@ -127,7 +127,7 @@ func init(p_player: CharacterBody2D, p_creatures: Dictionary,
 	player            = p_player
 	creatures         = p_creatures
 	destructible_map  = p_destructible_map
-	invulnerable_map  = invulnerable_map
+	invulnerable_map  = p_invulnerable_map
 	rotatable_sprites = p_rotatable_sprites
 	pathfinder        = p_pathfinder
 	map_cols          = cols
@@ -423,6 +423,8 @@ func _draw_obstacle_collisions() -> void:
 			if not is_instance_valid(obs):
 				continue
 			var r      := _get_collision_radius(obs)
+			if r <= 0.0:
+				continue   # no physics collision (e.g. grass) — skip
 			var offset := _get_collision_offset(obs)
 			var center := obs.position + offset
 			draw_circle(center, r, COLOR_OBSTACLE_FILL)
@@ -481,4 +483,4 @@ func _get_collision_radius(node: Node) -> float:
 				return shape.radius
 			elif shape is RectangleShape2D:
 				return (shape.size * 0.5).length()
-	return 16.0
+	return 0.0

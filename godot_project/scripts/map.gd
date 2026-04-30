@@ -14,7 +14,7 @@ const ATTACK_SEARCH_R     := 3   # ceili(ATTACK_RADIUS / TILE_SIZE)
 # ── File paths ─────────────────────────────────────────────────────────────────
 
 const PATH_TILESET                := "res://assets/tilemaps/leaf/leaf.png"
-const PATH_MAP_TERRAIN            := "res://assets/maps/level_01/level_01_Terain.csv"
+const PATH_MAP_TERRAIN            := "res://assets/maps/level_01/level_01_Terrain.csv"
 
 const PATH_PLAYER_SCRIPT          := "res://scripts/entities/player.gd"
 const PATH_PLAYER_STATS           := "res://assets/player_stats.json"
@@ -326,53 +326,83 @@ func _load_entities() -> void:
 				player.position = world_pos
 			elif tile_id in Creature.TILE_TYPE_MAP: # 2 = rat, 3 = snake, ...
 				_load_creature_stats(tile_id, row, col, world_pos)
-			elif tile_id == 101:              # 101 = 1×1 classic
-				_spawn_prop(world_pos, 1, 1, "bush", "classic", 0, 5, true, true, true)
-			elif tile_id == 102:              # 102 = 2×2 classic
-				_spawn_prop(world_pos, 2, 2, "bush", "classic", 0, 5, true, true, true)
-			elif tile_id == 103:              # 103 = 3×3 classic
-				_spawn_prop(world_pos, 3, 3, "bush", "classic", 0, 5, true, true, true)
-			elif tile_id == 104:              # 104 = 1×1 leafy
-				_spawn_prop(world_pos, 1, 1, "bush", "leafy", 0, 1, true, true, true)
-			elif tile_id == 105:              # 105 = 2×2 leafy
-				_spawn_prop(world_pos, 2, 2, "bush", "leafy", 0, 1, true, true, true)
-			elif tile_id == 106:              # 106 = 3×3 leafy
-				_spawn_prop(world_pos, 3, 3, "bush", "leafy", 0, 1, true, true, true)
-			elif tile_id == 107:              # 107 = 1×1 spiky
-				_spawn_prop(world_pos, 1, 1, "bush", "spiky", 0, 1, true, true, true)
-			elif tile_id == 108:              # 108 = 2×2 spiky
-				_spawn_prop(world_pos, 2, 2, "bush", "spiky", 0, 1, true, true, true)
-			elif tile_id == 109:              # 109 = 3×3 spiky
-				_spawn_prop(world_pos, 3, 3, "bush", "spiky", 0, 1, true, true, true)
-			elif tile_id == 110:              # 110 = 1×1 tree  h=0
-				_spawn_prop(world_pos, 1, 1, "tree", "mystic", 0, 1, false, true, false)
-			elif tile_id == 111:              # 111 = 1×1 tree  h=1
-				_spawn_prop(world_pos, 1, 1, "tree", "mystic", 1, 1, false, true, false)
-			elif tile_id == 112:              # 112 = 2×2 tree  h=0
-				_spawn_prop(world_pos, 2, 2, "tree", "mystic", 0, 1, false, true, false)
-			elif tile_id == 113:              # 113 = 2×2 tree  h=1
-				_spawn_prop(world_pos, 2, 2, "tree", "mystic", 1, 1, false, true, false)
-			elif tile_id == 114:              # 114 = 2×2 tree  h=2
-				_spawn_prop(world_pos, 2, 2, "tree", "mystic", 2, 1, false, true, false)
-			elif tile_id == 115:              # 115 = 3×2 tree  h=0
-				_spawn_prop(world_pos, 3, 2, "tree", "mystic", 0, 1, false, true, false)
-			elif tile_id == 116:              # 116 = 3×2 tree  h=1
-				_spawn_prop(world_pos, 3, 2, "tree", "mystic", 1, 1, false, true, false)
-			elif tile_id == 117:              # 117 = 3×2 tree  h=2
-				_spawn_prop(world_pos, 3, 2, "tree", "mystic", 2, 1, false, true, false)
-			elif tile_id == 118:              # 118 = 1×1 grass
-				_spawn_prop(world_pos, 1, 1, "grass", "classic", 0, 1, true, false, true)
-			elif tile_id == 119:              # 119 = 2×2 grass
-				_spawn_prop(world_pos, 2, 2, "grass", "classic", 0, 1, true, false, true)
-			elif tile_id == 120:              # 120 = 3×3 grass
-				_spawn_prop(world_pos, 3, 3, "grass", "classic", 0, 1, true, false, true)
+			elif tile_id == 101:              # 1×1 classic random variant
+				_spawn_prop(world_pos, 1, 1, "bush", "classic", 0, 5, true, true)
+			elif tile_id == 102:              # 2×2 classic random variant
+				_spawn_prop(world_pos, 2, 2, "bush", "classic", 0, 5, true, true)
+			elif tile_id == 103:              # 3×3 classic random variant
+				_spawn_prop(world_pos, 3, 3, "bush", "classic", 0, 5, true, true)
+			elif tile_id == 104:              # 1×1 classic v1
+				_spawn_prop(world_pos, 1, 1, "bush", "classic", 0, -1, true, true)
+			elif tile_id == 105:              # 2×2 classic v1
+				_spawn_prop(world_pos, 2, 2, "bush", "classic", 0, -1, true, true)
+			elif tile_id == 106:              # 3×3 classic v1
+				_spawn_prop(world_pos, 3, 3, "bush", "classic", 0, -1, true, true)
+			elif tile_id == 107:              # 1×1 classic v2
+				_spawn_prop(world_pos, 1, 1, "bush", "classic", 0, -2, true, true)
+			elif tile_id == 108:              # 2×2 classic v2
+				_spawn_prop(world_pos, 2, 2, "bush", "classic", 0, -2, true, true)
+			elif tile_id == 109:              # 3×3 classic v2
+				_spawn_prop(world_pos, 3, 3, "bush", "classic", 0, -2, true, true)
+			elif tile_id == 110:              # 1×1 classic v3
+				_spawn_prop(world_pos, 1, 1, "bush", "classic", 0, -3, true, true)
+			elif tile_id == 111:              # 2×2 classic v3
+				_spawn_prop(world_pos, 2, 2, "bush", "classic", 0, -3, true, true)
+			elif tile_id == 112:              # 3×3 classic v3
+				_spawn_prop(world_pos, 3, 3, "bush", "classic", 0, -3, true, true)
+			elif tile_id == 113:              # 1×1 classic v4
+				_spawn_prop(world_pos, 1, 1, "bush", "classic", 0, -4, true, true)
+			elif tile_id == 114:              # 2×2 classic v4
+				_spawn_prop(world_pos, 2, 2, "bush", "classic", 0, -4, true, true)
+			elif tile_id == 115:              # 3×3 classic v4
+				_spawn_prop(world_pos, 3, 3, "bush", "classic", 0, -4, true, true)
+			elif tile_id == 116:              # 1×1 classic v5
+				_spawn_prop(world_pos, 1, 1, "bush", "classic", 0, -5, true, true)
+			elif tile_id == 117:              # 2×2 classic v5
+				_spawn_prop(world_pos, 2, 2, "bush", "classic", 0, -5, true, true)
+			elif tile_id == 118:              # 3×3 classic v5
+				_spawn_prop(world_pos, 3, 3, "bush", "classic", 0, -5, true, true)
+			elif tile_id == 119:              # 1×1 leafy
+				_spawn_prop(world_pos, 1, 1, "bush", "leafy", 0, 1, true, true)
+			elif tile_id == 120:              # 2×2 leafy
+				_spawn_prop(world_pos, 2, 2, "bush", "leafy", 0, 1, true, true)
+			elif tile_id == 121:              # 3×3 leafy
+				_spawn_prop(world_pos, 3, 3, "bush", "leafy", 0, 1, true, true)
+			elif tile_id == 122:              # 1×1 spiky
+				_spawn_prop(world_pos, 1, 1, "bush", "spiky", 0, 1, true, true)
+			elif tile_id == 123:              # 2×2 spiky
+				_spawn_prop(world_pos, 2, 2, "bush", "spiky", 0, 1, true, true)
+			elif tile_id == 124:              # 3×3 spiky
+				_spawn_prop(world_pos, 3, 3, "bush", "spiky", 0, 1, true, true)
+			elif tile_id == 125:              # 1×1 tree  h=0
+				_spawn_prop(world_pos, 1, 1, "tree", "mystic", 0, 1, true, false)
+			elif tile_id == 126:              # 1×1 tree  h=1
+				_spawn_prop(world_pos, 1, 1, "tree", "mystic", 1, 1, true, false)
+			elif tile_id == 127:              # 2×2 tree  h=0
+				_spawn_prop(world_pos, 2, 2, "tree", "mystic", 0, 1, true, false)
+			elif tile_id == 128:              # 2×2 tree  h=1
+				_spawn_prop(world_pos, 2, 2, "tree", "mystic", 1, 1, true, false)
+			elif tile_id == 129:              # 2×2 tree  h=2
+				_spawn_prop(world_pos, 2, 2, "tree", "mystic", 2, 1, true, false)
+			elif tile_id == 130:              # 3×2 tree  h=0
+				_spawn_prop(world_pos, 3, 2, "tree", "mystic", 0, 1, true, false)
+			elif tile_id == 131:              # 3×2 tree  h=1
+				_spawn_prop(world_pos, 3, 2, "tree", "mystic", 1, 1, true, false)
+			elif tile_id == 132:              # 3×2 tree  h=2
+				_spawn_prop(world_pos, 3, 2, "tree", "mystic", 2, 1, true, false)
+			elif tile_id == 133:              # 1×1 grass
+				_spawn_prop(world_pos, 1, 1, "grass", "classic", 0, 1, false, true)
+			elif tile_id == 134:              # 2×1 grass
+				_spawn_prop(world_pos, 2, 1, "grass", "classic", 0, 1, false, true)
+			elif tile_id == 135:              # 3×1 grass
+				_spawn_prop(world_pos, 3, 1, "grass", "classic", 0, 1, false, true)
 		row += 1
 	file.close()
 
 
 # Called: _load_entities().
 func _spawn_prop(world_pos: Vector2, cols: int, rows: int, sprite_type: String, sprite_name: String,
-	height_ext: int, variant_count: int, central_rotation: bool, has_collision: bool, destructible: bool) -> void:
+	height_ext: int, variant_count: int, has_collision: bool, destructible: bool) -> void:
 
 	var prop             := WorldProp.new()
 	var script_path      : String
@@ -390,8 +420,12 @@ func _spawn_prop(world_pos: Vector2, cols: int, rows: int, sprite_type: String, 
 	prop.sprite_name      = sprite_name
 	prop.height_ext       = height_ext
 	prop.variant_count    = variant_count
-	prop.central_rotation = central_rotation
 	prop.has_collision    = has_collision
+	# Runtime canvas padding for trees: content-fitted PNGs padded by rows×TILE_SIZE/2 at load time.
+	# blit_y = rows×TILE_SIZE/4 → z_radius = blit_y (identity holds for all padded props).
+	if sprite_type == "tree":
+		prop._idle_blit_y     = rows * TILE_SIZE / 4
+		prop._canvas_add_rows = rows * TILE_SIZE / 2
 	add_child(prop)
 
 	# Pathfinder maps the grid coordinates from top left to down right.

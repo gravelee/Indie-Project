@@ -118,12 +118,14 @@ func load_animations() -> void:
 		var loop : bool = state not in ONE_SHOT_STATES
 		for direction in Facing.values():
 			var key     : String    = STATE_ANIM_BASE[state] + "_" + FACING_STR[direction]
+			print(SPRITE_PATH + key + ".png")
 			var texture : Texture2D = load(SPRITE_PATH + key + ".png")
 			_add_strip(frames, key, texture, loop)
 
 	for state in NON_DIRECTIONAL_STATES:
 		if not STATE_ANIM_BASE.has(state):	# Guard for State.DEAD does not have animation.
 			continue
+		print(SPRITE_PATH + STATE_ANIM_BASE[state] + ".png")
 		var texture : Texture2D = load(SPRITE_PATH + STATE_ANIM_BASE[state] + ".png")
 		_add_strip(frames, STATE_ANIM_BASE[state], texture, false)
 
@@ -135,6 +137,7 @@ func load_animations() -> void:
 	weapon_sprite.sprite_frames = weapon_frames
 	
 	for key in WEAPON_SPRITES:
+		print(WEAPON_SPRITE_PATH + key + ".png")
 		var texture : Texture2D = load(WEAPON_SPRITE_PATH + key + ".png")
 		_add_strip(weapon_frames, key, texture, false)
 	

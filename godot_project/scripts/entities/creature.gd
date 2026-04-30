@@ -275,6 +275,7 @@ func _load_animations() -> void:
 		if frames.has_animation(anim_name):
 			continue
 		var anim_path: String    	= sprite_path + anim_name + ".png"
+		print(anim_path)
 		var texture  : Texture2D 	= load(anim_path)
 		var loop 	 : bool 		= anim_loop.get(anim_name, true)
 		frames.add_animation(anim_name)
