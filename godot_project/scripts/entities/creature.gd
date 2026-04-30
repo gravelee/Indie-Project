@@ -250,6 +250,13 @@ func init(stats: Dictionary, player: CharacterBody2D, camera_angle: float, pathf
 # Called: init().
 func _load_animations() -> void:
 
+	var cached := AssetLoader.get_frames(sprite_path)
+	if cached:
+		sprite.sprite_frames = cached
+		sprite.animation_finished.connect(_on_anim_finished)
+		sprite.play(STATE_ANIM[State.IDLE_NEUTRAL][0])
+		return
+
 	var frames := SpriteFrames.new()
 	sprite.sprite_frames = frames
 
@@ -274,24 +281,22 @@ func _load_animations() -> void:
 		# Skip if already loaded (multiple states can share one animation, e.g. "move").
 		if frames.has_animation(anim_name):
 			continue
-		var anim_path: String    	= sprite_path + anim_name + ".png"
-		print(anim_path)
-		var texture  : Texture2D 	= load(anim_path)
-		var loop 	 : bool 		= anim_loop.get(anim_name, true)
+		var anim_path   : String    = sprite_path + anim_name + ".png"
+		var texture     : Texture2D = load(anim_path)
+		var loop        : bool      = anim_loop.get(anim_name, true)
 		frames.add_animation(anim_name)
 		frames.set_animation_loop(anim_name, loop)
 		frames.set_animation_speed(anim_name, ANIMATION_SPEED)
-		# Load all frames.
 		var frame_count := texture.get_width() / SPRITE_SIZE
 		for i in range(frame_count):
 			var atlas   := AtlasTexture.new()
 			atlas.atlas  = texture
 			atlas.region = Rect2(i * SPRITE_SIZE, 0, SPRITE_SIZE, SPRITE_SIZE)
 			frames.add_frame(anim_name, atlas)
-						
-	# animation_finished signal is connected with _on_anim_finished().
+
 	sprite.animation_finished.connect(_on_anim_finished)
 	sprite.play(STATE_ANIM[State.IDLE_NEUTRAL][0])
+	AssetLoader.store_frames(sprite_path, frames)
 
 
 # =============================================================================

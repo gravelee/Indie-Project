@@ -18,7 +18,7 @@ var _area_radius   : float  = 0.0   # set by subclass before super._ready().
 # SETUP
 # =============================================================================
 
-# Called: Destructible._ready(), ReactiveProp._ready().
+# Called: ObstacleProp._ready(), TerrainProp._ready() (via super).
 func _ready() -> void:
 
 	super._ready()
@@ -44,6 +44,20 @@ func _ready() -> void:
 # Override: called by WorldProp._ready() via virtual dispatch.
 func _load_animations() -> void:
 
+	var key    := _frames_key()
+	var cached := AssetLoader.get_frames(key)
+	if cached:
+		sprite.sprite_frames = cached
+		# set_prop_attr still needed per instance — position/offset/z_radius are not cached.
+		# _load_tex is O(1) here (texture already in _tex_cache).
+		var size_str  := "%dx%d" % [cols, rows]
+		var h_part    := ("_h%d" % height_ext) if height_ext > 0 else ""
+		var v_part    := ("/%d" % [_variant_idx + 1]) if variant_count > 1 else ""
+		var idle_path := "res://assets/sprites/%s/%s/%s%s/%s%s.png" % [sprite_type, sprite_name, states[0], v_part, size_str, h_part]
+		set_prop_attr(_load_tex(idle_path, _idle_blit_y))
+		sprite.animation_finished.connect(_on_animation_finished)
+		return
+
 	super._load_animations()
 
 	var anims := [ANIM_DEATH]
@@ -59,7 +73,6 @@ func _load_animations() -> void:
 		var h_part     := ("_h%d" % height_ext) if height_ext > 0 else ""
 		var v_part     := ("/%d" % [_variant_idx + 1]) if variant_count > 1 else ""
 		var anim_path  := "res://assets/spritesheets/props/%s/%s/%s%s/%s%s.png" % [sprite_type, sprite_name, anim, v_part, size_str, h_part]
-		print(anim_path)
 		# Per-animation blit_y for thin props (terrain grass, etc.).
 		# death: base shifted (cols−1) px lower than idle  → blit_y = TILE_SIZE/4        (8)
 		# pass:  base shifted 2*(cols−1) px lower than idle → blit_y = TILE_SIZE/4 + (cols−1)
@@ -88,6 +101,7 @@ func _load_animations() -> void:
 			frames.add_frame(anim, atlas)
 
 	sprite.animation_finished.connect(_on_animation_finished)
+	AssetLoader.store_frames(key, sprite.sprite_frames)
 
 
 # Called: sprite.animation_finished signal.

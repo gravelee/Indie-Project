@@ -22,7 +22,7 @@ var empty_bottom      : int    = 0     # transparent rows at canvas bottom — s
 var z_radius          : float  = 0.0   # radius of the z-sort circle = |weight_central.y| - empty_bottom.
 var height_ext        : int   = 0      # 0=standard, 1=one extension taller, 2=two, … — int scales to any height.
 var variant_count     : int   = 1      # >1 enables random variant suffix in sprite path.
-var _variant_idx      : int   = 0      # chosen in _load_animations().
+var _variant_idx      : int   = 0      # set in _ready().
 # Thin-prop canvas padding.
 # -1  = disabled: PNG is already sized correctly (bushes, …); pixel scan used for empty_bottom.
 # ≥ 0 = enabled:  PNG is content-fitted (south at last row); code pads +_canvas_add_rows at runtime.
@@ -39,7 +39,7 @@ var _canvas_add_rows : int = TILE_SIZE / 2
 # SETUP
 # =============================================================================
 
-# Called: destructable._ready(), reactive_prop._ready().
+# Called: DamageableProp._ready() (via super); Godot engine directly for tree instances.
 func _ready() -> void:	# states never empty.
 
 	# Footprint centre: half the tile width right, half the tile height up from the bottom-left anchor.
@@ -58,7 +58,14 @@ func _ready() -> void:	# states never empty.
 	sprite.z_as_relative = false
 	add_child(sprite)
 
-	# Calls: destructable._load_animations(), reactive_prop._load_animations().
+	# Variant setup — runs here so _frames_key() is valid before _load_animations() is entered.
+	if variant_count >= 1:
+		_variant_idx = randi_range(0, variant_count - 1)
+	else:
+		_variant_idx = -variant_count - 1
+		variant_count = 2
+
+	# Calls: DamageableProp._load_animations() via virtual dispatch; itself for trees.
 	_load_animations()
 	sprite.play(states[0]) # idle_alive is the first state to play.
 
@@ -67,21 +74,11 @@ func _ready() -> void:	# states never empty.
 # ANIMATIONS
 # =============================================================================
 
-# Called: destructable._load_animations(), reactive_prop._load_animations().
+# Called: DamageableProp._load_animations() (via super); directly for trees.
 func _load_animations() -> void:
 
 	var frames := SpriteFrames.new()
 	sprite.sprite_frames = frames
-	
-	# setup variant index and count.
-	if variant_count >= 1:
-		_variant_idx = randi_range(0, variant_count - 1)
-	# Variant count is negative. So multiple variants in the folder.
-	else:
-		#  We use the _variant_idx + 1 variant. Not random.
-		_variant_idx = -variant_count - 1
-		# We set variant_count > 1 so v_part to be written to the path.
-		variant_count = 2
 
 	for state in states:
 
@@ -92,7 +89,6 @@ func _load_animations() -> void:
 		var h_part   := ("_h%d" % height_ext) if height_ext > 0 else ""
 		var v_part   := ("/%d" % [_variant_idx + 1]) if variant_count > 1 else ""
 		var path     := "res://assets/sprites/%s/%s/%s%s/%s%s.png" % [sprite_type, sprite_name, state, v_part, size_str, h_part]
-		print(path)
 		var tex      : Texture2D = _load_tex(path, _idle_blit_y)
 		var atlas    := AtlasTexture.new()
 		atlas.atlas  = tex
@@ -104,7 +100,16 @@ func _load_animations() -> void:
 			set_prop_attr(tex)
 
 
-# Called: _load_animations().
+# Called: damageable_prop._load_animations().
+# Returns the idle_alive asset path — unique per type+variant, matches _tex_cache convention.
+func _frames_key() -> String:
+	var size_str := "%dx%d" % [cols, rows]
+	var h_part   := ("_h%d" % height_ext) if height_ext > 0 else ""
+	var v_part   := ("/%d" % [_variant_idx + 1]) if variant_count > 1 else ""
+	return "res://assets/sprites/%s/%s/%s%s/%s%s.png" % [sprite_type, sprite_name, states[0], v_part, size_str, h_part]
+
+
+# Called: WorldProp._load_animations(), DamageableProp._load_animations().
 func _load_tex(path: String, blit_y: int) -> Texture2D:
 
 	# Loads a texture, optionally padding the canvas bottom with transparent rows.
@@ -130,7 +135,7 @@ func _load_tex(path: String, blit_y: int) -> Texture2D:
 	return tex
 
 
-# Called: _load_animations().
+# Called: WorldProp._load_animations(), DamageableProp._load_animations() (cache hit path).
 func set_prop_attr(tex : Texture2D) -> void:
 
 	# Visual centre of the texture relative to prop.position (Tiled bottom-left anchor).
