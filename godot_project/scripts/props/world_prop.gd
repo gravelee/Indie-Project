@@ -16,7 +16,7 @@ var rows              : int  = 1           # tile footprint height (y axis).
 var sprite_type       : String
 var sprite_name       : String
 var states            : Array = ["idle_alive"]
-var has_collision     : bool  = true
+var has_collision     : bool
 var weight_central    : Vector2        # tile-footprint centre, used for collision and rotation center.
 var empty_bottom      : int    = 0     # transparent rows at canvas bottom — set in set_prop_attr().
 var z_radius          : float  = 0.0   # radius of the z-sort circle = |weight_central.y| - empty_bottom.

@@ -65,8 +65,9 @@ const FILL_MAX_RADIUS := 600.0  # circles larger than this draw arc-only (no pix
 var _draw_timer : float = 0.0
 
 # Mirrors of game.gd attack constants — used only for debug drawing.
-const _ATTACK_RADIUS      := 96.0
+const _ATTACK_RADIUS      := 80.0
 const _ATTACK_HALF_CONE   := 45.0   # degrees, ± from facing direction
+const _SPRITE_HALF        := 48.0   # Mirror of player.gd SPRITE_HALF: feet → sprite center.
 
 # Mirrors of creature.gd constants — used only for debug drawing.
 const _CRE_ATTACK_DIST := 60.0
@@ -104,6 +105,7 @@ var show_temp_blocks     : bool = false
 # ── References set by game._ready() via init() ───────────────────────────────
 
 var player            : CharacterBody2D
+var camera            : Camera2D
 var creatures         : Dictionary = {}   # shared Dict ref from game — always current.
 var destructible_map  : Dictionary = {}   # shared Dict ref from game — tile → damageable StaticBody2D.
 var invulnerable_map  : Dictionary = {}   # shared Dict ref from game — tile → non-damageable StaticBody2D.
@@ -119,12 +121,13 @@ var _world_angle      : float      = 0.0     # updated by game.gd via set_world_
 # =============================================================================
 
 # Called: game._ready().
-func init(p_player: CharacterBody2D, p_creatures: Dictionary,
+func init(p_player: CharacterBody2D, p_camera: Camera2D, p_creatures: Dictionary,
 		  p_destructible_map: Dictionary, p_invulnerable_map: Dictionary,
 		  p_pathfinder: Object, cols: int, rows: int,
 		  p_rotatable_sprites: Array) -> void:
 
 	player            = p_player
+	camera            = p_camera
 	creatures         = p_creatures
 	destructible_map  = p_destructible_map
 	invulnerable_map  = p_invulnerable_map
@@ -387,21 +390,22 @@ func _draw_player_attack_area() -> void:
 	var base_ang : float   = dir.angle()
 	var half_ang : float   = deg_to_rad(_ATTACK_HALF_CONE)
 	const PTS    : int     = 24
+	var origin   : Vector2 = player.position + Vector2(0, -_SPRITE_HALF).rotated(deg_to_rad(-_world_angle))
 
 	# Filled sector polygon: center + arc points.
 	var poly := PackedVector2Array()
-	poly.append(player.position)
+	poly.append(origin)
 	for i in range(PTS + 1):
 		var a : float = base_ang - half_ang + 2.0 * half_ang * i / PTS
-		poly.append(player.position + Vector2(cos(a), sin(a)) * _ATTACK_RADIUS)
+		poly.append(origin + Vector2(cos(a), sin(a)) * _ATTACK_RADIUS)
 	draw_colored_polygon(poly, COLOR_ATK_AREA_FILL)
 
 	# Outline: two edge lines from center + arc.
-	var left_edge  := player.position + Vector2(cos(base_ang - half_ang), sin(base_ang - half_ang)) * _ATTACK_RADIUS
-	var right_edge := player.position + Vector2(cos(base_ang + half_ang), sin(base_ang + half_ang)) * _ATTACK_RADIUS
-	draw_line(player.position, left_edge,  COLOR_ATK_AREA_LINE, 1.5)
-	draw_line(player.position, right_edge, COLOR_ATK_AREA_LINE, 1.5)
-	draw_arc(player.position, _ATTACK_RADIUS, base_ang - half_ang, base_ang + half_ang, PTS, COLOR_ATK_AREA_LINE, 1.5)
+	var left_edge  := origin + Vector2(cos(base_ang - half_ang), sin(base_ang - half_ang)) * _ATTACK_RADIUS
+	var right_edge := origin + Vector2(cos(base_ang + half_ang), sin(base_ang + half_ang)) * _ATTACK_RADIUS
+	draw_line(origin, left_edge,  COLOR_ATK_AREA_LINE, 1.5)
+	draw_line(origin, right_edge, COLOR_ATK_AREA_LINE, 1.5)
+	draw_arc(origin, _ATTACK_RADIUS, base_ang - half_ang, base_ang + half_ang, PTS, COLOR_ATK_AREA_LINE, 1.5)
 
 
 # Called: _draw().
@@ -410,8 +414,8 @@ func _draw_player_collision() -> void:
 	if not is_instance_valid(player):
 		return
 	var r := _get_collision_radius(player)
-	draw_circle(player.position, r, COLOR_PLAYER_FILL)
-	draw_arc(player.position, r, 0.0, TAU, ARC_PTS, COLOR_PLAYER_LINE, 1.5)
+	draw_circle(camera.position, r, COLOR_PLAYER_FILL)
+	draw_arc(camera.position, r, 0.0, TAU, ARC_PTS, COLOR_PLAYER_LINE, 1.5)
 
 
 # Called: _draw().

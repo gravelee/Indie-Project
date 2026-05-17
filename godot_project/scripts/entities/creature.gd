@@ -240,8 +240,10 @@ func init(stats: Dictionary, player: CharacterBody2D, camera_angle: float, pathf
 	self.pathfinder = pathfinder
 	
 	# Create and add sprite as child.
+	# offset draws sprite above feet-center (creature.position = feet).
 	sprite               = AnimatedSprite2D.new()
 	sprite.z_as_relative = false
+	sprite.offset        = Vector2(0, -SPRITE_SIZE / 4)
 	add_child(sprite)
 
 	_load_animations()
@@ -870,11 +872,11 @@ func _check_wait(dt: float) -> void:
 			if _wait_entry_state == State.RETURNING:
 				_teleport 	  = true
 				# If home_position is not free set new home position the nearest free.
-				var home_tile := Vector2i(int(home_position.x / TILE_SIZE), int(home_position.y / TILE_SIZE)) 
+				var home_tile := Vector2i(int(home_position.x / TILE_SIZE), int(home_position.y / TILE_SIZE) - 1)
 				if pathfinder._grid.is_point_solid(home_tile):
 					var new_home_grid = pathfinder._nearest_walkable(home_tile)
-					home_position = Vector2(new_home_grid.x * TILE_SIZE + TILE_SIZE / 2, 
-						new_home_grid.y * TILE_SIZE + TILE_SIZE / 2)
+					home_position = Vector2(new_home_grid.x * TILE_SIZE + TILE_SIZE / 2.0,
+						new_home_grid.y * TILE_SIZE + TILE_SIZE)
 
 
 # Called: _physics_process().

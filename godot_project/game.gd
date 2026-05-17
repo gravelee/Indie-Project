@@ -1,8 +1,8 @@
 extends Node2D
 
-const TILE_SIZE := 32
-const Z_DEPTH_SCALE 		:= 2.0	# Very smooth sprite overlap. Keep between [2-32].
-const ENTITY_MEDIUM_OFFSET := 48.0	# Medium size = 3x3 (32px tile), 48 = 1.5 tiles from bottom left.
+const TILE_SIZE     := 32
+const Z_DEPTH_SCALE := 2.0	# Very smooth sprite overlap. Keep between [2-32].
+const Y_OFFSET      := 32.0	
 
 
 # ── File paths ─────────────────────────────────────────────────────────────────
@@ -56,6 +56,9 @@ func _build_scene() -> void:
 	map.set_script(load(PATH_MAP_SCRIPT))
 	add_child(map)
 	
+	# Sprites draw offset upward; node position stays at mid-foot = rotation pivot.
+	map.player_sprite.offset = Vector2(0, -Y_OFFSET)
+
 	camera = Camera2D.new()
 	camera.ignore_rotation = false
 	add_child(camera)
@@ -83,12 +86,14 @@ func _build_scene() -> void:
 	
 	hud.player_stats = map.player.stats
 
-	debug_overlay.init(map.player, map.creatures, map.destructible_map, map.invulnerable_map, map.pathfinder, map._map_cols, map._map_rows, map.rotatable_sprites)
+	debug_overlay.init(map.player, camera, map.creatures, map.destructible_map, 
+		map.invulnerable_map, map.pathfinder, map._map_cols, map._map_rows, map.rotatable_sprites)
 
 	hud.init(map.player, map.creatures)
 	combat_feedback.init(map.player, map.creatures)
 	stat_panel.init(map.player, map.creatures)
 	stat_panel.debug_overlay = debug_overlay
+	
 
 
 # =============================================================================
@@ -149,11 +154,11 @@ func _rotate_camera() -> void:
 # Called: _process().
 func _update_sprites() -> void:
 
-	# Always: keep sprite and camera locked to the physics body position.
-	map.player_sprite.global_position  = map.player.global_position
-	camera.global_position         = map.player.global_position
+	# player.position = feet-center. Camera, sprite, and weapon all anchor here.
+	camera.global_position            = map.player.global_position
+	map.player_sprite.global_position = map.player.global_position
 	if map.weapon_sprite.visible:
-		map.weapon_sprite.global_position  = map.player.global_position
+		map.weapon_sprite.global_position = map.player.global_position + Vector2(0, -Y_OFFSET).rotated(deg_to_rad(-world_angle))
 		# Sword rotation = camera counter-rotation + per-facing offset (updated every frame
 		# because either world_angle or sword_facing_deg can change independently).
 		map.weapon_sprite.rotation_degrees = -world_angle + map.player.sword_facing_deg
@@ -161,7 +166,7 @@ func _update_sprites() -> void:
 	# Only on rotation: update angles.
 	if _angle_dirty:
 		map.player_sprite.rotation_degrees = -world_angle
-		camera.rotation_degrees        = -world_angle
+		camera.rotation_degrees            = -world_angle
 		map.player.camera_angle            = world_angle
 		for creature in map.creatures.values():
 			creature.camera_angle = world_angle
@@ -189,9 +194,7 @@ func _update_z_sort() -> void:
 			sprite.z_index = int((wc_x * cached_sin_a + wc_y * cached_cos_a + prop.z_radius) / Z_DEPTH_SCALE)
 		
 	# Always: player and creatures move every frame so depth must stay current.
-	# Rotating-circle z for entities: ENTITY_MEDIUM_OFFSET added as a constant.
-	# This mirrors how prop z_radius works — offset stays positive at all angles.
-	map.player_sprite.z_index = int((map.player.position.x * cached_sin_a + map.player.position.y * cached_cos_a + ENTITY_MEDIUM_OFFSET) / Z_DEPTH_SCALE)
+	map.player_sprite.z_index = int((map.player.position.x * cached_sin_a + map.player.position.y * cached_cos_a) / Z_DEPTH_SCALE)
 	if map.weapon_sprite.visible:
 		match map.player.facing:
 			map.player.Facing.NORTH:
@@ -202,4 +205,4 @@ func _update_z_sort() -> void:
 				map.weapon_sprite.z_index = map.player_sprite.z_index + 1  # in front of player and same-y obstacles
 	for creature in map.creatures.values():
 		creature.sprite.z_index = int(
-			(creature.position.x * cached_sin_a + creature.position.y * cached_cos_a + ENTITY_MEDIUM_OFFSET) / Z_DEPTH_SCALE)
+			(creature.position.x * cached_sin_a + creature.position.y * cached_cos_a) / Z_DEPTH_SCALE)

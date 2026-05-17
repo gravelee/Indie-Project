@@ -1,28 +1,36 @@
 extends Node2D
 
 const TERRAIN_Z := -4096
-const TERAIN_TILESET_ROW_WIDTH:= 24
 const TILE_SIZE := 32
 const BLOCKER_TIMER_INTERVAL := 0.15
 
 # Pre-computed _on_player_attack() consts.
-const ATTACK_RADIUS       := 96.0
-const ATTACK_RADIUS_SQ    := ATTACK_RADIUS * ATTACK_RADIUS
+const ATTACK_RADIUS       := 80.0
 const ATTACK_QUARTER_CONE := 45.0
-const ATTACK_SEARCH_R     := 3   # ceili(ATTACK_RADIUS / TILE_SIZE)
+const ATTACK_SEARCH_R     := 3      # ceili(ATTACK_RADIUS / TILE_SIZE)
+const CREATURE_HIT_RADIUS := 20.0   # Mirrors CircleShape2D radius in _init_creatures().
 
 # ── File paths ─────────────────────────────────────────────────────────────────
 
-const PATH_TILESET                := "res://assets/tilemaps/leaf/leaf.png"
-const PATH_MAP_TERRAIN            := "res://assets/maps/level_01/level_01_Terrain.csv"
+const TERRAIN_1_TILESET_PATH      := "res://assets/tilemaps/terrain/dark_dirt.png"
+const TERRAIN_1_CSV_PATH          := "res://assets/maps/level_01/_dark_dirt.csv"
+
+const TERRAIN_2_TILESET_PATH      := "res://assets/tilemaps/terrain/dark_grass.png"
+const TERRAIN_2_CSV_PATH          := "res://assets/maps/level_01/_dark_grass.csv"
+
+const SUB_TERRAIN_1_TILESET_PATH  := "res://assets/tilemaps/sub_terrain/rock_path.png"
+const SUB_TERRAIN_1_CSV_PATH      := "res://assets/maps/level_01/_rock_path.csv"
+
+const SUB_TERRAIN_2_TILESET_PATH  := "res://assets/tilemaps/sub_terrain/flora.png"
+const SUB_TERRAIN_2_CSV_PATH      := "res://assets/maps/level_01/_flora.csv"
 
 const PATH_PLAYER_SCRIPT          := "res://scripts/entities/player.gd"
-const PATH_PLAYER_STATS           := "res://assets/player_stats.json"
+const PATH_PLAYER_STATS           := "res://assets/_player_stats.json"
 
-const PATH_CREATURE_SCRIPT		  := "res://scripts/entities/creature.gd"
-const PATH_CREATURE_STATS         := "res://assets/maps/level_01/creature_stats.json"
+const PATH_CREATURE_SCRIPT        := "res://scripts/entities/creature.gd"
+const PATH_CREATURE_STATS         := "res://assets/maps/level_01/_creature_stats.json"
 
-const PATH_MAP_ENTITIES   		  := "res://assets/maps/level_01/level_01_Entities.csv"
+const PATH_MAP_ENTITIES           := "res://assets/maps/level_01/_entities.csv"
 const PATH_PROP_SCRIPT            := "res://scripts/props/world_prop.gd"
 const PATH_OBSTACLE_SCRIPT        := "res://scripts/props/obstacle_prop.gd"
 const PATH_TERRAIN_SCRIPT         := "res://scripts/props/terrain_prop.gd"
@@ -70,7 +78,10 @@ var rotatable_sprites : Array      = []               # init _spawn_prop().
 # Called: game.ready().
 func _ready() -> void:
 	
-	_load_terrain()
+	_load_terrain(TERRAIN_1_TILESET_PATH, TERRAIN_1_CSV_PATH, 3)
+	_load_terrain(TERRAIN_2_TILESET_PATH, TERRAIN_2_CSV_PATH, 5)
+	_load_terrain(SUB_TERRAIN_1_TILESET_PATH, SUB_TERRAIN_1_CSV_PATH, 10)
+	_load_terrain(SUB_TERRAIN_2_TILESET_PATH, SUB_TERRAIN_2_CSV_PATH, 5)
 	_init_player()
 	pathfinder.build(_map_cols, _map_rows)
 	_init_creatures()
@@ -82,17 +93,17 @@ func _ready() -> void:
 # =============================================================================
 
 # Called: _ready().
-func _load_terrain() -> void:
+func _load_terrain(tileset_path: String, terrain_path: String, terrain_row_width: int) -> void:
 
 	# Initializes the tilemap by setting position, z_index and tile_set.
 	tilemap = TileMap.new()
 	tilemap.position = Vector2.ZERO
 	tilemap.z_index = TERRAIN_Z
-	tilemap.tile_set = _create_tileset()
+	tilemap.tile_set = _create_tileset(tileset_path)
 	add_child(tilemap)
 
 	# Reads the level specific terrain file (.csv).
-	var file := FileAccess.open(PATH_MAP_TERRAIN, FileAccess.READ)
+	var file := FileAccess.open(terrain_path, FileAccess.READ)
 	if file == null:
 		push_error("Cannot open terrain file.")
 		return
@@ -109,8 +120,8 @@ func _load_terrain() -> void:
 			_map_cols = cols.size()
 		for col in range(cols.size()):
 			var tile_id    := int(cols[col])
-			var atlas_col  := tile_id % TERAIN_TILESET_ROW_WIDTH
-			var atlas_row  := tile_id / TERAIN_TILESET_ROW_WIDTH
+			var atlas_col  := tile_id % terrain_row_width
+			var atlas_row  := tile_id / terrain_row_width
 			tilemap.set_cell(0, Vector2i(col, row), 0, Vector2i(atlas_col, atlas_row))
 		row += 1
 	_map_rows = row
@@ -119,7 +130,7 @@ func _load_terrain() -> void:
 
 
 # Called: _load_terrain().
-func _create_tileset() -> TileSet:
+func _create_tileset(tileset_path: String) -> TileSet:
 
 	# Initialize the tileset by setting the tile size first.
 	var tileset := TileSet.new()
@@ -128,7 +139,7 @@ func _create_tileset() -> TileSet:
 	# Reads the terrain tileset file (.png) and loads it into a texture2D.
 	# Creates an atlas source and sets the texture in it.
 	# Also sets the tile size within source.
-	var texture : Texture2D = load(PATH_TILESET)
+	var texture : Texture2D = load(tileset_path)
 	var source  := TileSetAtlasSource.new()
 	source.texture = texture
 	source.texture_region_size = Vector2i(TILE_SIZE, TILE_SIZE)
@@ -153,13 +164,14 @@ func _create_tileset() -> TileSet:
 # Called: _ready().
 func _init_player() -> void:
 	
-	player = CharacterBody2D.new()	
+	player = CharacterBody2D.new()
 	player.set_script(load(PATH_PLAYER_SCRIPT))
 	var col_shape := CollisionShape2D.new()
 	var shape      := CircleShape2D.new()
 	shape.radius   = 30.0
 	col_shape.shape = shape
 	player.add_child(col_shape)
+	col_shape.position = Vector2.ZERO
 	add_child(player)
 	
 	player_sprite = AnimatedSprite2D.new()
@@ -207,8 +219,7 @@ func _load_entity_stats(entity_type: Entity_Type) -> Array:
 
 # Called: player._try_attack() who emits player.attack signal.
 func _on_player_attack(world_pos: Vector2, facing_direction: Vector2) -> void:
-	
-	# Attackable obstacles are resolved here.
+
 	var player_tile := Vector2i(int(world_pos.x) / TILE_SIZE, int(world_pos.y) / TILE_SIZE)
 	# 7x7 broad phase = 49 tiles to check.
 	for dy in range(-ATTACK_SEARCH_R, ATTACK_SEARCH_R + 1):
@@ -219,33 +230,44 @@ func _on_player_attack(world_pos: Vector2, facing_direction: Vector2) -> void:
 			var obstacle := destructible_map[key] as DamageableProp
 			if not obstacle.alive:
 				continue
-			var to_obs : Vector2 = (obstacle.position + obstacle.weight_central) - world_pos
-			# circle (r=3 tiles) = 29 tiles left.
-			if to_obs.length_squared() > ATTACK_RADIUS_SQ:
-				continue
-			if to_obs != Vector2.ZERO:
-				var deg := rad_to_deg(facing_direction.angle_to(to_obs.normalized()))
-				# 45° cone ≈ 3-4 tiles left.
-				if absf(deg) > ATTACK_QUARTER_CONE:
-					continue
-			obstacle.take_hit()
+			var obs_prop    : WorldProp = obstacle as WorldProp
+			var obs_center  : Vector2 = obs_prop.position + obs_prop.weight_central
+			var obs_radius  : float   = maxi(obs_prop.cols, obs_prop.rows) * TILE_SIZE / 2.0
+			if _overlaps_cone(world_pos, facing_direction, ATTACK_RADIUS, ATTACK_QUARTER_CONE, obs_center, obs_radius):
+				obstacle.take_hit()
 
 	# Collect all creatures inside players attack area.
 	var creature_targets : Array = []
 	for creature in creatures.values():
 		if not creature.alive:
 			continue
-		var to_c : Vector2 = creature.position - world_pos
-		if to_c.length_squared() > ATTACK_RADIUS_SQ:
-			continue
-		if to_c != Vector2.ZERO:
-			var deg := rad_to_deg(facing_direction.angle_to(to_c.normalized()))
-			if absf(deg) > ATTACK_QUARTER_CONE:
-				continue
-		creature_targets.append(creature)
-	
+		if _overlaps_cone(world_pos, facing_direction, ATTACK_RADIUS, ATTACK_QUARTER_CONE, creature.position, CREATURE_HIT_RADIUS):
+			creature_targets.append(creature)
+
 	# Resolve the attack.
 	player.resolve_attack(creature_targets)
+
+
+# Circle-vs-sector intersection test.
+# Returns true if a circle (point, entity_r) overlaps the cone sector
+# (origin, facing, cone_r radius, half_deg half-angle).
+# Handles three cases: center inside angle, center outside angle (edge ray check).
+func _overlaps_cone(origin: Vector2, facing: Vector2, cone_r: float, half_deg: float,
+		point: Vector2, entity_r: float) -> bool:
+	var d    := point - origin
+	var dist := d.length()
+	if dist > cone_r + entity_r:
+		return false
+	if dist < 0.001:
+		return true
+	var half_rad := deg_to_rad(half_deg)
+	var ang      := facing.angle_to(d / dist)
+	if absf(ang) <= half_rad:
+		return true  # center inside cone angle; dist already passed
+	# Center outside cone angle — closest point is on the nearer edge ray.
+	var ray_dir := facing.rotated(half_rad if ang > 0.0 else -half_rad)
+	var t       : float = clamp(d.dot(ray_dir), 0.0, cone_r)
+	return point.distance_squared_to(origin + ray_dir * t) <= entity_r * entity_r
 
 
 # =============================================================================
@@ -286,15 +308,16 @@ func _load_creature_stats(tile_id: int, row: int, col: int, world_pos: Vector2) 
 	var entry : Array = _creature_queue[type_id].pop_front()
 	var creature = entry[0]
 	var creature_stats : Dictionary = entry[1]
-	creature.position = world_pos
+	var feet := Vector2(col * TILE_SIZE + TILE_SIZE / 2.0, row * TILE_SIZE + TILE_SIZE)
+	creature.position = feet
 	creature.init(creature_stats, player, 0.0, pathfinder)
-	var spawn_key := world_pos
+	var spawn_key := feet
 	creature.died.connect(func():
 		creature_sprites.erase(spawn_key)
 		creatures.erase(spawn_key)
 	)
-	creature_sprites[world_pos] = creature.sprite
-	creatures[world_pos] = creature
+	creature_sprites[spawn_key] = creature.sprite
+	creatures[spawn_key] = creature
 
 
 # =============================================================================
@@ -322,8 +345,8 @@ func _load_entities() -> void:
 			# We map sprite coordinates from down left to top right.
 			# This creates a whole tile difference in the vertical axis between the two systems.
 			var world_pos := Vector2(col * TILE_SIZE, row * TILE_SIZE + TILE_SIZE)
-			if tile_id == 1:                        # 1 = player spawn
-				player.position = world_pos
+			if tile_id == 1:                        # 1 = player spawn (feet-center)
+				player.position = Vector2(col * TILE_SIZE + TILE_SIZE * 1.5, row * TILE_SIZE + TILE_SIZE)
 			elif tile_id in Creature.TILE_TYPE_MAP: # 2 = rat, 3 = snake, ...
 				_load_creature_stats(tile_id, row, col, world_pos)
 			elif tile_id == 101:              # 1×1 classic random variant
@@ -461,7 +484,7 @@ func _spawn_prop(world_pos: Vector2, cols: int, rows: int, sprite_type: String, 
 
 # LOOP
 func _process(dt: float) -> void:
-	
+
 	_update_dynamic_blockers(dt)
 	pathfinder.update_temp_block(dt)
 	_update_player_combat()

@@ -17,6 +17,7 @@ extends CharacterBody2D
 # =============================================================================
 
 const SPRITE_SIZE       := 96
+const SPRITE_HALF       := SPRITE_SIZE / 2  # Offset from feet-center to sprite visual center.
 const TILE_SIZE         := 32
 const SPRITE_PATH       := "res://assets/spritesheets/player/"
 const WEAPON_SPRITE_PATH:= "res://assets/spritesheets/weapons/wooden_sword/"
@@ -360,7 +361,7 @@ func _try_attack() -> void:
 	if not abilities[0].check_resources(stats, 0):
 		return
 	# Signal attack is emmited. So it calls map._on_player_attack().
-	attack.emit(position, _facing_world_direction())
+	attack.emit(position + Vector2(0, -SPRITE_HALF).rotated(_cam_rad), _facing_world_direction())
 	
 	
 # Called: _try_attack().
@@ -377,7 +378,7 @@ func _facing_world_direction() -> Vector2:
 	return screen_dir.rotated(_cam_rad)
 	
 	
-# Called: game._on_player_attacked().
+# Called: map._on_player_attack().
 func resolve_attack(targets: Array) -> void:
 
 	abilities[0].use(stats, targets, 0.0)
