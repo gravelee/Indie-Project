@@ -193,7 +193,9 @@ func _update_z_sort() -> void:
 			sprite.z_index = int((wc_x * cached_sin_a + wc_y * cached_cos_a + prop.z_radius) / Z_DEPTH_SCALE)
 		
 	# Always: player and creatures move every frame so depth must stay current.
-	map.player_sprite.z_index = int((map.player.position.x * cached_sin_a + map.player.position.y * cached_cos_a) / Z_DEPTH_SCALE)
+	# z_depth_offset = feet → last drawn pixel row (accounts for empty transparent rows at sprite bottom).
+	var player_depth_y : float = map.player.position.y + map.player.z_depth_offset
+	map.player_sprite.z_index = int((map.player.position.x * cached_sin_a + player_depth_y * cached_cos_a) / Z_DEPTH_SCALE)
 	if map.weapon_sprite.visible:
 		match map.player.facing:
 			map.player.Facing.NORTH:
@@ -202,6 +204,8 @@ func _update_z_sort() -> void:
 				map.weapon_sprite.z_index = map.player_sprite.z_index      # tree order puts weapon in front of player
 			_:  # EAST, WEST
 				map.weapon_sprite.z_index = map.player_sprite.z_index + 1  # in front of player and same-y obstacles
+	# z_depth_offset = feet → last drawn pixel row (accounts for empty transparent rows at sprite bottom).
 	for creature in map.creatures.values():
+		var c_depth_y : float = creature.position.y + creature.z_depth_offset
 		creature.sprite.z_index = int(
-			(creature.position.x * cached_sin_a + creature.position.y * cached_cos_a) / Z_DEPTH_SCALE)
+			(creature.position.x * cached_sin_a + c_depth_y * cached_cos_a) / Z_DEPTH_SCALE)

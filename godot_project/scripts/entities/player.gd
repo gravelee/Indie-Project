@@ -18,6 +18,7 @@ extends CharacterBody2D
 
 const SPRITE_SIZE       := 96
 const SPRITE_HALF       := SPRITE_SIZE / 2  # Offset from feet-center to sprite visual center.
+const DRAW_OFFSET       := 32               # Must match game.Y_OFFSET — how far the sprite is drawn above feet.
 const TILE_SIZE         := 32
 const SPRITE_PATH       := "res://assets/spritesheets/player/"
 const WEAPON_SPRITE_PATH:= "res://assets/spritesheets/weapons/wooden_sword/"
@@ -85,7 +86,8 @@ var weapon_sprite: AnimatedSprite2D		# init game._build_scene().
 var stats        : Stats           		# set game._load_json().
 var abilities 	 : Array[Ability] = []	# init load_animations().
 
-var sword_facing_deg : float = -135.0	# current sword rotation offset; updated in _set_facing().
+var sword_facing_deg  : float = -135.0	# current sword rotation offset; updated in _set_facing().
+var z_depth_offset    : float = float(SPRITE_HALF) - float(DRAW_OFFSET)   # feet + this = z-sort depth Y. Computed in _compute_z_depth_offset().
 
 # ── Signals ────────────────────────────────────────────────────────────────────
 
@@ -104,8 +106,9 @@ func init(player_sprite: AnimatedSprite2D, weapon_sprite: AnimatedSprite2D) -> v
 	self.weapon_sprite  = weapon_sprite
 	stats.effects       = StatusEffect.EffectManager.new()
 	abilities.append(Ability.get_ability("player_slash", stats.level))
-	
+
 	load_animations()
+	_compute_z_depth_offset()
 
 
 # Called: init().
@@ -156,6 +159,27 @@ func load_animations() -> void:
 	weapon_sprite.visible = false
 	weapon_sprite.animation_finished.connect(func(): weapon_sprite.visible = false)
 	AssetLoader.store_frames(WEAPON_SPRITE_PATH, weapon_frames)
+
+
+# Called: load_animations().
+# Scans the idle_neutral_south sprite (first frame only) for transparent rows at the bottom.
+# z_depth_offset = feet → last drawn pixel row. Used by game.gd for z-sort depth.
+func _compute_z_depth_offset() -> void:
+
+	var base : float = float(SPRITE_HALF) - float(DRAW_OFFSET)   # default sprite bottom from feet = 16 px
+	var tex  : Texture2D = load(SPRITE_PATH + "idle_neutral_south.png")
+	var img  := tex.get_image()
+	img.convert(Image.FORMAT_RGBA8)
+	var empty_bottom := 0
+	for row in range(SPRITE_SIZE - 1, -1, -1):
+		var row_empty := true
+		for col in range(SPRITE_SIZE):   # first frame only
+			if img.get_pixel(col, row).a > 0.0:
+				row_empty = false
+				break
+		if row_empty: empty_bottom += 1
+		else:         break
+	z_depth_offset = base - float(empty_bottom)
 
 
 # Called: load_animations().

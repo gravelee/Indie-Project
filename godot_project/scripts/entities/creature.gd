@@ -180,9 +180,10 @@ var sprite  	: AnimatedSprite2D  # init init().
 
 # ── Creature type ──────────────────────────────────────────────────────────────
 
-var type		: Type
-var sprite_path : String
-var attack_types: Dictionary
+var type		    : Type
+var sprite_path     : String
+var attack_types    : Dictionary
+var z_depth_offset  : float = float(SPRITE_SIZE) / 4.0   # feet + this = z-sort depth Y. Computed in _compute_z_depth_offset().
 
 
 # Setter caches trig and corrects facing_right on rotation so _move_toward stays cheap.
@@ -238,7 +239,7 @@ func init(stats: Dictionary, player: CharacterBody2D, camera_angle: float, pathf
 	self.player = player
 	self.camera_angle = camera_angle
 	self.pathfinder = pathfinder
-	
+
 	# Create and add sprite as child.
 	# offset draws sprite above feet-center (creature.position = feet).
 	sprite               = AnimatedSprite2D.new()
@@ -247,6 +248,7 @@ func init(stats: Dictionary, player: CharacterBody2D, camera_angle: float, pathf
 	add_child(sprite)
 
 	_load_animations()
+	_compute_z_depth_offset()
 
 
 # Called: init().
@@ -299,6 +301,27 @@ func _load_animations() -> void:
 	sprite.animation_finished.connect(_on_anim_finished)
 	sprite.play(STATE_ANIM[State.IDLE_NEUTRAL][0])
 	AssetLoader.store_frames(sprite_path, frames)
+
+
+# Called: _load_animations().
+# Scans the idle_neutral sprite (first frame only) for transparent rows at the bottom.
+# z_depth_offset = feet → last drawn pixel row. Used by game.gd for z-sort depth.
+func _compute_z_depth_offset() -> void:
+
+	var base : float = float(SPRITE_SIZE) / 4.0   # default sprite bottom from feet = 24 px
+	var tex  : Texture2D = load(sprite_path + "idle_neutral.png")
+	var img  := tex.get_image()
+	img.convert(Image.FORMAT_RGBA8)
+	var empty_bottom := 0
+	for row in range(SPRITE_SIZE - 1, -1, -1):
+		var row_empty := true
+		for col in range(SPRITE_SIZE):   # first frame only
+			if img.get_pixel(col, row).a > 0.0:
+				row_empty = false
+				break
+		if row_empty: empty_bottom += 1
+		else:         break
+	z_depth_offset = base - float(empty_bottom)
 
 
 # =============================================================================
