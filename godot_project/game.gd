@@ -93,7 +93,6 @@ func _build_scene() -> void:
 	combat_feedback.init(map.player, map.creatures)
 	stat_panel.init(map.player, map.creatures)
 	stat_panel.debug_overlay = debug_overlay
-	
 
 
 # =============================================================================

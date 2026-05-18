@@ -169,15 +169,23 @@ func find_path(from_world: Vector2, to_world: Vector2) -> Array:
 	if cheb > MAX_PATH_TILES:                                                                 
 		return []
 
-	# 2. Neighbor solidity heuristic — start A* from the more-enclosed side so                
-	#    the search exhausts a small blocked area fast instead of exploring open space.       
+	# 2. Neighbor solidity heuristic — start A* from the more-enclosed side so
+	#    the search exhausts a small blocked area fast instead of exploring open space.
+
+	# If creature is physically inside a solid tile (physics-slid past the grid boundary),
+	# relocate the search start to the nearest walkable tile. The escape waypoint must be
+	# KEPT (not dropped below) so the creature immediately navigates out of the solid area.
+	var from_relocated := false
+	if _grid.is_point_solid(from_tile):
+		from_tile      = _nearest_walkable(from_tile)
+		from_relocated = true
+
+	if _grid.is_point_solid(to_tile):
+		to_tile = _nearest_walkable(to_tile)
+
 	var from_score := _count_solid_neighbors(from_tile)
 	var to_score   := _count_solid_neighbors(to_tile)
 	var reversed   := to_score > from_score
-	
-	# If creature and player tiles are solid find nearest walkable.
-	if _grid.is_point_solid(to_tile):
-		to_tile = _nearest_walkable(to_tile)
 		
 	# Temporarily marks all creature center tiles (except specific creature tile)
 	# as solid so A* routes around them.
@@ -212,16 +220,19 @@ func find_path(from_world: Vector2, to_world: Vector2) -> Array:
 	if reversed:
 		path.reverse()
 		
-	# raw[0] is the search_from anchor — the creature is already inside that tile so
-	# navigating back to it causes a momentary backward step. Drop it.
-	if path.size() > 1:
+	# raw[0] is the search_from anchor.
+	# Normal case: creature is already inside that tile — navigating back causes a backward
+	# step, so drop it.
+	# Relocated case: raw[0] is the escape tile the creature must reach first — keep it.
+	if path.size() > 1 and not from_relocated:
 		path.pop_front()
 
 	# AStarGrid2D with offset=Vector2.ZERO returns tile top-left corners.
-	# Shift every waypoint to tile center so creatures aim for the middle of each tile.
+	# Shift every waypoint to tile bottom-center so creatures aim for their feet position
+	# on each tile (creature.position = feet = bottom-center of occupied tile).
 	var half := TILE_SIZE / 2.0
 	for i in path.size():
-		path[i] = path[i] + Vector2(half, half)
+		path[i] = path[i] + Vector2(half, TILE_SIZE)
 
 	return path
 
@@ -231,9 +242,12 @@ func find_path(from_world: Vector2, to_world: Vector2) -> Array:
 # =============================================================================
 
 # Called: find_path().
+# creature.position = feet = bottom-center of tile (col, row) = (col*32+16, row*32+32).
+# Simple floor division maps that to (col, row+1), one row too low.
+# Subtracting 1 from Y corrects for the feet offset.
 func _world_to_tile(world_pos: Vector2) -> Vector2i:
 
-	return Vector2i(int(world_pos.x / TILE_SIZE), int(world_pos.y / TILE_SIZE))
+	return Vector2i(int(world_pos.x / TILE_SIZE), int(world_pos.y / TILE_SIZE) - 1)
 
 
 # Called: find_path().                                                                             
