@@ -115,9 +115,13 @@ var facing_right : bool  = false
 var in_combat    : bool  = false
 var anim_done    : bool  = false
 var alive        : bool  = true
-var is_inspected : bool  = false   # set stat_panel. Prevents queue_free while panel is open.
-var sprite_alpha : float = 255.0
+var is_inspected : bool  = false:   # set stat_panel. Prevents queue_free while panel is open.
+	set(value):
+		is_inspected = value
+		if not value and state == State.DEAD and not _fading:
+			_start_death_fade()
 var moving       : bool  = false
+var _fading      : bool  = false   # true while death fade tween is running.
 
 
 # ── Wander ─────────────────────────────────────────────────────────────────────
@@ -167,7 +171,6 @@ var _wait_entry_state		: State
 var _collision_timer		: float	  = 0.0
 var _collision_interval 	: float
 var _teleport				: bool	  = false
-var _teleported				: bool    = false
 
 
 # ── References ─────────────────────────────────────────────────────────────────
@@ -308,19 +311,12 @@ func _load_animations() -> void:
 # z_depth_offset = feet → last drawn pixel row. Used by game.gd for z-sort depth.
 func _compute_z_depth_offset() -> void:
 
-	var base : float = float(SPRITE_SIZE) / 4.0   # default sprite bottom from feet = 24 px
+	var base : float = float(SPRITE_SIZE) / 4.0
 	var tex  : Texture2D = load(sprite_path + "idle_neutral.png")
 	var img  := tex.get_image()
 	img.convert(Image.FORMAT_RGBA8)
-	var empty_bottom := 0
-	for row in range(SPRITE_SIZE - 1, -1, -1):
-		var row_empty := true
-		for col in range(SPRITE_SIZE):   # first frame only
-			if img.get_pixel(col, row).a > 0.0:
-				row_empty = false
-				break
-		if row_empty: empty_bottom += 1
-		else:         break
+	var first_frame  := img.get_region(Rect2i(0, 0, SPRITE_SIZE, SPRITE_SIZE))
+	var empty_bottom := SPRITE_SIZE - first_frame.get_used_rect().end.y
 	z_depth_offset = base - float(empty_bottom)
 
 
@@ -365,6 +361,8 @@ func _set_state(new_state: State) -> void:
 	anim_done = false
 	if state != State.DEAD and state != State.ATTACK:
 		sprite.play(STATE_ANIM[state][0])
+	if state == State.DEAD and not is_inspected:
+		_start_death_fade()
 
 
 # =============================================================================
@@ -631,13 +629,7 @@ func _update_state(dt: float) -> void:
 				_set_state(State.DEAD)
 
 		State.DEAD:
-
-			# Creatures corpse fades out if:
-			# 1) Creatures corpse is not inspected.
-			if not is_inspected:
-				if _change_alpha(dt):
-					died.emit()
-					queue_free()
+			pass  # fade and cleanup handled by _start_death_fade() tween.
 
 
 # Called: _physics_process().
@@ -707,12 +699,16 @@ func _physics_process(dt: float) -> void:
 		_update_movement(dt)
 		_sync_anim()
 		_check_wait(dt)
-		_check_teleport(dt)
 		_check_collisions(dt)
 
 
 # Called: _physics_process().
 func _update_movement(dt: float) -> void:
+
+	# If teleporting, stop movement during fade sequence.
+	if _teleport:
+		velocity = Vector2.ZERO
+		return
 
 	# If not in a moving state.
 	if state not in MOVING_STATES:
@@ -838,13 +834,12 @@ func _move_smart(target_pos: Vector2, speed: float, dt: float) -> void:
 # Called: _move_smart().
 func _move_toward(target_pos: Vector2, speed: float) -> void:
 
-	var direction	:= target_pos - position
-	var len_sq 		:= direction.length_squared()
-	if len_sq < 1.0:
+	var direction := target_pos - position
+	if direction.length_squared() < 1.0:
 		velocity = Vector2.ZERO
 		return
 	_update_facing(direction.x, direction.y)
-	velocity = direction / sqrt(len_sq) * speed
+	velocity = direction.normalized() * speed
 
 
 # Called: _update_state().
@@ -893,35 +888,30 @@ func _check_wait(dt: float) -> void:
 			
 			# If creature was in returning state while it got stuck.
 			if _wait_entry_state == State.RETURNING:
-				_teleport 	  = true
+				_teleport = true
 				# If home_position is not free set new home position the nearest free.
 				var home_tile := Vector2i(int(home_position.x / TILE_SIZE), int(home_position.y / TILE_SIZE) - 1)
 				if pathfinder._grid.is_point_solid(home_tile):
 					var new_home_grid = pathfinder._nearest_walkable(home_tile)
 					home_position = Vector2(new_home_grid.x * TILE_SIZE + TILE_SIZE / 2.0,
 						new_home_grid.y * TILE_SIZE + TILE_SIZE)
+				_start_teleport()
 
 
-# Called: _physics_process().
-func _check_teleport(dt:float):
+# Called: _check_wait() when a stuck returning creature triggers a teleport.
+# Fades the sprite out, snaps to home, then fades back in.
+func _start_teleport() -> void:
 
-	if not _teleport:
-		return
-
-	if not _teleported:
-		# If alpha = 0.0
-		if _change_alpha(dt):
-			# Teleport back to home.
-			_teleported = true
-			position    = home_position
-			stats.cleanse_all_effects()
-			path.clear()
-	# Teleported.
-	else:
-		# If alpha = 255.0
-		if _change_alpha(dt, true):
-			_teleport = false
-			_teleported = false
+	var duration := 255.0 / 300.0   # matches original 300 units/s fade speed.
+	var tw := create_tween()
+	tw.tween_property(sprite, "modulate:a", 0.0, duration)
+	tw.tween_callback(func():
+		position = home_position
+		stats.cleanse_all_effects()
+		path.clear()
+	)
+	tw.tween_property(sprite, "modulate:a", 1.0, duration)
+	tw.tween_callback(func(): _teleport = false)
 
 
 # Called: _physics_process().
@@ -959,17 +949,16 @@ func _check_collisions(dt: float) -> void:
 				break
 
 
-# Called: _update_state(), _check_teleport().
-func _change_alpha(dt:float = 0.0, increase:bool = false) -> bool:
-	
-	if increase:
-		sprite_alpha = minf(255.0, sprite_alpha + 300.0 * dt)
-		sprite.modulate = Color(1.0, 1.0, 1.0, sprite_alpha / 255.0)
-		return sprite_alpha >= 255.0
-	else:
-		sprite_alpha = maxf(0.0, sprite_alpha - 300.0 * dt)
-		sprite.modulate = Color(1.0, 1.0, 1.0, sprite_alpha / 255.0)
-		return sprite_alpha <= 0.0
+# Called: _set_state() on DEAD, and is_inspected setter when panel closes on a dead creature.
+func _start_death_fade() -> void:
+
+	if _fading:
+		return
+	_fading = true
+	var duration := 255.0 / 300.0
+	var tw := create_tween()
+	tw.tween_property(sprite, "modulate:a", 0.0, duration)
+	tw.tween_callback(func(): died.emit(); queue_free())
 
 
 # =============================================================================

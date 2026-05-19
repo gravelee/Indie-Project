@@ -152,17 +152,10 @@ func set_prop_attr(tex : Texture2D) -> void:
 		# empty_bottom = new_h − (blit_y + orig_h) = _canvas_add_rows − blit_y.
 		empty_bottom = _canvas_add_rows - _idle_blit_y
 	else:
-		# Count consecutive transparent rows from the canvas bottom (manually-sized sprites).
+		# Count transparent rows at the canvas bottom using get_used_rect().
 		var img := tex.get_image()
 		img.convert(Image.FORMAT_RGBA8)
-		for row in range(tex.get_height() - 1, -1, -1):
-			var row_empty := true
-			for col in range(tex.get_width()):
-				if img.get_pixel(col, row).a > 0.0:
-					row_empty = false
-					break
-			if row_empty: empty_bottom += 1
-			else:         break
+		empty_bottom = tex.get_height() - img.get_used_rect().end.y
 
 	# Radius of the z-sort circle: distance from weight_central to the bottom visible pixel.
 	# weight_central.y is negative (above prop.position), so -weight_central.y gives its magnitude.

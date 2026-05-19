@@ -166,19 +166,12 @@ func load_animations() -> void:
 # z_depth_offset = feet → last drawn pixel row. Used by game.gd for z-sort depth.
 func _compute_z_depth_offset() -> void:
 
-	var base : float = float(SPRITE_HALF) - float(DRAW_OFFSET)   # default sprite bottom from feet = 16 px
+	var base : float = float(SPRITE_HALF) - float(DRAW_OFFSET)
 	var tex  : Texture2D = load(SPRITE_PATH + "idle_neutral_south.png")
 	var img  := tex.get_image()
 	img.convert(Image.FORMAT_RGBA8)
-	var empty_bottom := 0
-	for row in range(SPRITE_SIZE - 1, -1, -1):
-		var row_empty := true
-		for col in range(SPRITE_SIZE):   # first frame only
-			if img.get_pixel(col, row).a > 0.0:
-				row_empty = false
-				break
-		if row_empty: empty_bottom += 1
-		else:         break
+	var first_frame  := img.get_region(Rect2i(0, 0, SPRITE_SIZE, SPRITE_SIZE))
+	var empty_bottom := SPRITE_SIZE - first_frame.get_used_rect().end.y
 	z_depth_offset = base - float(empty_bottom)
 
 
