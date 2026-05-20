@@ -133,6 +133,69 @@ Explicit enum state machines in player.gd and creature.gd. When adding states:
 - Talent definitions: JSON (`_talents_weaponmaster.json`, `_talents_spellcaster.json`)
 - Ability definitions: `abilities.gd` (acceptable for now)
 
+### Established Godot Patterns (use these — do not reinvent)
+
+**Vector normalization** — always use `.normalized()`, never manual `direction / sqrt(len_sq)`:
+```gdscript
+velocity = direction.normalized() * speed
+```
+
+**Alpha fades** — always use `Tween`, never manual delta accumulation in `_process`:
+```gdscript
+# Fade out then free the node
+var tw := create_tween()
+tw.tween_property(sprite, "modulate:a", 0.0, duration)
+tw.tween_callback(func(): queue_free())
+
+# Chained sequence: fade out → do something → fade in
+tw.tween_property(sprite, "modulate:a", 0.0, duration)
+tw.tween_callback(func(): position = target)
+tw.tween_property(sprite, "modulate:a", 1.0, duration)
+tw.tween_callback(func(): cleanup())
+```
+
+**Transparent pixel bounds** — always use `Image.get_used_rect()`, never nested pixel loops.
+For a full image (props, single-frame textures):
+```gdscript
+var img := tex.get_image()
+img.convert(Image.FORMAT_RGBA8)
+var empty_bottom := tex.get_height() - img.get_used_rect().end.y
+```
+For first frame of a spritesheet (player, creatures — idle_neutral scan):
+```gdscript
+var img := tex.get_image()
+img.convert(Image.FORMAT_RGBA8)
+var first_frame  := img.get_region(Rect2i(0, 0, SPRITE_SIZE, SPRITE_SIZE))
+var empty_bottom := SPRITE_SIZE - first_frame.get_used_rect().end.y
+```
+
+**Reactive property setters** — use GDScript property setters to trigger side effects when
+a variable changes, instead of polling every frame:
+```gdscript
+var is_inspected : bool = false:
+    set(value):
+        is_inspected = value
+        if not value and state == State.DEAD and not _fading:
+            _start_death_fade()
+```
+Applied in: `creature.gd` (`is_inspected`), `creature.gd` (`camera_angle`), `player.gd` (`camera_angle`).
+
+**Multi-phase Tween actions** — when a sequence requires: do A → wait → do B, use a single
+chained Tween with `tween_callback()` between property tweens. No state flags needed.
+See `creature._start_teleport()` for the reference implementation.
+
+**Guard flags for one-shot async actions** — when a Tween or async operation must only start
+once, use a bool guard checked at entry:
+```gdscript
+var _fading : bool = false
+
+func _start_death_fade() -> void:
+    if _fading:
+        return
+    _fading = true
+    ...
+```
+
 ---
 
 ## 4. Resource System
@@ -278,6 +341,186 @@ invest in raw stats (more HP, more Energy, etc.) or invest in talent depth.
 
 ## 7. Resonance Lore & World Framework
 
+### World Structure
+- **Scale**: Medium world — 8–12 named zones. Dense and handcrafted, not open empty space.
+- **Zone transitions**: Zone gates (visual threshold + loading trigger). Seamless transitions
+  are a future upgrade — not year 1. Each zone is a complete 100×100 tile map.
+- **Starting zone**: Mystic Forest Village — human/elf village deep in a forest.
+  Player has a home here. The player belongs to this place before the adventure begins.
+- **Zone opening**: After Zone 1, MULTIPLE zones open simultaneously — not a linear chain.
+  The world branches. Exploration is the player's choice. Biomes change sporadically across the
+  world, but each zone entrance has a deliberate visual shift and introduces 1-2 new mechanics.
+  Each zone has its own micro-world (story, NPCs, dungeon, creatures).
+- **Zone progression**: No forced order — player can explore zones as they discover connections.
+  Soft level gates (creature levels suggest readiness) but never hard locks.
+- **Story structure per zone (One Piece formula)**:
+  1. Tragic old story — something is wrong here, has been for a long time. Players learn WHY.
+  2. The player engages — quests, dungeon, confrontation with what caused the imbalance.
+  3. Restoration of order — not always clean. Some quests affect lives of specific people.
+     How the player solved it (approach, choices) shapes what the restoration looks like.
+  Each zone is a self-contained arc. The zone story and the main quest connect at key beats.
+
+### World Zones (Target: 8–12, Year 1: 2 fully playable)
+Planned biomes — names TBD, serve as design anchors:
+| Zone | Biome | Water | Notes |
+|---|---|---|---|
+| 1 | Deep Forest | Rivers, small pools | Starting zone. Mystic Forest Village. |
+| 2 | Meadow / Plains | Lakes, wide river | Opens after Zone 1. Other villages near water. |
+| 3 | Mountain / Highland | Mountain streams | High altitude, vertical terrain feel. |
+| 4 | Swamp / Marsh | Stagnant water, bogs | Dark, overgrown, visibility reduced. |
+| 5 | Desert | Rare oasis | Harsh, exposed, heat mechanic potential. |
+| 6 | Coastal / Shore | Sea, tidal zones | Near ocean. Sea Bottom dungeon entry point. |
+| 7 | Tropical / Jungle | Dense rivers | Hot, lush, ruins buried in growth. |
+| 8 | Ice / Snow | Frozen lakes | Cold mechanic potential. Frost Resonance. |
+| 9 | Volcanic / Ember | Lava flows | Ember Resonance. Extreme hazard tiles. |
+| 10 | Underground Network | Underground rivers | Cave system connecting zones. |
+| 11 | Storm Peak / Sky | Clouds, wind | Tempest Resonance. Late game. |
+| 12 | Void Sanctum | Absence | Final area. Void Resonance. |
+
+Year 1 scope: Zone 1 (Deep Forest) + Zone 2 (Meadow/Plains). All others: design only.
+
+### Towns & Services
+- **Settlement types**: 2 mid-size villages + several smaller settlements/outposts.
+  Not every zone has a town — wilderness zones may have only a single NPC camp or shrine.
+  Every dungeon has a story but may or may not have a nearby settlement.
+- **Standard village services** (what every mid-size village eventually offers):
+  Blacksmith (gear repair), Vendor (consumables, basic gear), Inn (manual save, rest buff),
+  Quest givers (named NPCs with story), Talent book shop or trainer (spend EXP).
+- **Starting village exception**: Mystic Forest Village begins with LESS services.
+  Some services unlock as the story progresses (e.g., the blacksmith returns after a quest,
+  the inn reopens when an NPC is rescued). Services growing with the story = investment in place.
+
+### Village Shop (Zone 1)
+Single shop in Mystic Forest Village. No gold at game start — player must barter creature parts
+first. Once barter economy is established, gold flows from bounty quests and can be spent here.
+
+**Stock:**
+| Item | Type | Notes |
+|---|---|---|
+| Small Dagger | Weapon | Requires barter items first to unlock currency |
+| Wooden Shield | Equipment | Active blocking item — reduces incoming damage |
+| Rations | Consumable | Restores HP + Energy out of combat (see Ration Mechanics below) |
+| Rope | Key Item | Used for the broken bridge puzzle in the woods |
+
+**Ration Mechanics:**
+- Player uses a ration → sits down animation plays, HP and Energy restore over a few seconds.
+- Effect: out of combat only. Eating mid-combat is not possible.
+- If combat begins while the player is sitting/eating: effect is immediately cut, player stands
+  up and enters combat state. Partial restoration already gained is kept.
+
+### Spellcaster School (Zone 1)
+Located in Mystic Forest Village. Entry requires the player to carry a wand or staff of any kind.
+Sword-only players cannot enter — this makes stealing the staff (or finding a wand) a meaningful
+early decision with real consequences.
+
+**On entry:**
+1. The school tests the player for elemental affinity. Affinity is randomly assigned at game
+   start — the player does not know it until this test reveals it.
+2. A quest is given: discover and test your Flow powers in the surrounding area.
+3. Quest completion reward: one random low-level spell from the player's affinity element.
+
+**Creature Aura Investigation Quest** (staff-required):
+- Available in the woods — an NPC asks a spellcaster to investigate creature aura anomalies
+  caused by the Resonance disruption.
+- Reward: a second lesser spell from a random element (may differ from affinity element).
+
+### NPCs
+- **Named individuals** with personalities. Not generic types.
+- **Schedules**: Key NPCs follow daily routines (Majora's Mask style). They move, sleep, work.
+  This is NOT required for every NPC — reserve schedules for significant characters only.
+- **Reactive dialogue**: NPCs respond to story progression. The same NPC says different things
+  before and after a quest is completed. How the player completed the quest (different choices,
+  different approaches) generates different reactions — NPCs are aware of how things were resolved.
+- **Exceptional hostility**: In rare cases an NPC can become hostile or be killed. This is the
+  exception, not the rule, and always story-driven. Never accidental.
+
+### Zone 1 Quest Structure (Mystic Forest Village)
+
+**Quest log entries available in Zone 1:**
+
+| Quest | Type | Trigger | Notes |
+|---|---|---|---|
+| Investigate the Cave | Main Quest | Auto on game start / early NPC dialogue | Poisoned water + cave connection. Always in log. |
+| Find the Missing Person | Side Quest | Talk to the missing person's relative | Optional. Adds a second objective inside the cave. |
+| Return the Sword | Side Quest | The NPC who lost the sword asks you to bring it back | Player chooses: keep sword, OR return it for adventurer's clothing (bonus armor). |
+| Borrow the Sword | Repeatable | Same sword NPC | If player returned the sword, they can borrow it temporarily by bringing creature parts as payment. |
+| Creature Hides | Side Quest | Village NPC | Skin creatures, collect hides → reward is money (used for rations). |
+| Creature Aura Investigation | Side Quest (staff only) | NPC in the woods | Investigate creature aura anomalies with a staff. Reward: second lesser spell (random element). |
+| Creature Bounties | Repeatable | Village shop NPC | Bring creature parts (meat, pelts, etc.) for payment. Source of early barter items for dagger/shop access. |
+
+**Progression path**: Village → Woods Area 1 (farming) → Woods Area 2 (bridge) → Cave
+
+**Shop / barter economy note**: The village's only shop cannot accept gold at game start — the
+player has no currency. To access the shop (including the dagger and rope), they must first bring
+creature parts from bounty hunting. This ties the bridge puzzle and dagger path into the same loop.
+
+### Zone 1 — The Woods (2 Areas)
+Both areas are ~100×100 grid maps, same scale as the village. Creatures in the woods must be
+avoided at game start — fists alone are not enough to fight safely. Rocks alone are not enough.
+The player needs a wooden weapon (sword or staff) before the woods are safely farmable.
+
+**Area 1 — Farming Woods**
+- Creatures: Rats (primary), occasional Snake
+- Contains the hidden spot where the lost wooden sword can be found
+- This is the creature farming zone — player returns here repeatedly for bounty quests and hides
+- No combat shortcuts: the sword is a reward for exploring, not handed to the player
+
+**Area 2 — Bridge Road (connects village to cave)**
+- Creatures: Snakes (sparse — this is a path, not a farm zone)
+- Contains the broken bridge over the poisoned river
+- Bridge was destroyed by a storm-felled tree during the Resonance disruption (lightning struck
+  a tree, it fell on the bridge, partially collapsing it)
+- The river is shallow but the water is poisoned — player cannot swim across
+- **The bridge puzzle must be solved to reach the cave** — see Bridge Puzzle below
+
+### Zone 1 — Bridge Puzzle (DESIGN IN PROGRESS — see below)
+The fallen tree from the storm is still present at the scene. The bridge has a section of planks
+destroyed where the tree fell on it. The river is crossable by height but not by water contact
+(poison). The puzzle solution requires an item or action sourced from the village.
+
+**Puzzle solution: TBD** — options presented to developer, decision pending.
+
+---
+
+### Main Quest Arc (10 steps — do not change lightly)
+The main quest is a guiding thread, not a forced path. These 10 beats are fixed; everything
+between them is player-paced. Race-specific and playstyle-specific quests are additive.
+
+1. **Local disruption**: The Ancient Cave near Mystic Forest Village supplies the village's water.
+   Villagers have started getting sick one after another — the water is the source. A person from
+   the village has gone missing near the cave. Nobody understands the scope — it looks like a
+   local problem: bad water, one missing person. The player investigates.
+2. **Into the cave**: Before entering the cave, the player acquires a first weapon from the village
+   or its surroundings (multiple paths — see Weapon System / Zone 1 Starting Weapons). They then
+   progress from village → woods → cave to find out what is happening.
+3. **The global picture**: After clearing the cave, evidence emerges that the disruption is NOT
+   local. It's happening across the entire world. Player leaves the starting zone with this weight.
+4. **Other peoples**: Player travels far, meets other races and cultures. Forms alliances.
+   Some companions join. Each culture has its own relationship with the Resonance disruption.
+5. **The consuming race**: Player discovers a race whose existence requires consuming others
+   to survive. Not by choice — by nature. Like apex predators. Like humans to the earth.
+   They are not evil. They simply ARE what they are.
+6. **The antihero villain**: A powerful figure who opposes the player's approach. Not wrong —
+   they have valid reasons and genuine truths behind their worldview. They function as a
+   mirror: what the player might become if they chose a different path.
+7. **The argument**: Player tries to convince the consuming race there is another way to survive.
+   This is not a fight — it is a conversation, a philosophical confrontation.
+8. **The revelation**: The consuming race did not choose this. They were TRICKED into believing
+   this was the only way they could exist. A forbidden alternative lifestyle has been suppressed.
+9. **Tracing the deception**: The manipulation traces back to the race's own powerful upper class.
+   Those with power exploiting those without — using the powerless as a permanent justification
+   for their own authority and survival method.
+10. **The resolution**: Not a boss fight to save the day. A confrontation with power structures,
+    with inequality, with the cost of choosing to see imbalance and act rather than just doing
+    your job and looking away. No clean answers. Inspired by One Piece and Naruto in thematic depth.
+
+**Core themes**: Inequality, power exploitation, the difficulty of seeing imbalance and choosing
+to intervene, the cost of having a clear heart/mind/soul in a world that punishes it.
+
+**Villain philosophy (standing rule)**: Any character functioning as antagonist must have a
+backstory that explains their worldview, a perspective containing genuine truth, and a reason
+they believe their path is better — not just power, not just evil.
+
 ### The Resonance Framework
 The world is sustained by ancient forces called **Resonances** — not gods, not conscious beings,
 just the fundamental energies that everything is made of. Each Resonance sustains a part of the
@@ -364,7 +607,69 @@ it in the first place? Who or what keeps it unstable — and do they even know w
 
 ---
 
-## 8. Combat System
+## 8. Weapon System
+
+### Philosophy (Bastion-style distinct feel)
+Every weapon type feels mechanically different — not just stat variations. Two players using
+different weapons play differently. Speed, range, attack pattern, combo logic, and resource
+interaction all differ per weapon type. This is the primary axis of Weaponmaster identity
+variance. A wooden sword and a wooden spear are not "both melee" — they are different games.
+
+### Weapon Acquisition
+- Player acquires their first weapon in Mystic Forest Village / its surroundings, before entering the cave.
+- First weapons are all wooden tier (lowest durability, lowest damage, but full mechanical feel).
+- Wooden tier exists to teach the weapon's feel without commitment. Better materials drop later.
+- Weapon choice at the start is the player's first expression of emergent class direction.
+- **Fist combat**: Player can always attack unarmed. Fists are always available regardless of weapon.
+
+### Zone 1 Starting Weapons (4 Paths)
+The player has 4 paths to their first weapon in Zone 1. The wooden weapons are mutually exclusive:
+acquiring the sword OR the staff causes the other to disappear permanently. Rocks stack with either.
+
+| # | Weapon | How to Get | Notes |
+|---|---|---|---|
+| 1 | Wooden Sword | Found in the woods — an NPC in the village mentions losing their sword somewhere out there | Hidden in the overworld. Rewards exploration. |
+| 2 | Wooden Staff | In the spellcaster's house in the village — must be stolen from the owner | Theft mechanic. The spellcaster NPC does NOT find out. No reaction. |
+| 3 | Rocks | Collected from terrain around the village | Ranged option. Combinable with either wooden weapon. Not mutually exclusive with sword/staff. |
+| 4 | Small Dagger | Purchased from the village's only shop | Locked at game start — requires items to barter with first. Items come from creature hunting (bounty quests). Viable only after some progress. |
+
+**Mutual exclusion rule**: Wooden Sword and Wooden Staff are mutually exclusive. The moment one is
+picked up, the other becomes permanently inaccessible that run. Rocks + dagger are independent
+(rocks can coexist with any weapon; dagger requires barter progression).
+
+**Design intent**: Forces an early commitment that signals playstyle without locking the player in.
+The sword/staff choice is the first emergent class signal. Stealing the staff vs. finding the sword
+are themselves different character expressions.
+
+### Weapon Tiers (material progression — not Year 1 to implement fully)
+Wooden → Iron/Stone → ?? → ?? — exact tier names TBD. Each tier = better stats, same feel.
+The weapon's mechanical identity never changes between tiers. Only power scales.
+
+### Planned Weapon Types (feel is the differentiator)
+| Weapon | Speed | Range | Pattern | Resource Lean | Feel |
+|---|---|---|---|---|---|
+| Sword | Medium | Short-med | Single swing, directional | Energy | Balanced, responsive. The default. |
+| Spear | Medium | Long | Thrust forward only | Energy | Reach and positioning. Punishes wrong angle. |
+| Axe | Slow | Short | Wide slow arc, high damage | Focus | Commitment. Rewards timing, punishes spam. |
+| Bow | Medium | Long | Aimed projectile, charge option | Energy | Spatial, requires movement discipline. |
+| Staff | Slow | Med-long | Magic projectile or AoE | Flow | Spellcaster entry. Resource heavy. |
+| Daggers | Fast | Very short | Multi-hit combo chain | Energy+Focus | High APM, low per-hit. Rewards aggression. |
+| Greatsword | Very slow | Med | 3-hit charged swing | Focus | Maximum commitment. Every swing counts. |
+| Thrown | Fast | Med | Ricocheting projectile | Energy | Unpredictable angle play. |
+
+Not all weapons available at game start. New weapon types introduced in new zones or as dungeon
+rewards. The first choice (in village) is from whatever wooden weapons are available there.
+
+### Weapon Feel Rules (do not violate)
+- Speed difference must be perceptible. Axe vs dagger must FEEL different to press.
+- Range difference must change player positioning. Spear player hugs range limit. Dagger player
+  must close distance entirely.
+- Resource lean must be real. A Flow-lean weapon genuinely disadvantages a player with low SPR.
+- Never make two weapons feel identical and differ only in numbers.
+
+---
+
+## 9. Combat System
 
 ### Philosophy
 Combat must feel responsive and skill-based. Player skill matters more than stats. A skilled
@@ -407,7 +712,7 @@ Freeze (no movement), Burn (DoT, fire). Each has duration + tick interval.
 
 ---
 
-## 9. Dungeon System
+## 10. Dungeon System
 
 ### Design Rules
 - 15-25 rooms per dungeon. Entrance, mid-boss, final boss rooms.
@@ -455,12 +760,17 @@ not trial-and-error.
 **1. Ancient Cave** (starter — tutorial mechanics)
 - Resonance: Stone (disrupted)
 - Tileset: rough stone, torches, dirt floor
-- Creatures: Giant Rat (existing), Cave Spider (new), Giant Bat (new)
+- Creatures: Rat, Bat, Cave Spider (all regular-sized — no "giant" prefix enemies)
 - Dungeon AI: spike-line movers (patrol AI), falling stalactites (trap entity)
 - Puzzles introduced: pressure plates → doors
-- Boss 1 (mid): Giant Rat King — summons adds, charges across room
-- Boss 2 (final): Stone Golem — environment-dependent (specific tiles slow it)
-- Talent scroll drops: "Frenzy" from Rat King, "Granite Skin" from Stone Golem
+- Boss 1 (mid): Cave Spider Queen — spawns smaller spiders as adds, teaches crowd control
+- Boss 2 (final): Cave Troll — slow, heavy, teaches blocking and patience. Environment-dependent
+  (narrow passages punish it, open rooms let it charge)
+- Cave story: The cave is the water source for Mystic Forest Village. A Resonance disruption has
+  contaminated the water — villagers are getting sick one by one. A villager has gone missing near
+  the cave. The player enters to investigate both the poisoned water and the missing person.
+- Talent scroll drops: TBD from Spider Queen, TBD from Cave Troll
+- Weapon: player acquires first weapon from village/surroundings BEFORE entering cave (see Zone 1 Starting Weapons)
 
 **2. Old Temple** (intermediate)
 - Resonance: Verdant (disrupted, overgrown with wild uncontrolled growth)
@@ -478,7 +788,21 @@ Do not begin any of these until Ancient Cave + Old Temple are fully polished and
 
 ---
 
-## 10. Save System (Not Year 1 Priority — Design Only)
+## 11. Save System (Not Year 1 Priority — Design Only)
+
+### Death & Respawn (Settled Design)
+- **Lore frame**: The player's soul is commanded by a higher purpose. Death is not the end —
+  the soul is pulled back. This is not a resurrection mechanic explained as magic. It is the
+  world's acknowledgment that the player's mission is unfinished.
+- **Respawn location**: Player respawns at their corpse location (the exact spot they died).
+  Not at a checkpoint, not at a town. Their body is there — they must return to themselves.
+- **Respawn cost**: Durability penalty on all gear (-10%) + all EXP accumulated since last
+  autosave is lost. Progress (room clears, puzzle solutions) resets to the last autosave.
+- **The design intent**: Fear of loss drives skill-building. Players who take unnecessary risks
+  and die repeatedly feel the cost accumulate. Players who learn, adapt, and execute cleanly
+  are rewarded by never paying that cost. Skill is the real protection, not a respawn shield.
+- **No death screen punishment beyond the above.** The player is returned immediately.
+  The grief is in what was lost, not in being lectured at.
 
 ### BOTW-Style Autosave at Milestones
 The game autosaves when the player achieves a meaningful progression point:
@@ -509,7 +833,7 @@ come first. Design it now, build it later.
 
 ---
 
-## 11. Indoor Dungeon AI & Trap Entities
+## 12. Indoor Dungeon AI & Trap Entities
 
 Two AI models for dungeon interiors. The existing creature.gd (overworld AI) is the outdoor
 model. Dungeon interiors use a lighter separate system.
@@ -547,7 +871,7 @@ Introduce 1-2 new dungeon AI types per dungeon:
 
 ---
 
-## 12. Props & Environment Standards
+## 13. Props & Environment Standards
 
 ### Prop Classification Checklist
 Define these before implementing any new prop:
@@ -575,7 +899,7 @@ Interior rooms: separate map instances, transitions via door prop with scene-cha
 
 ---
 
-## 13. Puzzle Design
+## 14. Puzzle Design
 
 ### Philosophy (Link's Awakening style)
 Solvable through observation and logic. Solution is visible in the room. No hidden information.
@@ -599,7 +923,7 @@ Pick randomly at dungeon instance creation. Store configurations in JSON alongsi
 
 ---
 
-## 14. Gear & Durability
+## 15. Gear & Durability
 
 ### Gear System
 Equippable items add flat stat bonuses. Slots: weapon, shield, helmet, chest, legs, boots,
@@ -618,7 +942,7 @@ ring ×2, necklace. Items drop from bosses and creatures. Rarity tiers exist for
 
 ---
 
-## 15. Progression System
+## 16. Progression System
 
 ### Character Progression Flow
 - **EXP** accumulates from: creature kills, quest completions, room clears, puzzles solved.
@@ -642,7 +966,7 @@ ring ×2, necklace. Items drop from bosses and creatures. Rarity tiers exist for
 
 ---
 
-## 16. Multiplayer — Post-Launch DLC Only
+## 17. Multiplayer — Post-Launch DLC Only
 
 Not in scope for the base game. Do not build any networking infrastructure in year 1.
 
@@ -653,7 +977,7 @@ Four Swords Adventures — puzzles requiring coordinated action from multiple pl
 
 ---
 
-## 17. Known Issues & Active TODO
+## 18. Known Issues & Active TODO
 
 ### Bugs to Fix First
 - Z-sort visual errors (minor) — verify anchor/offset before touching formula.
@@ -716,6 +1040,40 @@ Files: stats.gd, ability.gd, hud.gd, abilities.gd, creature.gd, player.gd.
 - Shapeshifter / pet commander full subclass content
 - Ranger-type playstyle content
 
+### Creature Roster & Zone Assignment
+Creatures are zone-specific — each biome has its own population. Some creatures span adjacent
+zones. Neutral creatures are common — they aggro only if attacked first.
+
+**Aggression types**:
+- `hostile`: attacks player on sight within detection range.
+- `neutral`: ignores player; attacks back if hit. These are animals, not enemies by nature.
+- `passive`: never attacks. Environmental/ambient only.
+
+**Zone 1 — Deep Forest (Year 1)**
+| Creature | Type | Notes |
+|---|---|---|
+| Rat | hostile | Small, fast, swarm behavior |
+| Snake | hostile | Ambush from tall grass |
+| Bat | hostile | Cave subzone; erratic flight path |
+| Cave Spider | hostile | Dungeon (Ancient Cave) specific |
+| Wolf | neutral | Attacks if player enters territory or attacks first |
+| Bear | neutral | High HP, strong hit, patrols wide area |
+| Deer | passive | Ambient wildlife. Flees on approach. |
+
+**Zone 2 — Meadow/Plains (design only, not Year 1)**
+TBD — river/lake creatures, plains fauna, first contact with Zone 2 hostile types.
+
+**Dungeon-exclusive creatures**:
+- `Cave Spider`: Ancient Cave only.
+- `Stone Golem` (boss): Ancient Cave final boss.
+- Mid-boss Ancient Cave: TBD (Rat King removed — replacement needed).
+
+**Standing rules**:
+- No "giant" prefix creatures in the base roster. Scale through behavior, not size inflation.
+- Bosses are distinct creature types from their zone's population — they are the Resonance
+  disturbance made manifest, not just a larger version of a common enemy.
+- New creature per dungeon is required (Section 9 rule).
+
 ### Art TODO (Parallel Track)
 - Better player animations (all states)
 - Better creature animations (rat, snake)
@@ -730,7 +1088,7 @@ Files: stats.gd, ability.gd, hud.gd, abilities.gd, creature.gd, player.gd.
 
 ---
 
-## 18. How to Approach Any Feature Request
+## 19. How to Approach Any Feature Request
 
 **Step 1 — Classify**: Is it a mechanic, entity, UI element, or content? Map to existing systems.
 
@@ -752,7 +1110,7 @@ Name specific files to edit. Prefer editing existing over creating new files.
 
 ---
 
-## 19. Solo Developer Scope Management
+## 20. Solo Developer Scope Management
 
 **The biggest risk is scope creep. The second biggest is getting stuck and losing momentum.**
 
