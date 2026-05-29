@@ -12,9 +12,9 @@ extends CharacterBody3D
 # States: IDLE ↔ WALK  (ATTACK / DEATH added with combat system later)
 # =============================================================================
 
-const SPRITE_SIZE  : int    = 96
-const GRAVITY      : float  = -20.0
-const SPRITE_PATH  : String = "res://assets/spritesheets/player/"
+const SPRITE_SIZE        : int    = 96
+const GRAVITY            : float  = -20.0
+const SPRITE_PATH        : String = "res://assets/spritesheets/player/"
 
 # Ares starting stats (STR AGI STA INT SPR RES DEF BMS EXP)
 # BMS=3, AGI=4 → mspd = 3 + 4*0.5 = 5.0
@@ -26,7 +26,7 @@ const ATTACK_DAMAGE   : float = 10.0
 const ATTACK_COOLDOWN : float = 0.5   # seconds between attacks
 const ATTACK_ARC_DOT  : float = 0.3   # min dot product — ~±73° cone
 
-enum State  { IDLE, WALK }
+enum State  { IDLE, WALK, ATTACK }
 enum Facing { SOUTH, NORTH, EAST, WEST }
 
 const FACING_STR : Dictionary = {
@@ -40,10 +40,10 @@ const FACING_STR : Dictionary = {
 # Public — wired by main.gd after construction
 # ---------------------------------------------------------------------------
 
-var sprite     : AnimatedSprite3D  # built in init(), read by main.gd for camera_rig
-var cam        : CameraSettings    # set in init()
-var camera_rig : Node3D            # set by main.gd after camera_rig is built
-var stats      : Stats             # built in init()
+var sprite        : AnimatedSprite3D  # built in init(), read by main.gd for camera_rig
+var cam           : CameraSettings    # set in init()
+var camera_rig    : Node3D            # set by main.gd after camera_rig is built
+var stats         : Stats             # built in init()
 
 # Set by main.gd each frame to block movement when UI is open
 var movement_blocked : bool = false
@@ -106,16 +106,18 @@ func _load_animations() -> void:
 	for dir : String in ["south", "north", "east", "west"]:
 		_add_strip(frames, "idle_neutral_" + dir, 4.0)
 		_add_strip(frames, "walking_" + dir,      8.0)
+		_add_strip(frames, "attack_" + dir,       12.0)
 	AssetLoader.store_frames(SPRITE_PATH, frames)
 	sprite.sprite_frames = frames
 	sprite.play("idle_neutral_south")
 
 
-func _add_strip(frames: SpriteFrames, anim: String, fps: float) -> void:
+func _add_strip(frames: SpriteFrames, anim: String, fps: float,
+		base_path: String = SPRITE_PATH) -> void:
 	frames.add_animation(anim)
 	frames.set_animation_speed(anim, fps)
 	frames.set_animation_loop(anim, true)
-	var path : String = SPRITE_PATH + "%s.png" % anim
+	var path : String = base_path + "%s.png" % anim
 	if ResourceLoader.exists(path):
 		var sheet      : Texture2D = load(path)
 		var frame_count : int      = sheet.get_width() / SPRITE_SIZE
@@ -159,10 +161,11 @@ func _physics_process(delta: float) -> void:
 # =============================================================================
 
 func _handle_movement() -> void:
-	if movement_blocked or camera_rig == null:
+	if movement_blocked or camera_rig == null or state == State.ATTACK:
 		velocity.x = 0.0
 		velocity.z = 0.0
-		_set_state(State.IDLE)
+		if state != State.ATTACK:
+			_set_state(State.IDLE)
 		return
 
 	var raw := Vector2.ZERO
@@ -205,6 +208,7 @@ func _set_state(new_state: State) -> void:
 		return
 	state = new_state
 	_rebuild_anim_key()
+	_sync_anim()
 
 
 func _set_facing(new_facing: Facing) -> void:
@@ -216,12 +220,15 @@ func _set_facing(new_facing: Facing) -> void:
 
 func _rebuild_anim_key() -> void:
 	match state:
-		State.IDLE: _anim_key = "idle_neutral_" + FACING_STR[facing]
-		State.WALK: _anim_key = "walking_"      + FACING_STR[facing]
+		State.IDLE:   _anim_key = "idle_neutral_" + FACING_STR[facing]
+		State.WALK:   _anim_key = "walking_"      + FACING_STR[facing]
+		State.ATTACK: _anim_key = "attack_"       + FACING_STR[facing]
 
 
 func _sync_anim() -> void:
 	if sprite.animation != _anim_key:
+		var loop : bool = state != State.ATTACK
+		sprite.sprite_frames.set_animation_loop(_anim_key, loop)
 		sprite.play(_anim_key)
 
 
@@ -231,16 +238,24 @@ func _sync_anim() -> void:
 
 func _handle_attack(delta: float) -> void:
 	_attack_timer = maxf(0.0, _attack_timer - delta)
+
+	# Finish attack state when body animation completes
+	if state == State.ATTACK and not sprite.is_playing():
+		_set_state(State.IDLE)
+		return
+
 	if not _attack_requested:
 		return
 	_attack_requested = false
-	if movement_blocked or _attack_timer > 0.0:
+	if movement_blocked or _attack_timer > 0.0 or state == State.ATTACK:
 		return
+
+	_attack_timer = ATTACK_COOLDOWN
+	_set_state(State.ATTACK)
 	_do_attack()
 
 
 func _do_attack() -> void:
-	_attack_timer = ATTACK_COOLDOWN
 	var atk_dir : Vector3 = _facing_to_world_dir()
 	var atk_pos : Vector3 = global_position
 	for node : Node in get_tree().get_nodes_in_group("creatures"):

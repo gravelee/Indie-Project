@@ -288,6 +288,8 @@ Then do snake `wander` front/back (snake currently has no move animation drawn).
 
 **Player**:
 - Better player animations (all states — idle, walk, run, roll, attack types, death)
+- Redraw attack_south/north/east/west frames with the wooden sword baked into each frame
+  (weapon sprite system removed — sword is now part of the player attack animation art)
 
 **New Creatures (future)**:
 - Cave Spider, Bat, Wolf, Bear, Deer — full animation set per standard above

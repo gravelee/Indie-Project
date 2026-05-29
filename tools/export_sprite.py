@@ -43,7 +43,16 @@ _RO = "echoes_of_the_void/assets/spritesheets/creatures/rat"
 _S = "art_source/creatures/snake/frames"
 _SO = "echoes_of_the_void/assets/spritesheets/creatures/snake"
 
+_P = "art_source/player/ares/frames"
+_PO = "echoes_of_the_void/assets/spritesheets/player"
+
 EXPORTS = [
+    # ── PLAYER (4-direction, no front/back) ───────────────────────────────────
+    (f"{_P}/south/forward_slash", f"{_PO}/attack_south.png"),
+    (f"{_P}/north/forward_slash", f"{_PO}/attack_north.png"),
+    (f"{_P}/east/forward_slash",  f"{_PO}/attack_east.png"),
+    (f"{_P}/west/forward_slash",  f"{_PO}/attack_west.png"),
+
     # ── RAT (source faces right — no flip needed) ─────────────────────────────
     (f"{_R}/idle_neutral/front",    f"{_RO}/idle_neutral_front.png"),
     (f"{_R}/idle_neutral/back",     f"{_RO}/idle_neutral_back.png"),
