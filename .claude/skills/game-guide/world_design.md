@@ -216,6 +216,13 @@ Creatures inside Resonance Wells are not evil. They are animals and beings warpe
 elemental energy. Their aggression is the Resonance expressing itself without moderation — the
 same way electricity arcs when it has no ground. They are not malicious. They are suffering.
 
+This also applies to creatures near — but outside — active disruption zones. A wolf that would
+normally ignore the player becomes dangerous if it lives close enough to a Resonance Well to be
+affected by the bleed. In code this is the **`void_touched`** boolean on every creature instance.
+When true, the creature's base aggression is overridden and it attacks on sight regardless of
+its natural disposition. Set by the map/zone system at spawn time based on proximity to
+disruption. See dungeon_design.md → Creature Roster for implementation details.
+
 **Why dungeons respawn**: Defeating the boss re-anchors the Resonance temporarily, but the
 disruption is not permanently healed. The force naturally becomes unstable again over time.
 This is the lore justification for dungeon resets — not a game mechanic excuse, an honest

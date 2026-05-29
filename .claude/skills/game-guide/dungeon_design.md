@@ -194,10 +194,21 @@ Pick randomly at dungeon instance creation. Store configurations in JSON alongsi
 Creatures are zone-specific — each biome has its own population. Some creatures span adjacent
 zones. Neutral creatures are common — they aggro only if attacked first.
 
-**Aggression types**:
+**Aggression types** (base behavior — what the creature is by nature):
 - `hostile`: attacks player on sight within detection range.
 - `neutral`: ignores player; attacks back if hit. These are animals, not enemies by nature.
 - `passive`: never attacks. Environmental/ambient only.
+
+**`void_touched`** (boolean, default false):
+Marks a creature as affected by the Void disruption in its area. When true, overrides the
+creature's base aggression — even `neutral` and `passive` creatures become aggressive and
+attack on sight, behaving like `hostile`. This is the in-world explanation for why otherwise
+harmless animals are dangerous near Void disturbance zones (dungeon entrances, corrupted
+clearings, boss areas). Lore: the creature's natural Resonance has been destabilized by the
+Void's influence, driving it into a frenzied state.
+- Stored as a per-instance boolean on the creature node.
+- Set by the map/zone system when spawning creatures near disruption areas.
+- Visually: consider a subtle visual tell (slight color shift, eyes glow) — TBD art pass.
 
 **Zone 1 — Deep Forest (Year 1)**
 | Creature | Type | Notes |
@@ -241,11 +252,20 @@ Every creature needs the following animations, each in front/back variant (flip_
 | `run` | loop | Fast movement — combat chase, fleeing, returning home |
 | `notice` | once | Alert moment (sees player). Transitions to `neutral_to_attack` |
 | `neutral_to_attack` | once | Entering combat stance |
-| `idle_attack` | loop | Combat idle — in stance, ready to act |
-| `attack_bite` | once | Attack type 1 (all creatures that bite) |
-| `attack_slash` | once | Attack type 2 (creatures with claws/tail) |
+| `idle_attack` | loop | Combat idle — in stance, attack on cooldown. Same name for all creatures. |
+| `attack_bite` | once | Attack type — rat: bite. Snake: bite. Not all creatures have this. |
+| `attack_slash` | once | Attack type — rat: slash. Not all creatures have this. |
+| `attack_tail_slam` | once | Attack type — snake only. |
 | `attack_to_neutral` | once | Exiting combat stance (fleeing or player left range) |
 | `death` | once → hold | Plays once, holds last frame = corpse sprite |
+
+**Animation state philosophy** (decided): All creatures share the same state machine and animation
+set. Biological differences are expressed through duration tuning and frame count — never by
+removing states or adding code branches per creature. Examples:
+- Snake has no "notice" feel → 1-frame notice animation, very short duration (~0.1s)
+- Rat has no fighting stance feel → 1-frame neutral_to_attack and attack_to_neutral, near-instant
+- A bear or wolf can have slow deliberate stance animations — same code, different data
+Rule: states are universal. Art and durations are per-creature data.
 
 **Corpse mechanic** (decided): WoW-style. Death animation plays → creature holds last frame
 as a lying-down corpse for ~90 seconds → then fades out. Corpse is lootable.

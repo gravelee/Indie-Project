@@ -31,43 +31,62 @@ METHOD = "rotsprite"  # "nearest"   — nearest-neighbor (sharp, no edge smoothi
 
 # ── Export list ───────────────────────────────────────────────────────────────
 # Each entry: (source_frames_folder, game_asset_output_path)
+# Optional 3rd element: flip_h=True  — mirrors every frame horizontally before
+#   assembling. Use for creatures whose source art faces left (e.g. snake) so
+#   all game assets face right, matching the flip_h logic in creature.gd.
 # Both paths are relative to the project root.
 # Add or comment out entries as needed.
 
+_R = "art_source/creatures/rat/frames"
+_RO = "echoes_of_the_void/assets/spritesheets/creatures/rat"
+
+_S = "art_source/creatures/snake/frames"
+_SO = "echoes_of_the_void/assets/spritesheets/creatures/snake"
+
 EXPORTS = [
-    (
-        "art_source/creatures/rat/frames/wander/front",
-        "echoes_of_the_void/assets/spritesheets/creatures/rat/wander_front.png",
-    ),
-    (
-        "art_source/creatures/rat/frames/wander/back",
-        "echoes_of_the_void/assets/spritesheets/creatures/rat/wander_back.png",
-    ),
-    (
-        "art_source/creatures/rat/frames/idle_neutral/front",
-        "echoes_of_the_void/assets/spritesheets/creatures/rat/idle_neutral_front.png",
-    ),
-    (
-        "art_source/creatures/rat/frames/idle_neutral/back",
-        "echoes_of_the_void/assets/spritesheets/creatures/rat/idle_neutral_back.png",
-    ),
-    # Uncomment when ready:
-    # (
-    #     "art_source/creatures/snake/frames/move/front",
-    #     "echoes_of_the_void/assets/spritesheets/creatures/snake/move_front.png",
-    # ),
-    # (
-    #     "art_source/creatures/snake/frames/move/back",
-    #     "echoes_of_the_void/assets/spritesheets/creatures/snake/move_back.png",
-    # ),
-    # (
-    #     "art_source/creatures/snake/frames/idle_neutral/front",
-    #     "echoes_of_the_void/assets/spritesheets/creatures/snake/idle_neutral_front.png",
-    # ),
-    # (
-    #     "art_source/creatures/snake/frames/idle_neutral/back",
-    #     "echoes_of_the_void/assets/spritesheets/creatures/snake/idle_neutral_back.png",
-    # ),
+    # ── RAT (source faces right — no flip needed) ─────────────────────────────
+    (f"{_R}/idle_neutral/front",    f"{_RO}/idle_neutral_front.png"),
+    (f"{_R}/idle_neutral/back",     f"{_RO}/idle_neutral_back.png"),
+    (f"{_R}/wander/front",          f"{_RO}/wander_front.png"),
+    (f"{_R}/wander/back",           f"{_RO}/wander_back.png"),
+    (f"{_R}/run/front",             f"{_RO}/run_front.png"),
+    (f"{_R}/run/back",              f"{_RO}/run_back.png"),
+    (f"{_R}/notice/front",          f"{_RO}/notice_front.png"),
+    (f"{_R}/notice/back",           f"{_RO}/notice_back.png"),
+    (f"{_R}/neutral_to_attack/front", f"{_RO}/neutral_to_attack_front.png"),
+    (f"{_R}/neutral_to_attack/back",  f"{_RO}/neutral_to_attack_back.png"),
+    (f"{_R}/idle_attack/front",     f"{_RO}/idle_attack_front.png"),
+    (f"{_R}/idle_attack/back",      f"{_RO}/idle_attack_back.png"),
+    (f"{_R}/attack_bite/front",     f"{_RO}/attack_bite_front.png"),
+    (f"{_R}/attack_bite/back",      f"{_RO}/attack_bite_back.png"),
+    (f"{_R}/attack_slash/front",    f"{_RO}/attack_slash_front.png"),
+    (f"{_R}/attack_slash/back",     f"{_RO}/attack_slash_back.png"),
+    (f"{_R}/attack_to_neutral/front", f"{_RO}/attack_to_neutral_front.png"),
+    (f"{_R}/attack_to_neutral/back",  f"{_RO}/attack_to_neutral_back.png"),
+    (f"{_R}/death/front",           f"{_RO}/death_front.png"),
+    (f"{_R}/death/back",            f"{_RO}/death_back.png"),
+
+    # ── SNAKE (source faces left — flip_h=True to match rat convention) ───────
+    (f"{_S}/idle_neutral/front",    f"{_SO}/idle_neutral_front.png",    True),
+    (f"{_S}/idle_neutral/back",     f"{_SO}/idle_neutral_back.png",     True),
+    (f"{_S}/wander/front",          f"{_SO}/wander_front.png",          True),
+    (f"{_S}/wander/back",           f"{_SO}/wander_back.png",           True),
+    (f"{_S}/run/front",             f"{_SO}/run_front.png",             True),
+    (f"{_S}/run/back",              f"{_SO}/run_back.png",              True),
+    (f"{_S}/notice/front",          f"{_SO}/notice_front.png",          True),
+    (f"{_S}/notice/back",           f"{_SO}/notice_back.png",           True),
+    (f"{_S}/neutral_to_attack/front", f"{_SO}/neutral_to_attack_front.png", True),
+    (f"{_S}/neutral_to_attack/back",  f"{_SO}/neutral_to_attack_back.png",  True),
+    (f"{_S}/idle_attack/front",      f"{_SO}/idle_attack_front.png",    True),
+    (f"{_S}/idle_attack/back",       f"{_SO}/idle_attack_back.png",     True),
+    (f"{_S}/attack_bite/front",     f"{_SO}/attack_bite_front.png",     True),
+    (f"{_S}/attack_bite/back",      f"{_SO}/attack_bite_back.png",      True),
+    (f"{_S}/attack_tail_slam/front", f"{_SO}/attack_tail_slam_front.png", True),
+    (f"{_S}/attack_tail_slam/back",  f"{_SO}/attack_tail_slam_back.png",  True),
+    (f"{_S}/attack_to_neutral/front", f"{_SO}/attack_to_neutral_front.png", True),
+    (f"{_S}/attack_to_neutral/back",  f"{_SO}/attack_to_neutral_back.png",  True),
+    (f"{_S}/death/front",           f"{_SO}/death_front.png",           True),
+    (f"{_S}/death/back",            f"{_SO}/death_back.png",            True),
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -196,7 +215,10 @@ def export_all() -> None:
 
     ok = skipped = 0
 
-    for src_rel, dst_rel in EXPORTS:
+    for entry in EXPORTS:
+        src_rel, dst_rel = entry[0], entry[1]
+        flip_h : bool = entry[2] if len(entry) > 2 else False
+
         src = os.path.join(ROOT, src_rel)
         dst = os.path.join(ROOT, dst_rel)
 
@@ -219,6 +241,8 @@ def export_all() -> None:
 
         images = [Image.open(os.path.join(src, f)).convert("RGBA")
                   for f in frame_files]
+        if flip_h:
+            images = [img.transpose(Image.FLIP_LEFT_RIGHT) for img in images]
         fw, fh = images[0].size
 
         # Assemble horizontal strip at source size
@@ -236,8 +260,9 @@ def export_all() -> None:
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         scaled.save(dst)
 
+        flip_tag : str = "  [flipped]" if flip_h else ""
         print(f"  OK    {len(images)} frames  "
-              f"{fw}x{fh}px → {fw * SCALE}x{fh * SCALE}px  |  {dst_rel}")
+              f"{fw}x{fh}px → {fw * SCALE}x{fh * SCALE}px  |  {dst_rel}{flip_tag}")
         ok += 1
 
     print(f"\nDone.  {ok} exported,  {skipped} skipped.")
