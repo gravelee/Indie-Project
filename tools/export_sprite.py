@@ -2,7 +2,7 @@
 """
 Sprite export tool for Echoes of the Void.
 
-Edit EXPORTS, SCALE, and METHOD at the top, then run:
+Edit SCALE, METHOD and EXPORTS at the top, then run:
   python3 tools/export_sprite.py
 
 For each entry the script will:
