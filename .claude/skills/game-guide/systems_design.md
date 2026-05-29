@@ -1,0 +1,350 @@
+---
+name: Systems Design Reference
+description: Game systems design — resources (Energy/Flow/Focus), emergent class system, EXP & talent system, combat mechanics, save system, gear & durability, progression, multiplayer scope. Load this when working on any game system, stat design, or progression-related decisions.
+type: reference
+---
+
+# Systems Design Reference
+
+**See also**: SKILL.md (technical/code standards), world_design.md (lore/world), zone1_design.md (Zone 1 content), dungeon_design.md (dungeon rooms/bosses/puzzles)
+
+## TL;DR [NEEDS REVIEW]
+- **Energy**: depletes from running, rolling, jumping, swimming, pushing/throwing, weapon attacks, spells, active shield abilities. Does NOT deplete from passively holding shield. Regens out of combat only.
+- **Flow** (was mana/mp): used for magic abilities. Regens out of combat only.
+- **Focus** (was rage): builds IN combat from landing hits and taking hits. Decays out of combat. Spent on powerful decisive actions.
+- **Hybrid leveling**: every quest completed = 1 guaranteed stat point (no EXP cost). EXP from combat/exploration buys additional stat points OR talent points — player's choice each time.
+- No class selection screen. Class identity emerges from stat investment + tools found.
+- **Faint mechanic**: party members faint at 0 HP — no permanent death. Game over ONLY if Ares himself is down with no conscious companion to help.
+- EXP accumulated since last autosave is lost on Ares's death. Gear durability -10% on death.
+- Autosave at: puzzle room cleared, dungeon room cleared, boss defeated, quest step complete, new zone/dungeon discovered.
+- Gear: equip slots (weapon, shield, helmet, chest, legs, boots, ring×2, necklace). WoW-style durability — degrades, repaired at blacksmith, never disappears.
+- Talent scrolls: boss drops, class-influenced by current stat profile. Go to talent book. Must spend EXP (talent points) to activate.
+
+## Table of Contents
+1. [Resource System](#resource-system)
+2. [Emergent Class System](#emergent-class-system)
+3. [EXP & Talent System](#exp-talent-system)
+4. [Combat System](#combat-system)
+5. [Save System](#save-system)
+6. [Gear & Durability](#gear-durability)
+7. [Progression System](#progression-system)
+8. [Multiplayer — Post-Launch DLC Only](#multiplayer)
+
+---
+
+## 1. Resource System {#resource-system}
+
+Three resources. All characters can have all three — investment in stats determines how much
+of each they accumulate. No resource is class-locked.
+
+### Energy
+- **Stat base**: AGI
+- **Used for**: Running, rolling, jumping, swimming, pushing/throwing objects, weapon attacks,
+  spells, and active shield abilities (e.g. Shield Bash). Universal — both Weaponmaster and
+  Spellcaster spend Energy.
+- **NOT used for**: Passively holding the shield. Blocking is free while held.
+- **Regeneration**: Out of combat only. Creates a natural fight duration limit.
+- **Design intent**: Forces real decisions. Sprint everywhere = less for combat.
+  A long fight drains everyone regardless of class.
+
+### Flow
+- **Was**: Mana (mp in stats.gd — rename throughout)
+- **Stat base**: SPR (spirit)
+- **Used for**: Magic abilities and spells.
+- **Regeneration**: Out of combat only.
+- **Design intent**: A Weaponmaster who invests heavily in SPR can accumulate and use Flow.
+  A Spellcaster who ignores SPR will run dry quickly. Hybrid builds are valid.
+
+### Focus
+- **Was**: Rage (rename throughout stats.gd, ability.gd, hud.gd)
+- **Stat base**: STR / combat actions
+- **Used for**: Powerful combat abilities that require commitment and rhythm.
+- **Regeneration**: Builds DURING combat — increases when landing hits and taking hits
+  (adrenaline response: pain sharpens focus, successful hits build rhythm).
+  Decays out of combat — fades when danger passes.
+- **Design intent**: Focus is adrenaline. The longer you stay in a fight and perform well,
+  the more you can spend on decisive actions. It does not exist outside of danger.
+  Players who engage aggressively have more Focus to spend. Passive players have none.
+
+### Resource Rename Checklist (code)
+When implementing resource renames, update these files:
+- `stats.gd` — variable names: `rage` → `focus`, `mp` / `mana` → `flow`
+- `ability.gd` — cost fields, damage calculations referencing rage/mana
+- `hud.gd` — bar labels, colors
+- `abilities.gd` — ability definitions using rage/mana costs
+- `creature.gd` — any rage/mana references in AI logic
+- `player.gd` — any rage/mana references
+
+---
+
+## 2. Emergent Class System {#emergent-class-system}
+
+**There is no class selection screen.** The player selects their race at game start — that is the
+only character creation choice. Everything else emerges through play.
+
+### How Classes Emerge
+The player spends EXP on stat points. Stat investment shapes which resources grow, which
+abilities become available, and which talent trees open. Over time the game reflects back what
+the player has become — not what they chose.
+
+- Heavy AGI investment + physical weapon use → Weaponmaster playstyle
+- Heavy SPR investment + spell use → Spellcaster playstyle
+- High AGI + stealth abilities found → drifts toward Rogue-type
+- High INT + summoning scrolls found → drifts toward Summoner-type
+- Mixed stats → hybrid identity
+
+The two **fundamental archetypes** are Weaponmaster and Spellcaster. All subclasses
+(rogue-type, summoner, pet commander, shapeshifter, etc.) are emergent refinements of these
+two directions based on stat choices and abilities acquired.
+
+### Weaponmaster
+- Uses any weapon — melee or ranged. Starts with a sword for the tutorial.
+  Ranged begins with a bow and expands to thrown weapons later.
+- Primary resource: Energy + Focus
+- No magic required. Pure body, weapon, and trained technique.
+- Talent trees unlock based on weapon type used and AGI/STR thresholds.
+- Example subclass directions: heavy melee (high STR/DEF), precision ranged (high AGI),
+  dual-weapon fast (high AGI/STR), rogue-type stealth (AGI + specific ability scrolls found).
+
+### Spellcaster
+- Chooses spells from an available list as they are found/unlocked.
+  Spell selection defines actual playstyle — two Spellcasters with different spell picks
+  play completely differently.
+- Primary resource: Flow + Energy
+- Talent trees unlock based on INT/SPR thresholds and spell types equipped.
+- Example subclass directions: ranged burst (high INT, long-range spells), AoE control
+  (Frost Nova + ground spells), summoner (specific summon scrolls + INT), close-range
+  explosive (short-range AoE spells + higher Energy use).
+
+### Race + Playstyle Quest Branches
+Certain quests are triggered by a combination of race AND emergent playstyle.
+Example: A Sylviri who has developed Spellcaster tendencies might receive a unique quest
+chain about their race's historical connection to Verdant Resonance. A Verak Weaponmaster
+might encounter quest lines about an ancient stone-warrior tradition.
+These quests are additive — they don't lock other content, they add to it.
+
+---
+
+## 3. EXP & Talent System {#exp-talent-system}
+
+EXP is the single currency for all progression. It is also at risk — lost since the last save
+on death (see Save System section).
+
+### Hybrid Leveling (Settled Design)
+Two parallel progression tracks feed into the same stat growth:
+
+**Track 1 — Quest stat point** (guaranteed):
+- Every completed quest awards 1 stat point directly. No EXP spend required.
+- Reliable floor: a player who does quests always grows, even if they avoid combat.
+- Zone 1 has ~14-21 quests total (main + side) → lands the player at roughly level 2-3
+  by the time the cave is complete. That math is intentional.
+
+**Track 2 — EXP-bought stat or talent points** (player choice):
+- EXP from creature kills, room clears, exploration, and puzzle solves accumulates as normal.
+- Player spends this EXP on additional stat points OR talent points — their choice each time.
+- Two clear tracks: more raw power (stats) vs. more depth (talents).
+
+These are additive. Quest rewards give guaranteed growth. EXP rewards let the player
+decide where to invest extra.
+
+### EXP Flow
+```
+Kill creatures / clear rooms / explore / puzzles
+         ↓
+    EXP accumulated
+         ↓
+    Player spends EXP
+    ↙              ↘
+Stat points      Talent points
+(STR, AGI,       (spent on talent
+STA, etc.)        chains in talent book)
+
+PLUS: every completed quest → +1 stat point (guaranteed, no EXP cost)
+```
+
+No separate currency for talents. EXP is everything (beyond quest rewards). This creates
+meaningful decisions: invest in raw stats (more HP, more Energy, etc.) or invest in talent depth.
+
+### Talent Book
+- The player has a talent book UI (opened with a key).
+- Talents appear in the book only when a talent scroll has been found/dropped.
+- Having a talent in the book does NOT mean it is active.
+- To activate a talent: the chain prerequisite must be met AND the player must spend
+  talent points (bought with EXP) on it.
+
+### Talent Chains
+- Talents exist in chains: Tier A → Tier B → Tier C.
+- Tier B only becomes available after Tier A is maxed.
+- Chain tiers are what gate progression, NOT item rarity.
+- Drop chance reflects chain position: Tier A abilities drop more commonly, Tier B less so,
+  Tier C are rare drops. This is the only rarity distinction for talents.
+
+### Boss Ability Scroll Drops
+- Every dungeon boss has a chance to drop one or more talent ability scrolls.
+- Scrolls are class-influenced: a player with Weaponmaster tendencies (high AGI/STR, physical
+  weapon use) receives Weaponmaster-relevant drops. A Spellcaster receives magic-type drops.
+  The dungeon reads the player's current stat profile to determine drop pool.
+- The dropped ability is one the boss itself uses — a signature move.
+- Examples: Stone Golem drops "Granite Skin" (defensive passive), Frost Mage drops
+  "Ice Lance" (ranged projectile ability), Rat King drops "Frenzy" (speed burst on low HP).
+- Scrolls go to the talent book. Player then spends EXP (talent points) to activate if
+  the chain prerequisite is already met.
+- This is the primary reason to re-run dungeons: farming for a specific talent scroll
+  the player didn't get last time, or getting a higher-chain drop they couldn't use yet.
+
+---
+
+## 4. Combat System {#combat-system}
+
+### Philosophy
+Combat must feel responsive and skill-based. Player skill matters more than stats. A skilled
+lower-level player should beat content above their level through good execution. Difficulty
+does not scale to the player — the world is set, the player rises to meet it.
+
+### Active Mechanics (Zelda-style)
+- **Blocking**: Hold a shield button — NOT passive chance. When raised: reduced move speed,
+  blocks frontal hits. **Does NOT drain Energy while held** — passive blocking is free.
+  Directional — only blocks from facing direction.
+  The `block` stat in stats.gd = maximum block value, but trigger is always explicit input.
+  **Shield abilities** (e.g. Shield Bash) are active moves that DO cost Energy — passive hold
+  and active abilities are distinct.
+- **Dodge roll**: Short invincibility frames, directional, costs Energy. Timing-based.
+- **Knockback**: ALL entities (player and creatures) knocked back on damage.
+  Velocity impulse away from attacker. Duration: 0.15-0.25s. Force: 200-400 px/s.
+  Use Tween to smoothly return control after knockback.
+- **Hit flash**: On damage — modulate sprite to Color(2, 2, 2) for 0.08-0.12s, then return.
+  Use a Tween. Required on ALL damageable entities: player, creatures, props.
+- **Attack cone**: 80px radius, 45° quarter-cone. Keep tight and responsive.
+  Hit detection is instant — no lag between input and resolution.
+
+### Resource-Based Combat
+- Energy: spending Energy on abilities means less for rolling/fleeing. Every fight has a
+  natural endpoint — no infinite sustain.
+- Focus: builds during combat (landing hits, taking hits — adrenaline sharpening). Spent on
+  powerful decisive actions. Decays out of combat. Players who engage aggressively have more.
+- Flow: magic abilities. High-cost spells drain quickly. Out-of-combat regen only.
+
+### Boss Design Principles
+- Every boss: 3+ distinct attack patterns.
+- Players CAN kill any boss any way. Certain stat builds/talent combinations are
+  significantly more efficient (rewards class mastery and appropriate talent investment).
+- Visual telegraphing: windup animation + AoE indicator before heavy attacks.
+- Enrage on hard content (punishes passive play, rewards aggression).
+- Soft level gate: recommended level suggested, not enforced.
+- 2 bosses per dungeon: mid-dungeon gate and final boss.
+- Final boss has a chance to drop a talent scroll (class-influenced).
+
+### Status Effects
+Bleed (DoT, physical), Poison (DoT, nature), Stun (no actions), Slow (reduced mspd),
+Freeze (no movement), Burn (DoT, fire). Each has duration + tick interval.
+
+---
+
+## 5. Save System {#save-system}
+
+**NOT a Year 1 Priority — Design Only.**
+
+### Faint Mechanic (Party Members — Settled Design)
+- **Party members** (Mike, Felan, Vinie, etc.) do NOT die permanently. At 0 HP they **faint**
+  — they fall unconscious and must be treated (carried, stabilized) before they can move again.
+  A fainted companion becomes dead weight. If you are escorting multiple people, a fainted
+  one forces a hard choice.
+- **Game over condition for party members**: There is none. They always recover after the
+  encounter ends (or if Ares treats them).
+- **Game over for Ares**: Only if Ares reaches 0 HP in a situation where NO conscious
+  companion can help him — i.e., he is alone or all companions are also fainted. If any
+  conscious ally is present, Ares is treated and survives.
+- **Design intent**: Permanent party death is removed. Tension comes from management:
+  keeping companions alive is harder, costs attention, and a fainted companion cannot help.
+  The escort sequences remain genuinely tense without being punishing.
+
+### Death & Respawn — Ares Only (Settled Design)
+- **Lore frame**: The player's soul is commanded by a higher purpose. Death is not the end —
+  the soul is pulled back. This is not a resurrection mechanic explained as magic. It is the
+  world's acknowledgment that the player's mission is unfinished.
+- **Respawn location**: Player respawns at their corpse location (the exact spot they died).
+  Not at a checkpoint, not at a town. Their body is there — they must return to themselves.
+- **Respawn cost**: Durability penalty on all gear (-10%) + all EXP accumulated since last
+  autosave is lost. Progress (room clears, puzzle solutions) resets to the last autosave.
+- **Design intent**: Fear of loss drives skill-building. Players who take unnecessary risks
+  and die repeatedly feel the cost accumulate. Players who learn, adapt, and execute cleanly
+  are rewarded by never paying that cost. Skill is the real protection, not a respawn shield.
+- **No death screen punishment beyond the above.** The player is returned immediately.
+  The grief is in what was lost, not in being lectured at.
+
+### BOTW-Style Autosave at Milestones
+The game autosaves when the player achieves a meaningful progression point:
+- Puzzle room completed
+- Dungeon room cleared of all enemies
+- Boss defeated
+- Story quest step completed
+- Discovered a new zone or dungeon entrance
+- Specific overworld events
+
+### Risk Layer
+EXP accumulated since the last save is lost on death. The player can continue from their last
+autosave or last manual save. This creates tension during long dungeon runs — the further you
+push without a milestone save, the more you risk losing.
+
+### Mandatory Challenge Sections
+Some dungeon sections require completing without dying for the autosave to trigger. These are
+deliberate design choices — not punishment, but a moment where the game demands sustained focus.
+These sections should be telegraphed clearly before they begin.
+
+### Manual Save
+Available at town inns and specific safe points in the world. Manual save always available at
+dungeon entrances (before entering).
+
+---
+
+## 6. Gear & Durability {#gear-durability}
+
+### Gear System
+Equippable items add flat stat bonuses. Slots: weapon, shield, helmet, chest, legs, boots,
+ring ×2, necklace. Items drop from bosses and creatures. Rarity tiers exist for gear ONLY
+(not for talent scrolls): Common, Uncommon, Rare, Epic, Legendary.
+
+### Durability (WoW-style)
+- Every equipped piece has durability 0-100.
+- Degrades on: death (all gear -10%), taking damage (armor -1 per sustained hits), extended
+  combat (weapon degrades with heavy use).
+- At 0 durability: item provides zero stat bonus. Player warned before reaching 0.
+- Repaired at: town blacksmith NPC. Repair cost scales with item level and degradation.
+- Design intent: gold sink, reason to return to town, tension during long dungeon runs.
+- This is NOT BOTW weapon breaking — gear is precious and should never disappear,
+  only degrade and be repaired.
+
+---
+
+## 7. Progression System {#progression-system}
+
+### Character Progression Flow
+- **EXP** accumulates from: creature kills, quest completions, room clears, puzzles solved.
+- **EXP spent on stat points**: STR, AGI, STA, INT, SPR, RES, DEF. No consecutive same-stat
+  rule (already in stats.gd).
+- **EXP spent on talent points**: talent points spent on chain-unlocked talents in talent book.
+- **Level**: derived from base stats average `(STR+AGI+STA+INT+SPR+RES+DEF)/7 + 1`.
+- **HP**: `20 + STA×2 + level×2`.
+- **Rank**: 14 cosmetic ranks (Unranked → SSS/Kami) based on total EXP accumulated.
+
+### Upgrade Sources
+- Dungeon bosses: gear drops (rarity-tiered), talent scrolls (chance-based, class-influenced).
+- Overworld exploration: hidden EXP caches, stat-boost shrines.
+- Quests: EXP rewards, unique gear, new abilities.
+- Vendors: consumables (potions, food buffs), gear repair.
+
+### Economy
+- Gold from: creature drops, selling gear, quest rewards.
+- Gold sinks: gear repair (durability), consumables, inn rest, vendor services.
+- Simple shop UI per town. No auction house.
+
+---
+
+## 8. Multiplayer — Post-Launch DLC Only {#multiplayer}
+
+Not in scope for the base game. Do not build any networking infrastructure in year 1.
+
+Vision: online co-op for dungeons only (not overworld). WoW LFG-style matchmaking.
+Players must have the same main quest progression to enter together. Roles: tank, DPS, healer.
+Creature count and levels scale to party size. Multi-player puzzles in the style of
+Four Swords Adventures — puzzles requiring coordinated action from multiple players.
