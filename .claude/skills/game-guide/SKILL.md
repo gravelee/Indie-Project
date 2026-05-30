@@ -54,19 +54,24 @@ Zone 2 implementation       → after Zone 2 story
 ```
 
 ### Current Status *(update this whenever a milestone is hit)*
-- **Last completed**: Phase 1 Core Feel (code-side). player.gd, stats.gd, asset_loader.gd,
-  creature.gd all built and running. Combat confirmed working: hit flash (red tint, GL Compat
-  safe), knockback, DEAD fade, player Space attack (arc + distance). Creature directional
-  animations confirmed working. Export pipeline built (`tools/export_sprite.py`, rotsprite/
-  Scale3x). Rat idle_neutral + move front/back exported and in-game.
-- **Active work**: Deciding next step — see options below.
-- **Next session target**: TBD.
+- **Last completed**: Full creature combat AI — 11-state FSM (IDLE_NEUTRAL → DEAD), aggression
+  types (hostile/neutral/passive + void_touched), has_home/can_wander/temp_home leash system,
+  three speed tiers (wander < chase×1.5 < return×2.0), seamless front↔back facing mid one-shot
+  animations, NOTICE state, NEUTRAL_TO_ATTACK/ATTACK_TO_NEUTRAL stances, DEATH animation +
+  90s corpse hold + 2.5s fade + queue_free. Player receive_hit: red flash + decaying knockback
+  (same pattern as creature). Weapon sprite system removed from player.gd (attack art TODO).
+  Sprite rendering standard established: ALPHA_CUT_DISABLED + TEXTURE_FILTER_NEAREST on all
+  sprites — fixes corpse fringe and tree billboard seam artifacts.
+- **Active work**: Ready to push. Next: Phase 2 Playability.
+- **Next session target**: Resource rename (rage→focus, mana→flow) OR hotbar UI.
 - **Blocked on**: Nothing.
 
 ### What the test map currently has (all hardcoded in main.gd `_ready()`)
 - Ground: 25×25 checkerboard PlaneMesh tiles + WorldBoundaryShape3D collision
 - Trees (Sprite3D + fade), water tiles, ledge, ramp, cliff, mountain (box obstacles)
-- Player at (12, 0, 20). 2 rats + 1 snake hand-placed.
+- Player at (12, 0, 20).
+- 4 test creatures: rat hostile+home+wander, rat hostile+home+no-wander, snake hostile+no-home+wander,
+  rat neutral+no-home+no-wander.
 - No CSV loading. No tilemap system. All world content hardcoded.
 
 ### Pending (no priority order yet)
@@ -192,6 +197,16 @@ proven reason.
   Never use `BILLBOARD_ENABLED` (full billboard breaks top-down look).
 - **pixel_size**: `1.0 / 32.0` — converts pixel coordinates to world units.
   At 96px sprite, world height = `96 * pixel_size = 3.0`.
+- **Required sprite settings** (ALL sprites — entity, prop, tree, anything):
+  ```gdscript
+  sprite.alpha_cut      = SpriteBase3D.ALPHA_CUT_DISABLED
+  sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+  ```
+  `TEXTURE_FILTER_NEAREST`: the real fix for fringe artifacts. Prevents bilinear UV bleed at
+  atlas frame boundaries and GL triangle seams on large billboards (corpse fringe, tree center-line).
+  `ALPHA_CUT_DISABLED`: required so overlapping sprites don't occlude each other. OPAQUE_PREPASS
+  writes depth from sprite A, cutting holes in sprite B — do NOT use it. Modulate fades work
+  correctly with DISABLED since no depth writing occurs for transparent geometry.
 - **Z-sort**: Handled by Godot 3D engine via world Y position. No custom formula.
   `z_depth_offset` adjusts sprite anchor based on transparent bottom rows of the sprite.
 - **Directional animations**: Sprites do NOT rotate with camera. 8-direction animation set
@@ -339,6 +354,43 @@ func _start_death_fade() -> void:
     ...
 ```
 
+**Knockback impulse** — never add knockback directly to `velocity`. `_handle_movement()` runs
+next frame and overwrites `velocity.x/z`, killing the impulse in one tick (invisible). Instead,
+use a separate decaying `_knockback_vel` applied AFTER movement each frame:
+```gdscript
+const KNOCKBACK_STRENGTH : float = 6.0
+const KNOCKBACK_FRICTION : float = 20.0
+var _knockback_vel : Vector3 = Vector3.ZERO
+
+# In _physics_process, after _handle_movement():
+if _knockback_vel.length_squared() > 0.01:
+    velocity.x += _knockback_vel.x
+    velocity.z += _knockback_vel.z
+    _knockback_vel = _knockback_vel.move_toward(Vector3.ZERO, KNOCKBACK_FRICTION * delta)
+else:
+    _knockback_vel = Vector3.ZERO
+
+# In receive_hit / _apply_knockback:
+func _apply_knockback(dir: Vector3) -> void:
+    var flat : Vector3 = Vector3(dir.x, 0.0, dir.z)
+    if flat.length_squared() > 0.0:
+        _knockback_vel = flat.normalized() * KNOCKBACK_STRENGTH
+```
+Applied in: `player.gd`, `creature.gd`. Tune: STRENGTH = force of push, FRICTION = decay speed
+(higher = shorter slide). At 6.0 / 20.0 the slide lasts ~0.3s.
+
+**Sprite rendering — required on every new SpriteBase3D node:**
+```gdscript
+sprite.alpha_cut      = SpriteBase3D.ALPHA_CUT_DISABLED
+sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+```
+- `TEXTURE_FILTER_NEAREST` prevents bilinear bleed at atlas frame edges and GL triangle seams
+  on large billboards. Without it: horizontal fringe on corpses, vertical line on tall trees.
+- `ALPHA_CUT_DISABLED` is mandatory for overlapping sprites. `ALPHA_CUT_OPAQUE_PREPASS` was
+  tried and caused sprite A's depth prepass to cut holes in sprite B when they overlap — do NOT
+  use it. `DISABLED` skips depth writes so sprites alpha-blend correctly over each other.
+  Modulate fades (tween modulate:a) still work correctly with DISABLED.
+
 ---
 
 ## 4. Weapon System
@@ -416,8 +468,8 @@ the player must read to dodge.
 - `creature.gd _attack_damage()` — returns flat 5.0. Replace with `ability.use()`.
 - `creature.gd State.ATTACK` — calls `player.receive_hit(flat_damage, dir)` directly.
   Replace with ability resolution (resist → dodge → block → damage → crit).
-- `player.gd receive_hit(_damage, _knockback_dir)` — empty stub.
-  Wire to `stats.take_damage()` + knockback velocity + death in Phase 2.
+- `player.gd receive_hit(_damage, _knockback_dir)` — partially implemented: red flash + decaying
+  knockback velocity work. Wire `_damage` to `stats.take_damage()` + player death in Phase 2.
 - A* pathfinding not yet ported — creatures use direct `move_toward` (ignore obstacles).
   Add `pathfinder.gd` port from old project as a separate task.
 
@@ -437,8 +489,8 @@ the player must read to dodge.
 8. Hotbar UI (1-0 keys, ability icons, cooldown overlay)
 9. Ability / talent book panel UI
 10. More Weaponmaster abilities (melee + ranged options)
-11. Neutral creature type (aggros only if player attacks first)
-12. Creature loot drops + corpse state
+11. ~~Neutral creature type~~ ✓ DONE — neutral creatures aggro when hit (creature.gd receive_hit)
+12. Creature loot drops + corpse looting
 13. Player backpack / inventory panel
 14. Attack area calculation review
 

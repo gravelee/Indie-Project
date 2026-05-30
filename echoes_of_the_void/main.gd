@@ -319,7 +319,8 @@ func _build_tree(world_pos: Vector3) -> void:
 	sprite.texture = _get_tree_texture()
 	sprite.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 	sprite.pixel_size = TILE_SIZE / 32.0
-	sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
+	sprite.alpha_cut      = SpriteBase3D.ALPHA_CUT_DISABLED
+	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	var wh : float = sprite.texture.get_height() * sprite.pixel_size
 	sprite.position = Vector3(world_pos.x, wh * 0.5 - TREE_SINK, world_pos.z)
 	add_child(sprite)

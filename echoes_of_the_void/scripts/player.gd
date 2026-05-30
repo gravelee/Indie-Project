@@ -60,6 +60,11 @@ var _anim_key : String = "idle_neutral_south"
 var _attack_timer     : float = 0.0
 var _attack_requested : bool  = false
 
+# Knockback
+const KNOCKBACK_STRENGTH : float = 6.0
+const KNOCKBACK_FRICTION : float = 20.0
+var _knockback_vel : Vector3 = Vector3.ZERO
+
 
 # =============================================================================
 # INIT
@@ -91,7 +96,8 @@ func _build_sprite() -> void:
 	sprite.name       = "Sprite"
 	sprite.billboard  = BaseMaterial3D.BILLBOARD_FIXED_Y
 	sprite.pixel_size = 1.0 / 32.0
-	sprite.alpha_cut  = SpriteBase3D.ALPHA_CUT_DISABLED
+	sprite.alpha_cut      = SpriteBase3D.ALPHA_CUT_DISABLED
+	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	sprite.position.y = SPRITE_SIZE * sprite.pixel_size * 0.5
 	add_child(sprite)
 
@@ -123,8 +129,9 @@ func _add_strip(frames: SpriteFrames, anim: String, fps: float,
 		var frame_count : int      = sheet.get_width() / SPRITE_SIZE
 		for i : int in range(frame_count):
 			var atlas := AtlasTexture.new()
-			atlas.atlas  = sheet
-			atlas.region = Rect2(i * SPRITE_SIZE, 0, SPRITE_SIZE, SPRITE_SIZE)
+			atlas.atlas       = sheet
+			atlas.region      = Rect2(i * SPRITE_SIZE, 0, SPRITE_SIZE, SPRITE_SIZE)
+			atlas.filter_clip = true
 			frames.add_frame(anim, atlas)
 	else:
 		frames.add_frame(anim, _make_placeholder(), 0)
@@ -149,6 +156,14 @@ func _physics_process(delta: float) -> void:
 
 	_handle_movement()
 	_handle_attack(delta)
+
+	if _knockback_vel.length_squared() > 0.01:
+		velocity.x += _knockback_vel.x
+		velocity.z += _knockback_vel.z
+		_knockback_vel = _knockback_vel.move_toward(Vector3.ZERO, KNOCKBACK_FRICTION * delta)
+	else:
+		_knockback_vel = Vector3.ZERO
+
 	_sync_anim()
 	move_and_slide()
 
@@ -256,9 +271,22 @@ func _handle_attack(delta: float) -> void:
 
 
 # Called by creatures when their attack lands.
-# TODO Phase 2: wire to stats.take_damage(), add knockback, add death.
-func receive_hit(_damage: float, _knockback_dir: Vector3) -> void:
-	pass
+# TODO Phase 2: wire to stats.take_damage() and death once HUD + stat bars are in.
+func receive_hit(_damage: float, knockback_dir: Vector3) -> void:
+	_start_hit_flash()
+	_apply_knockback(knockback_dir)
+
+
+func _start_hit_flash() -> void:
+	var tw := create_tween()
+	tw.tween_property(sprite, "modulate", Color(1.0, 0.15, 0.15, 1.0), 0.05)
+	tw.tween_property(sprite, "modulate", Color.WHITE,                  0.10)
+
+
+func _apply_knockback(dir: Vector3) -> void:
+	var flat : Vector3 = Vector3(dir.x, 0.0, dir.z)
+	if flat.length_squared() > 0.0:
+		_knockback_vel = flat.normalized() * KNOCKBACK_STRENGTH
 
 
 func _do_attack() -> void:

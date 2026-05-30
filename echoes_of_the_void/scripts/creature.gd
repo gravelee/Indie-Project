@@ -115,9 +115,10 @@ var _force_wander    : bool    = false
 
 # ── Combat ─────────────────────────────────────────────────────────────────
 
-var _knockback_vel : Vector3 = Vector3.ZERO
-var _attack_timer  : float   = 0.0
-var _home_max_dist : bool    = false   # set when leash exceeded during combat
+var _knockback_vel  : Vector3 = Vector3.ZERO
+var _attack_timer   : float   = 0.0
+var _home_max_dist  : bool    = false   # set when leash exceeded during combat
+var _chosen_attack  : String  = ""      # locked on ATTACK state entry; stable for full swing
 
 
 # =============================================================================
@@ -172,8 +173,9 @@ func _build_sprite() -> void:
 	sprite.name       = "Sprite"
 	sprite.billboard  = BaseMaterial3D.BILLBOARD_FIXED_Y
 	sprite.pixel_size = 1.0 / 32.0
-	sprite.alpha_cut  = SpriteBase3D.ALPHA_CUT_DISABLED
-	sprite.position.y = float(SPRITE_SIZE) * sprite.pixel_size * 0.5
+	sprite.alpha_cut      = SpriteBase3D.ALPHA_CUT_DISABLED
+	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	sprite.position.y     = float(SPRITE_SIZE) * sprite.pixel_size * 0.5
 	add_child(sprite)
 
 
@@ -213,8 +215,9 @@ func _load_animations() -> void:
 		frames.set_animation_loop(anim_name, anims[anim_name])
 		for i : int in range(frame_count):
 			var atlas := AtlasTexture.new()
-			atlas.atlas  = tex
-			atlas.region = Rect2(i * SPRITE_SIZE, 0, SPRITE_SIZE, SPRITE_SIZE)
+			atlas.atlas       = tex
+			atlas.region      = Rect2(i * SPRITE_SIZE, 0, SPRITE_SIZE, SPRITE_SIZE)
+			atlas.filter_clip = true
 			frames.add_frame(anim_name, atlas)
 
 	AssetLoader.store_frames(sprite_path, frames)
@@ -472,6 +475,7 @@ func _set_state(new_state: State) -> void:
 		State.IDLE_ATTACK:
 			_update_facing_toward(player.global_position)
 		State.ATTACK:
+			_chosen_attack = _pick_attack_anim()
 			_update_facing_toward(player.global_position)
 		State.DEAD:
 			_start_death_fade()
@@ -541,7 +545,7 @@ func _sync_anim() -> void:
 		State.IDLE_ATTACK:            base = "idle_attack"
 		State.CHASE, State.RETURNING: base = "run"
 		State.ATTACK_TO_NEUTRAL:      base = "attack_to_neutral"
-		State.ATTACK:                 base = _pick_attack_anim()
+		State.ATTACK:                 base = _chosen_attack
 		State.DEATH:                  base = "death"
 		_:                            return
 
@@ -574,8 +578,11 @@ func _sync_anim() -> void:
 func _pick_attack_anim() -> String:
 	match type:
 		"rat":
-			if sprite.sprite_frames.has_animation("attack_slash_front"):
-				return "attack_slash"
+			var has_slash : bool = sprite.sprite_frames.has_animation("attack_slash_front")
+			var has_bite  : bool = sprite.sprite_frames.has_animation("attack_bite_front")
+			if has_slash and has_bite:
+				return "attack_slash" if randf() < 0.5 else "attack_bite"
+			if has_slash: return "attack_slash"
 			return "attack_bite"
 		"snake": return "attack_bite"
 		_:       return "attack_bite"
