@@ -268,10 +268,19 @@ removing states or adding code branches per creature. Examples:
 Rule: states are universal. Art and durations are per-creature data.
 
 **Corpse mechanic** (decided): WoW-style. Death animation plays → creature holds last frame
-as a lying-down corpse for ~90 seconds → then fades out. Corpse is lootable.
+as a lying-down corpse for ~90 seconds → then fades out (2.5s fade). Corpse is lootable.
 Art must be clean — no blood, no exposed bones. A rat lying on its side is fine for kids.
 Stardew Valley, Zelda, and Pokémon all do this in E/E10+ rated games. The mechanic is fine;
 the art style is what makes it appropriate. Never add gore.
+
+**Corpse collision** (decided): Corpses keep their collision shape after death (reduced height
+but same footprint). Intentional — explore frustration in playtesting first, then solve it
+creatively rather than removing it. Future ideas to explore:
+- Corpses can be pushed / dragged by the player (physics impulse or interact button)
+- Corpses as puzzle elements — block a pressure plate, fill a gap, redirect a creature patrol
+- Corpses as carrirable objects — pick up and throw (similar to boulder carry in Zelda)
+- Stacked corpses alter room traversal in interesting ways
+Do NOT remove corpse collision without a proper design pass. Test first.
 
 **Current status per creature**:
 

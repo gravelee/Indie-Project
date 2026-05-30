@@ -4,17 +4,29 @@ extends CharacterBody3D
 # CREATURE — base for all enemy/neutral entities.
 # Created programmatically by main.gd via set_script + call("init", ...).
 #
-# Phase 1: IDLE_NEUTRAL ↔ WANDER only.
-# Combat states (NOTICE, CHASE, ATTACK, DEATH…) added with combat system.
+# Build:  body.call("init", type, camera_rig, player, aggression, has_home, can_wander)
 #
-# Facing — 4 cases from 2 sprites + flip_h:
-#   wander_front.png  (drawn: front-right) flip_h=false → front-right
-#                                          flip_h=true  → front-left
-#   wander_back.png   (drawn: back-right)  flip_h=false → back-right
-#                                          flip_h=true  → back-left
+# States:
+#   IDLE_NEUTRAL ↔ WANDER                        (passive / wandering loop)
+#   IDLE_NEUTRAL / WANDER → NOTICE               (player enters notice range)
+#   NOTICE → NEUTRAL_TO_ATTACK                   (player still there)
+#   NEUTRAL_TO_ATTACK → CHASE / IDLE_ATTACK      (enter combat)
+#   IDLE_ATTACK ↔ CHASE                          (combat loop)
+#   IDLE_ATTACK → ATTACK → IDLE_ATTACK           (melee strike)
+#   any combat → ATTACK_TO_NEUTRAL → RETURNING   (player fled / leash hit)
+#   RETURNING → IDLE_NEUTRAL                     (arrived home)
+#   any → DEATH → DEAD                           (HP = 0)
 #
-# front/back determined by: _move_dir.dot(cam_forward) > 0 → moving away = back
-# left/right  determined by: _move_dir.dot(cam_right)  > 0 → moving right → flip_h=false (no flip)
+# Aggression types: "hostile" | "neutral" | "passive"
+#   hostile  — attacks on sight
+#   neutral  — ignores player; enters combat only when hit
+#   passive  — never attacks (not yet used)
+#   void_touched — forces hostile regardless of aggression_type
+#
+# TODO (stub — replace with ability system):
+#   _attack_damage() returns a flat constant.
+#   ATTACK state triggers raw stats.take_damage() on player.
+#   Remove both once ability.gd is wired.
 # =============================================================================
 
 const SPRITE_SIZE : int    = 96
@@ -22,37 +34,78 @@ const SPRITE_PATH : String = "res://assets/spritesheets/creatures/"
 const ANIM_SPEED  : int    = 8
 const GRAVITY     : float  = -20.0
 
-# Wander timing (seconds)
+# ── AI distances (world units; 32 px = 1 unit) ─────────────────────────────
+
+const NOTICE_DIR_DIST  : float = 10.0   # creature faces player, still won't wander
+const NOTICE_DIST      : float = 8.0    # triggers NOTICE state
+const CHASE_DIST       : float = 18.0   # leash — beyond this exits combat
+const ATTACK_DIST      : float = 1.6    # melee range (~1 tile + reach)
+const HOME_MAX_DIST    : float = 25.0   # forced return: applies in ALL states
+const HOME_ARRIVE_DIST : float = 0.5    # snap-to-home arrival threshold
+
+# ── Wander timing ──────────────────────────────────────────────────────────
+
 const WANDER_INTERVAL_MIN : float = 0.9
 const WANDER_INTERVAL_MAX : float = 1.1
 const WANDER_DURATION_MIN : float = 0.5
 const WANDER_DURATION_MAX : float = 3.0
-const WANDER_CHANCE       : float = 1.0   # probability of starting a wander on interval tick
+const WANDER_CHANCE       : float = 1.0
 
-const KNOCKBACK_STRENGTH : float = 8.0   # initial knockback velocity (world units/s)
-const KNOCKBACK_FRICTION : float = 25.0  # deceleration per second
+# ── Combat ─────────────────────────────────────────────────────────────────
 
-enum State { IDLE_NEUTRAL, WANDER, DEAD }
+const ATTACK_COOLDOWN    : float = 1.5   # seconds between attacks (stub)
+const CHASE_SPEED_MULT   : float = 1.5   # chase is 50% faster than wander
+const RETURN_SPEED_MULT  : float = 2.0   # return is faster than chase
+const KNOCKBACK_STRENGTH : float = 8.0
+const KNOCKBACK_FRICTION : float = 25.0
 
-# ---------------------------------------------------------------------------
-# Public refs — set by init()
-# ---------------------------------------------------------------------------
+# ── State ──────────────────────────────────────────────────────────────────
+
+enum State {
+	IDLE_NEUTRAL, WANDER,
+	NOTICE, NEUTRAL_TO_ATTACK,
+	IDLE_ATTACK, CHASE, ATTACK,
+	ATTACK_TO_NEUTRAL, RETURNING,
+	DEATH, DEAD
+}
+
+const ONE_SHOT_STATES : Dictionary = {
+	State.NOTICE: true, State.NEUTRAL_TO_ATTACK: true,
+	State.ATTACK_TO_NEUTRAL: true, State.ATTACK: true, State.DEATH: true
+}
+
+# ── Public refs ────────────────────────────────────────────────────────────
+
 var sprite     : AnimatedSprite3D
 var stats      : Stats
 var camera_rig : Node3D
+var player     : CharacterBody3D
 
-# ---------------------------------------------------------------------------
-# Internal state
-# ---------------------------------------------------------------------------
-var type        : String = "rat"
-var sprite_path : String = ""
+# ── Creature type ──────────────────────────────────────────────────────────
+
+var type           : String = "rat"
+var sprite_path    : String = ""
+var aggression_type: String = "hostile"   # "hostile" | "neutral" | "passive"
+var void_touched   : bool   = false
+
+# ── Behaviour flags ────────────────────────────────────────────────────────
+
+var can_wander    : bool    = true
+var has_home      : bool    = false
+var home_position : Vector3 = Vector3.ZERO
+var temp_home     : bool    = false   # true when immigrant sets combat entry as home
+
+# ── Animation / state ──────────────────────────────────────────────────────
 
 var state        : State   = State.IDLE_NEUTRAL
 var facing_right : bool    = false
 var facing_back  : bool    = false
-var _move_dir    : Vector3 = Vector3.BACK   # last known move direction
+var _move_dir    : Vector3 = Vector3.BACK
+var _anim_done   : bool    = false
+var _fading      : bool    = false
 
-# Wander
+# ── Wander ─────────────────────────────────────────────────────────────────
+
 var _wander_timer    : float   = 0.0
 var _wander_interval : float   = 1.0
 var _wander_elapsed  : float   = 0.0
@@ -60,25 +113,34 @@ var _wander_duration : float   = 1.0
 var _wander_dir      : Vector3 = Vector3.ZERO
 var _force_wander    : bool    = false
 
-# Combat
+# ── Combat ─────────────────────────────────────────────────────────────────
+
 var _knockback_vel : Vector3 = Vector3.ZERO
-var _fading        : bool    = false
+var _attack_timer  : float   = 0.0
+var _home_max_dist : bool    = false   # set when leash exceeded during combat
 
 
 # =============================================================================
 # INIT
 # =============================================================================
 
-func init(p_type: String, p_camera_rig: Node3D) -> void:
-	type        = p_type
-	sprite_path = SPRITE_PATH + type + "/"
-	camera_rig  = p_camera_rig
+func init(p_type: String, p_camera_rig: Node3D, p_player: CharacterBody3D,
+		p_aggression: String, p_has_home: bool, p_can_wander: bool) -> void:
+	type           = p_type
+	sprite_path    = SPRITE_PATH + type + "/"
+	camera_rig     = p_camera_rig
+	player         = p_player
+	aggression_type = p_aggression
+	has_home       = p_has_home
+	can_wander     = p_can_wander
 	add_to_group("creatures")
+
+	if has_home:
+		home_position = global_position   # set after add_child in main.gd
 
 	var s : Array = _stat_preset(type)
 	stats = Stats.new(s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8])
 
-	# Stagger wander start times so creatures don't all move at once
 	_wander_timer    = randf_range(0.0, 1.0)
 	_wander_interval = randf_range(WANDER_INTERVAL_MIN, WANDER_INTERVAL_MAX)
 
@@ -89,7 +151,6 @@ func init(p_type: String, p_camera_rig: Node3D) -> void:
 
 func _stat_preset(p_type: String) -> Array:
 	# [STR, AGI, STA, INT, SPR, RES, DEF, BMS, EXP]
-	# mspd = BMS + AGI * 0.5
 	match p_type:
 		"rat":   return [1, 1, 5, 0, 0, 0, 0, 2, 10]   # mspd = 2.5
 		"snake": return [2, 2, 3, 0, 0, 0, 0, 2, 15]   # mspd = 3.0
@@ -112,7 +173,7 @@ func _build_sprite() -> void:
 	sprite.billboard  = BaseMaterial3D.BILLBOARD_FIXED_Y
 	sprite.pixel_size = 1.0 / 32.0
 	sprite.alpha_cut  = SpriteBase3D.ALPHA_CUT_DISABLED
-	sprite.position.y = float(SPRITE_SIZE) * sprite.pixel_size * 0.5   # adjusted after load
+	sprite.position.y = float(SPRITE_SIZE) * sprite.pixel_size * 0.5
 	add_child(sprite)
 
 
@@ -120,36 +181,50 @@ func _load_animations() -> void:
 	var cached : SpriteFrames = AssetLoader.get_frames(sprite_path)
 	if cached:
 		sprite.sprite_frames = cached
+		sprite.animation_finished.connect(_on_anim_finished)
 		sprite.play("idle_neutral_front")
 		_compute_sprite_offset()
 		return
 
 	var frames := SpriteFrames.new()
-	# wander_back is optional — loaded when the file exists, skipped otherwise
-	for anim : String in ["idle_neutral_front", "idle_neutral_back", "wander_front", "wander_back"]:
-		var path : String = sprite_path + anim + ".png"
+
+	# anim_name → loop
+	var anims : Dictionary = {
+		"idle_neutral_front":       true,  "idle_neutral_back":       true,
+		"wander_front":             true,  "wander_back":             true,
+		"run_front":                true,  "run_back":                true,
+		"idle_attack_front":        true,  "idle_attack_back":        true,
+		"notice_front":             false, "notice_back":             false,
+		"neutral_to_attack_front":  false, "neutral_to_attack_back":  false,
+		"attack_bite_front":        false, "attack_bite_back":        false,
+		"attack_slash_front":       false, "attack_slash_back":       false,
+		"attack_to_neutral_front":  false, "attack_to_neutral_back":  false,
+		"death_front":              false, "death_back":              false,
+	}
+
+	for anim_name : String in anims:
+		var path : String = sprite_path + anim_name + ".png"
 		if not ResourceLoader.exists(path):
 			continue
 		var tex         : Texture2D = load(path)
 		var frame_count : int       = tex.get_width() / SPRITE_SIZE
-		frames.add_animation(anim)
-		frames.set_animation_speed(anim, float(ANIM_SPEED))
-		frames.set_animation_loop(anim, true)
+		frames.add_animation(anim_name)
+		frames.set_animation_speed(anim_name, float(ANIM_SPEED))
+		frames.set_animation_loop(anim_name, anims[anim_name])
 		for i : int in range(frame_count):
 			var atlas := AtlasTexture.new()
 			atlas.atlas  = tex
 			atlas.region = Rect2(i * SPRITE_SIZE, 0, SPRITE_SIZE, SPRITE_SIZE)
-			frames.add_frame(anim, atlas)
+			frames.add_frame(anim_name, atlas)
 
 	AssetLoader.store_frames(sprite_path, frames)
 	sprite.sprite_frames = frames
+	sprite.animation_finished.connect(_on_anim_finished)
 	sprite.play("idle_neutral_front")
 	_compute_sprite_offset()
 
 
 func _compute_sprite_offset() -> void:
-	# Scans idle_neutral first frame for transparent bottom rows and adjusts
-	# sprite.position.y so the bottom of the painted area sits at y=0 (feet).
 	var path : String = sprite_path + "idle_neutral_front.png"
 	if not ResourceLoader.exists(path):
 		return
@@ -166,7 +241,6 @@ func _compute_sprite_offset() -> void:
 # =============================================================================
 
 func _physics_process(delta: float) -> void:
-	# Gravity
 	if not is_on_floor():
 		velocity.y += GRAVITY * delta
 	else:
@@ -182,11 +256,10 @@ func _physics_process(delta: float) -> void:
 	else:
 		_knockback_vel = Vector3.ZERO
 
-	_update_facing()
 	_sync_anim()
 	move_and_slide()
 
-	# Wander collision recovery — only on wall/obstacle hits, not floor contact
+	# Wander collision recovery — pick new direction on wall/obstacle hit
 	if state == State.WANDER:
 		for i : int in get_slide_collision_count():
 			if get_slide_collision(i).get_normal().y < 0.5:
@@ -194,7 +267,14 @@ func _physics_process(delta: float) -> void:
 				break
 
 	stats.tick(delta)
-	stats.regen(delta)
+	# Regen only when out of combat
+	if state == State.IDLE_NEUTRAL or state == State.WANDER or state == State.RETURNING:
+		stats.regen(delta)
+
+
+func _on_anim_finished() -> void:
+	if state in ONE_SHOT_STATES:
+		_anim_done = true
 
 
 # =============================================================================
@@ -202,78 +282,303 @@ func _physics_process(delta: float) -> void:
 # =============================================================================
 
 func _update_state(delta: float) -> void:
+	var dist_sq : float = _dist_sq_to_player()
+
 	match state:
-		State.DEAD:
-			velocity.x = 0.0
-			velocity.z = 0.0
-			return
 
 		State.IDLE_NEUTRAL:
 			velocity.x = 0.0
 			velocity.z = 0.0
-			_wander_timer += delta
-			if _wander_timer >= _wander_interval:
-				_wander_timer    = 0.0
-				_wander_interval = randf_range(WANDER_INTERVAL_MIN, WANDER_INTERVAL_MAX)
-				if randf() < WANDER_CHANCE:
-					_force_wander = true
-					_set_state(State.WANDER)
+			# Within notice-direction range: face the player, suppress wander
+			if _is_aggressive() and dist_sq < NOTICE_DIR_DIST * NOTICE_DIR_DIST:
+				_update_facing_toward(player.global_position)
+				# Close enough to actually notice — enter NOTICE state
+				if dist_sq < NOTICE_DIST * NOTICE_DIST:
+					_set_state(State.NOTICE)
+					return
+			else:
+				# Normal wander tick — only when player is not in notice-direction range
+				if can_wander:
+					_wander_timer += delta
+					if _wander_timer >= _wander_interval:
+						_wander_timer    = 0.0
+						_wander_interval = randf_range(WANDER_INTERVAL_MIN, WANDER_INTERVAL_MAX)
+						if randf() < WANDER_CHANCE:
+							_force_wander = true
+							_set_state(State.WANDER)
+							return
+			# Wandered too far from home — return
+			if has_home and _dist_sq_to_home() > HOME_MAX_DIST * HOME_MAX_DIST:
+				_set_state(State.RETURNING)
 
 		State.WANDER:
+			# Notice check takes priority over wander
+			if _is_aggressive() and dist_sq < NOTICE_DIST * NOTICE_DIST:
+				_set_state(State.NOTICE)
+				return
+			# Wandered too far from home
+			if has_home and _dist_sq_to_home() > HOME_MAX_DIST * HOME_MAX_DIST:
+				_set_state(State.RETURNING)
+				return
+			# Resolve new direction on flag
 			if _force_wander:
 				_force_wander    = false
 				var angle        : float   = randf() * TAU
 				_wander_dir      = Vector3(sin(angle), 0.0, cos(angle))
 				_wander_elapsed  = 0.0
 				_wander_duration = randf_range(WANDER_DURATION_MIN, WANDER_DURATION_MAX)
-
 			_wander_elapsed += delta
 			velocity.x = _wander_dir.x * stats.mspd
 			velocity.z = _wander_dir.z * stats.mspd
 			_move_dir  = _wander_dir
-
+			_update_facing()
 			if _wander_elapsed >= _wander_duration:
 				_set_state(State.IDLE_NEUTRAL)
+
+		State.NOTICE:
+			velocity.x = 0.0
+			velocity.z = 0.0
+			# Player rushed into melee range — skip rest of notice anim
+			if dist_sq < ATTACK_DIST * ATTACK_DIST:
+				_set_state(State.NEUTRAL_TO_ATTACK)
+				return
+			if _anim_done:
+				# Only enter combat if player is still within notice distance —
+				# if player stepped back out during the animation, return to idle
+				if dist_sq < NOTICE_DIST * NOTICE_DIST:
+					_set_state(State.NEUTRAL_TO_ATTACK)
+				else:
+					_set_state(State.IDLE_NEUTRAL)
+
+		State.NEUTRAL_TO_ATTACK:
+			velocity.x = 0.0
+			velocity.z = 0.0
+			if _anim_done:
+				if dist_sq > CHASE_DIST * CHASE_DIST:
+					_set_state(State.ATTACK_TO_NEUTRAL)
+				elif dist_sq < ATTACK_DIST * ATTACK_DIST:
+					_set_state(State.IDLE_ATTACK)
+				else:
+					_set_state(State.CHASE)
+
+		State.IDLE_ATTACK:
+			velocity.x = 0.0
+			velocity.z = 0.0
+			_update_facing_toward(player.global_position)
+			# Leash check
+			if (has_home or temp_home) and _dist_sq_to_home() > HOME_MAX_DIST * HOME_MAX_DIST:
+				_home_max_dist = true
+				_set_state(State.ATTACK_TO_NEUTRAL)
+				return
+			# Player moved out of melee range
+			if dist_sq >= ATTACK_DIST * ATTACK_DIST:
+				if dist_sq < CHASE_DIST * CHASE_DIST:
+					_set_state(State.CHASE)
+				else:
+					_set_state(State.ATTACK_TO_NEUTRAL)
+				return
+			# Cooldown countdown → attack
+			_attack_timer = maxf(0.0, _attack_timer - delta)
+			if _attack_timer <= 0.0:
+				_set_state(State.ATTACK)
+
+		State.CHASE:
+			# Leash check
+			if (has_home or temp_home) and _dist_sq_to_home() > HOME_MAX_DIST * HOME_MAX_DIST:
+				_home_max_dist = true
+				_set_state(State.ATTACK_TO_NEUTRAL)
+				return
+			# Player ran away
+			if dist_sq > CHASE_DIST * CHASE_DIST:
+				_set_state(State.ATTACK_TO_NEUTRAL)
+				return
+			# Player within melee range
+			if dist_sq < ATTACK_DIST * ATTACK_DIST:
+				_update_facing_toward(player.global_position)
+				_set_state(State.IDLE_ATTACK)
+				return
+			_move_toward_target(player.global_position, stats.mspd * CHASE_SPEED_MULT)
+
+		State.ATTACK:
+			velocity.x = 0.0
+			velocity.z = 0.0
+			_update_facing_toward(player.global_position)
+			if _anim_done:
+				# Stub: deal flat damage if still in range
+				# TODO: replace with ability.use() once ability system is wired
+				if dist_sq < ATTACK_DIST * ATTACK_DIST:
+					var dir : Vector3 = player.global_position - global_position
+					dir.y = 0.0
+					if dir.length_squared() > 0.001:
+						dir = dir.normalized()
+					if player.has_method("receive_hit"):
+						player.call("receive_hit", _attack_damage(), dir)
+				_attack_timer = ATTACK_COOLDOWN
+				if dist_sq < ATTACK_DIST * ATTACK_DIST:
+					_set_state(State.IDLE_ATTACK)
+				elif dist_sq < CHASE_DIST * CHASE_DIST:
+					_set_state(State.CHASE)
+				else:
+					_set_state(State.ATTACK_TO_NEUTRAL)
+
+		State.ATTACK_TO_NEUTRAL:
+			velocity.x = 0.0
+			velocity.z = 0.0
+			if _anim_done:
+				# Re-engage if player is still nearby and leash was not the cause
+				if not _home_max_dist and dist_sq < CHASE_DIST * CHASE_DIST:
+					_set_state(State.NEUTRAL_TO_ATTACK)
+				else:
+					_set_state(State.RETURNING)
+
+		State.RETURNING:
+			var dist_home_sq : float = _dist_sq_to_home()
+			if dist_home_sq <= HOME_ARRIVE_DIST * HOME_ARRIVE_DIST:
+				_snap_to_home()
+				_set_state(State.IDLE_NEUTRAL)
+				return
+			# Re-engage if player wanders close while returning (leash was not the cause)
+			if not _home_max_dist and _is_aggressive() and dist_sq < NOTICE_DIST * NOTICE_DIST:
+				_set_state(State.NEUTRAL_TO_ATTACK)
+				return
+			_move_toward_target(home_position, stats.mspd * RETURN_SPEED_MULT)
+
+		State.DEATH:
+			velocity.x = 0.0
+			velocity.z = 0.0
+			if _anim_done:
+				_set_state(State.DEAD)
+
+		State.DEAD:
+			velocity.x = 0.0
+			velocity.z = 0.0
 
 
 func _set_state(new_state: State) -> void:
 	if state == new_state:
 		return
-	state = new_state
+	state     = new_state
+	_anim_done = false
+
+	match state:
+		State.NEUTRAL_TO_ATTACK:
+			# Immigrants record combat entry position as temp home (combat leash origin)
+			if not has_home:
+				home_position = global_position
+				temp_home     = true
+			_update_facing_toward(player.global_position)
+		State.NOTICE:
+			_update_facing_toward(player.global_position)
+		State.IDLE_ATTACK:
+			_update_facing_toward(player.global_position)
+		State.ATTACK:
+			_update_facing_toward(player.global_position)
+		State.DEAD:
+			_start_death_fade()
+			return   # no animation sync needed
+
+	# _sync_anim() will pick the correct animation next frame
 
 
 # =============================================================================
-# FACING + ANIMATION
+# MOVEMENT & FACING
 # =============================================================================
+
+func _move_toward_target(target: Vector3, speed: float) -> void:
+	var diff : Vector3 = target - global_position
+	diff.y = 0.0
+	if diff.length_squared() < 0.01:
+		velocity.x = 0.0
+		velocity.z = 0.0
+		return
+	var dir : Vector3 = diff.normalized()
+	velocity.x = dir.x * speed
+	velocity.z = dir.z * speed
+	_move_dir  = dir
+	_update_facing()
+
 
 func _update_facing() -> void:
-	if state == State.DEAD or camera_rig == null or _move_dir == Vector3.ZERO:
+	if camera_rig == null or _move_dir == Vector3.ZERO:
 		return
-	var h           : float   = camera_rig.h_angle
-	var cam_right   : Vector3 = Vector3( cos(h), 0.0, -sin(h))
-	var cam_forward : Vector3 = Vector3(-sin(h), 0.0, -cos(h))
-	facing_right  = _move_dir.dot(cam_right)   > 0.0   # left/right → flip_h
-	facing_back   = _move_dir.dot(cam_forward) > 0.0   # away from camera → back anim
-	sprite.flip_h = !facing_right  # sprites drawn facing right — flip when moving left
+	var h         : float   = camera_rig.h_angle
+	var cam_fwd   : Vector3 = Vector3(-sin(h), 0.0, -cos(h))
+	var cam_right : Vector3 = Vector3( cos(h), 0.0, -sin(h))
+	# dot > 0 with cam_fwd → moving away from camera → back animation
+	facing_back  = _move_dir.dot(cam_fwd)   > 0.0
+	# dot > 0 with cam_right → moving right → no flip (sprites drawn facing right)
+	facing_right = _move_dir.dot(cam_right) > 0.0
 
+
+func _update_facing_toward(target: Vector3) -> void:
+	var diff : Vector3 = target - global_position
+	diff.y = 0.0
+	if diff.length_squared() < 0.001:
+		return
+	_move_dir = diff.normalized()
+	_update_facing()
+
+
+# =============================================================================
+# ANIMATION
+# =============================================================================
 
 func _sync_anim() -> void:
 	if state == State.DEAD:
 		return
-	var target : String
-	if state == State.WANDER:
-		if facing_back and sprite.sprite_frames.has_animation("wander_back"):
-			target = "wander_back"
+
+	# Recompute facing every frame so flip_h stays correct when the camera
+	# rotates while the creature is stationary (attack, notice, stance anims).
+	if camera_rig != null and _move_dir != Vector3.ZERO:
+		_update_facing()
+
+	var base : String
+	match state:
+		State.IDLE_NEUTRAL:           base = "idle_neutral"
+		State.WANDER:                 base = "wander"
+		State.NOTICE:                 base = "notice"
+		State.NEUTRAL_TO_ATTACK:      base = "neutral_to_attack"
+		State.IDLE_ATTACK:            base = "idle_attack"
+		State.CHASE, State.RETURNING: base = "run"
+		State.ATTACK_TO_NEUTRAL:      base = "attack_to_neutral"
+		State.ATTACK:                 base = _pick_attack_anim()
+		State.DEATH:                  base = "death"
+		_:                            return
+
+	var target : String = base + ("_back" if facing_back else "_front")
+	if not sprite.sprite_frames.has_animation(target):
+		target = base + "_front"   # fallback — back variant may not exist yet
+	if not sprite.sprite_frames.has_animation(target):
+		return
+
+	if sprite.animation != target:
+		var same_base : bool = sprite.animation.begins_with(base)
+		if state in ONE_SHOT_STATES and sprite.is_playing() and same_base:
+			# Camera crossed front↔back threshold mid one-shot animation.
+			# Switch variant but continue from the same frame so the swing
+			# looks seamless rather than restarting from frame 0.
+			var cur_frame : int = sprite.frame
+			var max_frame : int = sprite.sprite_frames.get_frame_count(target) - 1
+			sprite.sprite_frames.set_animation_loop(target, false)
+			sprite.play(target)                       # resets to 0 internally
+			sprite.frame = mini(cur_frame, max_frame) # override before next tick
 		else:
-			target = "wander_front"
-	else:
-		if facing_back and sprite.sprite_frames.has_animation("idle_neutral_back"):
-			target = "idle_neutral_back"
-		else:
-			target = "idle_neutral_front"
-	if sprite.sprite_frames != null and sprite.sprite_frames.has_animation(target):
-		if sprite.animation != target:
+			sprite.sprite_frames.set_animation_loop(target, state not in ONE_SHOT_STATES)
+			sprite.stop()
+			sprite.frame = 0
 			sprite.play(target)
+
+	sprite.flip_h = not facing_right
+
+
+func _pick_attack_anim() -> String:
+	match type:
+		"rat":
+			if sprite.sprite_frames.has_animation("attack_slash_front"):
+				return "attack_slash"
+			return "attack_bite"
+		"snake": return "attack_bite"
+		_:       return "attack_bite"
 
 
 # =============================================================================
@@ -281,13 +586,24 @@ func _sync_anim() -> void:
 # =============================================================================
 
 func receive_hit(damage: float, knockback_dir: Vector3) -> void:
-	if state == State.DEAD:
+	if state == State.DEAD or state == State.DEATH:
 		return
 	stats.take_damage(damage)
 	_start_hit_flash()
 	_apply_knockback(knockback_dir)
+
+	# Neutral creatures enter combat when hit
+	if aggression_type == "neutral":
+		var non_combat : Array = [
+			State.IDLE_NEUTRAL, State.WANDER, State.NOTICE,
+			State.ATTACK_TO_NEUTRAL, State.RETURNING
+		]
+		if state in non_combat:
+			_update_facing_toward(player.global_position)
+			_set_state(State.NEUTRAL_TO_ATTACK)
+
 	if not stats.is_alive():
-		_enter_dead()
+		_enter_death()
 
 
 func _start_hit_flash() -> void:
@@ -302,18 +618,61 @@ func _apply_knockback(dir: Vector3) -> void:
 		_knockback_vel = flat.normalized() * KNOCKBACK_STRENGTH
 
 
-func _enter_dead() -> void:
-	state      = State.DEAD
-	velocity   = Vector3.ZERO
+func _attack_damage() -> float:
+	# TODO: replace with ability.use() once ability system is wired
+	return 5.0
+
+
+func _enter_death() -> void:
+	state          = State.DEATH
+	_anim_done     = false
+	velocity       = Vector3.ZERO
 	_knockback_vel = Vector3.ZERO
-	_start_death_fade()
+	_update_facing_toward(player.global_position)
+	# _sync_anim() will play death_front / death_back this frame
 
 
 func _start_death_fade() -> void:
+	# Holds corpse (last frame) for 90 seconds, then fades out and frees.
 	if _fading:
 		return
 	_fading = true
 	var tw := create_tween()
-	tw.tween_interval(0.25)
-	tw.tween_property(sprite, "modulate:a", 0.0, 0.45)
+	tw.tween_interval(90.0)
+	tw.tween_property(sprite, "modulate:a", 0.0, 2.5)
 	tw.tween_callback(func() -> void: queue_free())
+
+
+# =============================================================================
+# HELPERS
+# =============================================================================
+
+func _is_aggressive() -> bool:
+	return void_touched or aggression_type == "hostile"
+
+
+func _dist_sq_to_player() -> float:
+	if player == null:
+		return INF
+	var diff : Vector3 = global_position - player.global_position
+	diff.y = 0.0
+	return diff.length_squared()
+
+
+func _dist_sq_to_home() -> float:
+	if not has_home and not temp_home:
+		return 0.0
+	var diff : Vector3 = global_position - home_position
+	diff.y = 0.0
+	return diff.length_squared()
+
+
+func _snap_to_home() -> void:
+	velocity       = Vector3.ZERO
+	_home_max_dist = false
+	_wander_timer  = 0.0
+	_wander_elapsed = 0.0
+	_force_wander  = false
+	if temp_home:
+		home_position = Vector3.ZERO
+		temp_home     = false

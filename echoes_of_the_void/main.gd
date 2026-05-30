@@ -78,9 +78,11 @@ func _ready() -> void:
 	_build_water_tile(Vector3(17.0, 0.0, 19.0))
 	_build_player()
 	_build_camera_rig()
-	_build_creature("rat",   Vector3( 9.0, 0.0, 16.0))
-	_build_creature("rat",   Vector3(11.0, 0.0, 14.0))
-	_build_creature("snake", Vector3(15.0, 0.0, 20.0))
+	# Test cases — one per combination of has_home + can_wander + aggression
+	_build_creature("rat",   Vector3( 9.0, 0.0, 16.0), "hostile", true,  true)   # home + wander
+	_build_creature("rat",   Vector3(11.0, 0.0, 14.0), "hostile", true,  false)  # home + guard
+	_build_creature("snake", Vector3(15.0, 0.0, 20.0), "hostile", false, true)   # immigrant + wander
+	_build_creature("rat",   Vector3(13.0, 0.0, 18.0), "neutral", false, false)  # neutral, no home
 	_build_ui()
 	_build_debug_label()
 
@@ -361,13 +363,15 @@ func _build_player() -> void:
 	player_sprite = player_body.get("sprite") as AnimatedSprite3D
 
 
-func _build_creature(type: String, world_pos: Vector3) -> void:
+func _build_creature(type: String, world_pos: Vector3,
+		aggression: String, has_home: bool, can_wander: bool) -> void:
 	var body := CharacterBody3D.new()
 	body.name = type.capitalize()
 	body.position = world_pos
 	body.set_script(load("res://scripts/creature.gd"))
 	add_child(body)
-	body.call("init", type, camera_rig)
+	# home_position is recorded inside init() from body.global_position — set AFTER add_child
+	body.call("init", type, camera_rig, player_body, aggression, has_home, can_wander)
 
 
 

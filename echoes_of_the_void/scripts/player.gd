@@ -255,6 +255,12 @@ func _handle_attack(delta: float) -> void:
 	_do_attack()
 
 
+# Called by creatures when their attack lands.
+# TODO Phase 2: wire to stats.take_damage(), add knockback, add death.
+func receive_hit(_damage: float, _knockback_dir: Vector3) -> void:
+	pass
+
+
 func _do_attack() -> void:
 	var atk_dir : Vector3 = _facing_to_world_dir()
 	var atk_pos : Vector3 = global_position

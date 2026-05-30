@@ -404,6 +404,23 @@ rewards. The first choice (in village) is from whatever wooden weapons are avail
 - Hit flash is red tint (GL Compatibility can't do HDR Color(2,2,2) white flash). Upgrade to
   shader-based white flash when visual polish pass comes.
 
+### Creature Attack Tracking (per-type design note)
+All creatures currently track the player throughout the attack animation (facing updates every
+frame during ATTACK state). This is intentional for small fast creatures (rat, snake).
+When slow heavy enemies are added (bear, golem, boss), add a `commits_to_attack : bool` flag
+per creature type. When true, skip `_update_facing_toward()` in the ATTACK state so the
+creature locks its swing direction on the first frame — the wind-up becomes the telegraph
+the player must read to dodge.
+
+### Code Stubs (to replace when the ability system is wired)
+- `creature.gd _attack_damage()` — returns flat 5.0. Replace with `ability.use()`.
+- `creature.gd State.ATTACK` — calls `player.receive_hit(flat_damage, dir)` directly.
+  Replace with ability resolution (resist → dodge → block → damage → crit).
+- `player.gd receive_hit(_damage, _knockback_dir)` — empty stub.
+  Wire to `stats.take_damage()` + knockback velocity + death in Phase 2.
+- A* pathfinding not yet ported — creatures use direct `move_toward` (ignore obstacles).
+  Add `pathfinder.gd` port from old project as a separate task.
+
 ### Year 1 Priority Phases
 
 **Phase 1 — Core Feel** ✓ COMPLETE (code-side)
