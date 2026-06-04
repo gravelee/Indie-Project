@@ -1,0 +1,5 @@
+python3 tools/export_sprite.py
+
+./tools/sort_folders.sh
+./tools/sort_folders.sh "/Users/Grproth/Desktop/Indie Project/art_source"
+

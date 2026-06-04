@@ -54,16 +54,12 @@ Zone 2 implementation       → after Zone 2 story
 ```
 
 ### Current Status *(update this whenever a milestone is hit)*
-- **Last completed**: Full creature combat AI — 11-state FSM (IDLE_NEUTRAL → DEAD), aggression
-  types (hostile/neutral/passive + void_touched), has_home/can_wander/temp_home leash system,
-  three speed tiers (wander < chase×1.5 < return×2.0), seamless front↔back facing mid one-shot
-  animations, NOTICE state, NEUTRAL_TO_ATTACK/ATTACK_TO_NEUTRAL stances, DEATH animation +
-  90s corpse hold + 2.5s fade + queue_free. Player receive_hit: red flash + decaying knockback
-  (same pattern as creature). Weapon sprite system removed from player.gd (attack art TODO).
-  Sprite rendering standard established: ALPHA_CUT_DISABLED + TEXTURE_FILTER_NEAREST on all
-  sprites — fixes corpse fringe and tree billboard seam artifacts.
-- **Active work**: Ready to push. Next: Phase 2 Playability.
-- **Next session target**: Resource rename (rage→focus, mana→flow) OR hotbar UI.
+- **Last completed**: Push/pull mechanic, combat idle system, weapon slot stubs, hit-frame
+  mechanic for player attacks, animation pipeline restructured for weapon-style variants,
+  grab alignment tightened + snap-to-grab on all 4 sides.
+- **Active work**: Phase 2 Playability (Phase 1 fully done).
+- **Next session target**: Resource rename (rage→focus, mana→flow) in code, OR more abilities,
+  OR creature ability wiring (replace flat 5.0 stub).
 - **Blocked on**: Nothing.
 
 ### What the test map currently has (all hardcoded in main.gd `_ready()`)
@@ -342,6 +338,40 @@ Applied in: `creature.gd` (`is_inspected`), `creature.gd` (`camera_angle`), `pla
 chained Tween with `tween_callback()` between property tweens. No state flags needed.
 See `creature._start_teleport()` for the reference implementation.
 
+**Push / pull / grab mechanic** — `pushable_block.gd` (`CharacterBody3D`, group "pushable",
+`_driven : bool` suppresses its own physics while player controls it).
+Player states: GRAB (latched, frozen frame 0) → PUSH (block ahead) ↔ PULL (block behind).
+Key rules:
+- `_grab_approach_dir`: cardinal player→block locked at GRAB entry. Never changes mid-interaction.
+- `_locked_move_dir`: current movement direction (= approach for push, = -approach for pull).
+- Direct PUSH↔PULL transitions on opposite-key press — no GRAB intermediate frame.
+- `_drive_pulled_block()` called AFTER `player.move_and_slide()` so player clears the path first.
+- `_pull_block_frames >= 2` required before freezing player (prevents false positive on first frame).
+- Camera-sync fix: `_snap_cam(v: Vector2)` uses Y-tiebreaker (matches `_set_facing_from_input`)
+  so direction validity and animation change fire at the exact same camera rotation angle.
+- Grab alignment: `D = PLAYER_CAPSULE_RADIUS * 1.5` (0.60). Player center must be within
+  `half - D` of block face center. Snap-to-grab: if on-face but misaligned, player nudges the
+  minimum distance needed to pass the threshold (not a full centering snap).
+  Applies to all 4 approach directions.
+- `PUSH_SPEED = 2.5`, `PULL_SPEED = 1.8` (pull is noticeably slower).
+
+**Combat idle system** — `creature.gd` exposes `in_combat : bool` (set in `_set_state` for
+states NEUTRAL_TO_ATTACK / IDLE_ATTACK / CHASE / ATTACK). Player `_is_in_combat()` returns
+true if any creature with `in_combat=true` is within `COMBAT_DETECT_RANGE` (12 tiles) OR
+`_combat_timer > 0`. `COMBAT_TIMEOUT = 3.0s`. IDLE state anim key rebuilt every frame in
+`_sync_anim` so the switch back to `idle_neutral` happens automatically when combat ends.
+
+**Weapon-style animation routing** — player has `weapon_main : String` and `weapon_off : String`
+(empty = unarmed). All weapon-dependent anim keys are built as:
+```gdscript
+var style : String = weapon_main if weapon_main != "" else "unarmed"
+_anim_key = "attack_" + style + "_" + FACING_STR[facing]       # ATTACK state
+_anim_key = "idle_attack_" + style + "_" + FACING_STR[facing]  # IDLE combat
+```
+Export script source paths follow `{dir}/{anim_type}/{style}/` (e.g. `south/attack/unarmed/`).
+Output PNGs: `attack_unarmed_south.png`, `idle_attack_unarmed_south.png`, etc.
+Adding a new weapon = new export block + new `_add_strip` block + set `weapon_main`.
+
 **Guard flags for one-shot async actions** — when a Tween or async operation must only start
 once, use a bool guard checked at entry:
 ```gdscript
@@ -353,6 +383,30 @@ func _start_death_fade() -> void:
     _fading = true
     ...
 ```
+
+**Ability system** — `ability.gd` (RefCounted, owns cooldown timer), `abilities.gd` (static factory).
+Caller flow: `can_use(stats)` → `spend(stats)` → `calc_damage(stats)` → `target.receive_hit(dmg, dir)`.
+Each entity holds its own Ability instances so cooldown timers are independent.
+Player hotbar: `Array[Ability]` (10 slots, null = empty), `_slot_requested : int = -1` set by
+key input, resolved in `_handle_attack`. Keys 1-9 → slots 0-8, Key 0 → slot 9, Space → slot 0.
+
+Hit-frame mechanic (player, same as creature): damage does NOT fire on attack start.
+`_hit_applied : bool` resets on each new swing. `_handle_attack` checks
+`sprite.frame >= _active_ability.hit_frame` every frame and fires `_do_attack()` exactly once.
+```gdscript
+# In _handle_attack, ATTACK branch:
+if not _hit_applied and sprite.frame >= _active_ability.hit_frame:
+    _hit_applied = true
+    _do_attack()
+if not sprite.is_playing():
+    _set_state(State.IDLE)
+# On new attack start:
+_hit_applied = false
+_active_ability = ab
+ab.spend(stats)
+_set_state(State.ATTACK)
+```
+New abilities: add entry to `_DATA` dict in `abilities.gd`, then `Abilities.get_ability("id")`.
 
 **Knockback impulse** — never add knockback directly to `velocity`. `_handle_movement()` runs
 next frame and overwrites `velocity.x/z`, killing the impulse in one tick (invisible). Instead,
@@ -464,44 +518,47 @@ per creature type. When true, skip `_update_facing_toward()` in the ATTACK state
 creature locks its swing direction on the first frame — the wind-up becomes the telegraph
 the player must read to dodge.
 
-### Code Stubs (to replace when the ability system is wired)
-- `creature.gd _attack_damage()` — returns flat 5.0. Replace with `ability.use()`.
+### Code Stubs (to replace in later phases)
+- `creature.gd _attack_damage()` — returns flat 5.0. Replace with `Abilities.get_ability(id)`
+  + `ab.calc_damage(stats)` once creatures have their own Stats objects.
 - `creature.gd State.ATTACK` — calls `player.receive_hit(flat_damage, dir)` directly.
   Replace with ability resolution (resist → dodge → block → damage → crit).
-- `player.gd receive_hit(_damage, _knockback_dir)` — partially implemented: red flash + decaying
-  knockback velocity work. Wire `_damage` to `stats.take_damage()` + player death in Phase 2.
 - A* pathfinding not yet ported — creatures use direct `move_toward` (ignore obstacles).
   Add `pathfinder.gd` port from old project as a separate task.
 
 ### Year 1 Priority Phases
 
-**Phase 1 — Core Feel** ✓ COMPLETE (code-side)
+**Phase 1 — Core Feel** ✓ COMPLETE
 - [x] Hit flash on damage (red tint Tween, GL Compat safe)
 - [x] Knockback on damage (velocity impulse + friction decay)
 - [x] Creature DEAD state + fade + queue_free
-- [x] Player Space attack (arc + distance check, creatures group)
+- [x] Player attack (arc + distance check, hit-frame timing, creatures group)
 - [x] Creature directional animations (front/back + flip_h)
 - [x] SpriteFrames cache per type (AssetLoader)
 - [x] Sprite export pipeline (tools/export_sprite.py, rotsprite/Scale3x)
+- [x] Push / pull / grab mechanic (PUSH, GRAB, PULL states, camera-sync, snap-to-grab)
+- [x] Combat idle system (idle_attack_unarmed vs idle_neutral, creature in_combat flag)
+- [x] Weapon slot stubs (weapon_main / weapon_off), style-based anim key routing
+- [x] Hit-frame mechanic for player (sprite.frame >= ability.hit_frame before damage fires)
 
 **Phase 2 — Playability**
-7. Resource rename in code (rage→focus, mana→flow)
-8. Hotbar UI (1-0 keys, ability icons, cooldown overlay)
-9. Ability / talent book panel UI
-10. More Weaponmaster abilities (melee + ranged options)
-11. ~~Neutral creature type~~ ✓ DONE — neutral creatures aggro when hit (creature.gd receive_hit)
-12. Creature loot drops + corpse looting
-13. Player backpack / inventory panel
-14. Attack area calculation review
+1. Resource rename in code (rage→focus, mana→flow)
+2. ~~Hotbar UI~~ ✓ DONE
+3. Ability / talent book panel UI
+4. More Weaponmaster abilities (melee + ranged options)
+5. ~~Neutral creature type~~ ✓ DONE
+6. Creature loot drops + corpse looting
+7. Player backpack / inventory panel
+8. Attack area review (unarmed range/arc tested, weapon variants will differ)
 
 **Phase 3 — First Dungeon Loop**
-15. Dungeon room system (room-based maps, door transitions)
-16. Indoor props (crates, barrels, basic furniture)
-17. Pressure plate puzzle mechanic
-18. Block pushing puzzle mechanic (with Z-key undo)
-19. Patrol AI script (LINE_PATROL minimum for Ancient Cave)
-20. Trap entity script (falling object + spike trap for Ancient Cave)
-21. Ancient Cave dungeon — complete (15+ rooms, 2 bosses)
+1. Dungeon room system (room-based maps, door transitions)
+2. Indoor props (crates, barrels, basic furniture)
+3. Pressure plate puzzle mechanic
+4. ~~Block pushing~~ ✓ DONE — push/pull/grab fully implemented. Z-key undo still pending.
+5. Patrol AI script (LINE_PATROL minimum for Ancient Cave)
+6. Trap entity script (falling object + spike trap for Ancient Cave)
+7. Ancient Cave dungeon — complete (15+ rooms, 2 bosses)
 22. Paper-pencil dungeon map UI
 
 **Phase 4 — Progression Systems**

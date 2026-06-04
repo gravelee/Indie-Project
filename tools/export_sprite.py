@@ -48,10 +48,41 @@ _PO = "echoes_of_the_void/assets/spritesheets/player"
 
 EXPORTS = [
     # ── PLAYER (4-direction, no front/back) ───────────────────────────────────
-    (f"{_P}/south/forward_slash", f"{_PO}/attack_south.png"),
-    (f"{_P}/north/forward_slash", f"{_PO}/attack_north.png"),
-    (f"{_P}/east/forward_slash",  f"{_PO}/attack_east.png"),
-    (f"{_P}/west/forward_slash",  f"{_PO}/attack_west.png"),
+    (f"{_P}/south/idle_neutral",  f"{_PO}/idle_neutral_south.png"),
+    (f"{_P}/north/idle_neutral",  f"{_PO}/idle_neutral_north.png"),
+    (f"{_P}/east/idle_neutral",   f"{_PO}/idle_neutral_east.png"),
+    (f"{_P}/west/idle_neutral",   f"{_PO}/idle_neutral_west.png"),
+
+    (f"{_P}/south/idle_attack/unarmed",  f"{_PO}/idle_attack_unarmed_south.png"),
+    (f"{_P}/north/idle_attack/unarmed",  f"{_PO}/idle_attack_unarmed_north.png"),
+    (f"{_P}/east/idle_attack/unarmed",   f"{_PO}/idle_attack_unarmed_east.png"),
+    (f"{_P}/west/idle_attack/unarmed",   f"{_PO}/idle_attack_unarmed_west.png"),
+
+    (f"{_P}/south/walking",       f"{_PO}/walking_south.png"),
+    (f"{_P}/north/walking",       f"{_PO}/walking_north.png"),
+    (f"{_P}/east/walking",        f"{_PO}/walking_east.png"),
+    (f"{_P}/west/walking",        f"{_PO}/walking_west.png"),
+
+    (f"{_P}/south/running",       f"{_PO}/running_south.png"),
+    (f"{_P}/north/running",       f"{_PO}/running_north.png"),
+    (f"{_P}/east/running",        f"{_PO}/running_east.png"),
+    (f"{_P}/west/running",        f"{_PO}/running_west.png"),
+
+    (f"{_P}/south/attack/unarmed",  f"{_PO}/attack_unarmed_south.png"),
+    (f"{_P}/north/attack/unarmed",  f"{_PO}/attack_unarmed_north.png"),
+    (f"{_P}/east/attack/unarmed",   f"{_PO}/attack_unarmed_east.png"),
+    (f"{_P}/west/attack/unarmed",   f"{_PO}/attack_unarmed_west.png"),
+
+    (f"{_P}/south/push",          f"{_PO}/push_south.png"),
+    (f"{_P}/north/push",          f"{_PO}/push_north.png"),
+    (f"{_P}/east/push",           f"{_PO}/push_east.png"),
+    (f"{_P}/west/push",           f"{_PO}/push_west.png"),
+
+    (f"{_P}/south/pull",          f"{_PO}/pull_south.png"),
+    (f"{_P}/north/pull",          f"{_PO}/pull_north.png"),
+    (f"{_P}/north/grab",          f"{_PO}/grab_north.png"),
+    (f"{_P}/east/pull",           f"{_PO}/pull_east.png"),
+    (f"{_P}/west/pull",           f"{_PO}/pull_west.png"),
 
     # ── RAT (source faces right — no flip needed) ─────────────────────────────
     (f"{_R}/idle_neutral/front",    f"{_RO}/idle_neutral_front.png"),
@@ -76,26 +107,26 @@ EXPORTS = [
     (f"{_R}/death/back",            f"{_RO}/death_back.png"),
 
     # ── SNAKE (source faces left — flip_h=True to match rat convention) ───────
-    (f"{_S}/idle_neutral/front",    f"{_SO}/idle_neutral_front.png",    True),
-    (f"{_S}/idle_neutral/back",     f"{_SO}/idle_neutral_back.png",     True),
-    (f"{_S}/wander/front",          f"{_SO}/wander_front.png",          True),
-    (f"{_S}/wander/back",           f"{_SO}/wander_back.png",           True),
-    (f"{_S}/run/front",             f"{_SO}/run_front.png",             True),
-    (f"{_S}/run/back",              f"{_SO}/run_back.png",              True),
-    (f"{_S}/notice/front",          f"{_SO}/notice_front.png",          True),
-    (f"{_S}/notice/back",           f"{_SO}/notice_back.png",           True),
-    (f"{_S}/neutral_to_attack/front", f"{_SO}/neutral_to_attack_front.png", True),
-    (f"{_S}/neutral_to_attack/back",  f"{_SO}/neutral_to_attack_back.png",  True),
-    (f"{_S}/idle_attack/front",      f"{_SO}/idle_attack_front.png",    True),
-    (f"{_S}/idle_attack/back",       f"{_SO}/idle_attack_back.png",     True),
-    (f"{_S}/attack_bite/front",     f"{_SO}/attack_bite_front.png",     True),
-    (f"{_S}/attack_bite/back",      f"{_SO}/attack_bite_back.png",      True),
-    (f"{_S}/attack_tail_slam/front", f"{_SO}/attack_tail_slam_front.png", True),
-    (f"{_S}/attack_tail_slam/back",  f"{_SO}/attack_tail_slam_back.png",  True),
-    (f"{_S}/attack_to_neutral/front", f"{_SO}/attack_to_neutral_front.png", True),
-    (f"{_S}/attack_to_neutral/back",  f"{_SO}/attack_to_neutral_back.png",  True),
-    (f"{_S}/death/front",           f"{_SO}/death_front.png",           True),
-    (f"{_S}/death/back",            f"{_SO}/death_back.png",            True),
+    (f"{_S}/idle_neutral/front",    f"{_SO}/idle_neutral_front.png"),
+    (f"{_S}/idle_neutral/back",     f"{_SO}/idle_neutral_back.png"),
+    (f"{_S}/wander/front",          f"{_SO}/wander_front.png"),
+    (f"{_S}/wander/back",           f"{_SO}/wander_back.png"),
+    (f"{_S}/run/front",             f"{_SO}/run_front.png"),
+    (f"{_S}/run/back",              f"{_SO}/run_back.png"),
+    (f"{_S}/notice/front",          f"{_SO}/notice_front.png"),
+    (f"{_S}/notice/back",           f"{_SO}/notice_back.png"),
+    (f"{_S}/neutral_to_attack/front", f"{_SO}/neutral_to_attack_front.png"),
+    (f"{_S}/neutral_to_attack/back",  f"{_SO}/neutral_to_attack_back.png"),
+    (f"{_S}/idle_attack/front",      f"{_SO}/idle_attack_front.png"),
+    (f"{_S}/idle_attack/back",       f"{_SO}/idle_attack_back.png"),
+    (f"{_S}/attack_bite/front",     f"{_SO}/attack_bite_front.png"),
+    (f"{_S}/attack_bite/back",      f"{_SO}/attack_bite_back.png"),
+    (f"{_S}/attack_tail_slam/front", f"{_SO}/attack_tail_slam_front.png"),
+    (f"{_S}/attack_tail_slam/back",  f"{_SO}/attack_tail_slam_back.png"),
+    (f"{_S}/attack_to_neutral/front", f"{_SO}/attack_to_neutral_front.png"),
+    (f"{_S}/attack_to_neutral/back",  f"{_SO}/attack_to_neutral_back.png"),
+    (f"{_S}/death/front",           f"{_SO}/death_front.png"),
+    (f"{_S}/death/back",            f"{_SO}/death_back.png"),
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────

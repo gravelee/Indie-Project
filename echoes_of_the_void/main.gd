@@ -31,6 +31,7 @@ const SETTINGS_SAVE_PATH : String = "user://camera_settings.tres"
 var cam        : CameraSettings
 var camera_rig : Node3D    # camera_rig.gd
 var game_ui    : Node      # game_ui.gd
+var hud        : CanvasLayer  # hud.gd
 
 # Player
 var player_body   : CharacterBody3D
@@ -78,11 +79,13 @@ func _ready() -> void:
 	_build_water_tile(Vector3(17.0, 0.0, 19.0))
 	_build_player()
 	_build_camera_rig()
-	# Test cases — one per combination of has_home + can_wander + aggression
-	_build_creature("rat",   Vector3( 9.0, 0.0, 16.0), "hostile", true,  true)   # home + wander
-	_build_creature("rat",   Vector3(11.0, 0.0, 14.0), "hostile", true,  false)  # home + guard
-	_build_creature("snake", Vector3(15.0, 0.0, 20.0), "hostile", false, true)   # immigrant + wander
-	_build_creature("rat",   Vector3(13.0, 0.0, 18.0), "neutral", false, false)  # neutral, no home
+	_build_hud()
+	_build_test_block()
+	# Test cases — scattered to map corners so they can be engaged one at a time
+	_build_creature("rat",   Vector3( 2.0, 0.0,  2.0), "hostile", true,  true)   # NW — home + wander
+	_build_creature("rat",   Vector3(23.0, 0.0,  2.0), "hostile", true,  false)  # NE — home + guard
+	_build_creature("snake", Vector3( 2.0, 0.0, 23.0), "hostile", false, true)   # SW — immigrant + wander
+	_build_creature("rat",   Vector3(23.0, 0.0, 23.0), "neutral", false, false)  # SE — neutral, no home
 	_build_ui()
 	_build_debug_label()
 
@@ -120,6 +123,14 @@ func _build_ui() -> void:
 	game_ui.call("init", cam, camera_rig)
 
 
+func _build_hud() -> void:
+	hud = CanvasLayer.new()
+	hud.name = "HUD"
+	hud.set_script(load("res://scripts/hud.gd"))
+	add_child(hud)
+	hud.call("init", player_body)
+
+
 # ---------------------------------------------------------------------------
 # INPUT
 # ---------------------------------------------------------------------------
@@ -147,6 +158,7 @@ func _process(delta: float) -> void:
 	camera_rig.scroll_zoom_blocked        = game_ui.call("is_mouse_over_panel")
 	player_body.set("movement_blocked", game_ui.call("any_ui_open"))
 
+	hud.call("refresh")
 	_update_tree_fade(delta)
 
 	var rig    : Node3D  = camera_rig
@@ -362,6 +374,30 @@ func _build_player() -> void:
 	add_child(player_body)
 	player_body.call("init", cam)
 	player_sprite = player_body.get("sprite") as AnimatedSprite3D
+
+
+func _build_test_block() -> void:
+	var body := CharacterBody3D.new()
+	body.name = "TestBlock"
+	body.position = Vector3(12.0, 1.0, 17.0)   # north of player spawn; Y=1 for 2×2×2 center
+	body.set_script(load("res://scripts/pushable_block.gd"))
+	body.add_to_group("pushable")
+	# Visual — brown cube
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(2.0, 2.0, 2.0)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.55, 0.35, 0.15)
+	var vis := MeshInstance3D.new()
+	vis.mesh = mesh
+	vis.material_override = mat
+	body.add_child(vis)
+	# Collision
+	var col := CollisionShape3D.new()
+	var shp := BoxShape3D.new()
+	shp.size = Vector3(2.0, 2.0, 2.0)
+	col.shape = shp
+	body.add_child(col)
+	add_child(body)
 
 
 func _build_creature(type: String, world_pos: Vector3,

@@ -29,9 +29,10 @@ extends CharacterBody3D
 #   Remove both once ability.gd is wired.
 # =============================================================================
 
-const SPRITE_SIZE : int    = 96
-const SPRITE_PATH : String = "res://assets/spritesheets/creatures/"
-const ANIM_SPEED  : int    = 8
+const SPRITE_SIZE        : int    = 96
+const SPRITE_PATH        : String = "res://assets/spritesheets/creatures/"
+const ANIM_SPEED         : int    = 8
+const ATTACK_ANIM_SPEED  : int    = 16
 const GRAVITY     : float  = -20.0
 
 # ── AI distances (world units; 32 px = 1 unit) ─────────────────────────────
@@ -53,7 +54,9 @@ const WANDER_CHANCE       : float = 1.0
 
 # ── Combat ─────────────────────────────────────────────────────────────────
 
+
 const ATTACK_COOLDOWN    : float = 1.5   # seconds between attacks (stub)
+const ATTACK_HIT_GRACE   : float = 1.2  # extra melee range at hit frame — creature committed to swing
 const CHASE_SPEED_MULT   : float = 1.5   # chase is 50% faster than wander
 const RETURN_SPEED_MULT  : float = 2.0   # return is faster than chase
 const KNOCKBACK_STRENGTH : float = 8.0
@@ -98,6 +101,7 @@ var temp_home     : bool    = false   # true when immigrant sets combat entry as
 # ── Animation / state ──────────────────────────────────────────────────────
 
 var state        : State   = State.IDLE_NEUTRAL
+var in_combat    : bool    = false   # true while in NEUTRAL_TO_ATTACK / IDLE_ATTACK / CHASE / ATTACK
 var facing_right : bool    = false
 var facing_back  : bool    = false
 var _move_dir    : Vector3 = Vector3.BACK
@@ -119,6 +123,7 @@ var _knockback_vel  : Vector3 = Vector3.ZERO
 var _attack_timer   : float   = 0.0
 var _home_max_dist  : bool    = false   # set when leash exceeded during combat
 var _chosen_attack  : String  = ""      # locked on ATTACK state entry; stable for full swing
+var _hit_applied    : bool    = false   # true once hit-frame damage fires this swing
 
 
 # =============================================================================
@@ -200,6 +205,7 @@ func _load_animations() -> void:
 		"neutral_to_attack_front":  false, "neutral_to_attack_back":  false,
 		"attack_bite_front":        false, "attack_bite_back":        false,
 		"attack_slash_front":       false, "attack_slash_back":       false,
+		"attack_tail_slam_front":   false, "attack_tail_slam_back":   false,
 		"attack_to_neutral_front":  false, "attack_to_neutral_back":  false,
 		"death_front":              false, "death_back":              false,
 	}
@@ -211,7 +217,8 @@ func _load_animations() -> void:
 		var tex         : Texture2D = load(path)
 		var frame_count : int       = tex.get_width() / SPRITE_SIZE
 		frames.add_animation(anim_name)
-		frames.set_animation_speed(anim_name, float(ANIM_SPEED))
+		var spd : float = float(ATTACK_ANIM_SPEED) if anim_name.begins_with("attack_") else float(ANIM_SPEED)
+		frames.set_animation_speed(anim_name, spd)
 		frames.set_animation_loop(anim_name, anims[anim_name])
 		for i : int in range(frame_count):
 			var atlas := AtlasTexture.new()
@@ -406,16 +413,20 @@ func _update_state(delta: float) -> void:
 			velocity.x = 0.0
 			velocity.z = 0.0
 			_update_facing_toward(player.global_position)
-			if _anim_done:
-				# Stub: deal flat damage if still in range
-				# TODO: replace with ability.use() once ability system is wired
-				if dist_sq < ATTACK_DIST * ATTACK_DIST:
+			# Hit fires at the designated frame — not at animation end
+			var ability_id : String = type + "_" + _chosen_attack.substr("attack_".length())
+			if not _hit_applied and sprite.frame >= Abilities.get_hit_frame(ability_id):
+				_hit_applied = true
+				var hit_range : float = ATTACK_DIST + ATTACK_HIT_GRACE
+				if dist_sq < hit_range * hit_range:
 					var dir : Vector3 = player.global_position - global_position
 					dir.y = 0.0
 					if dir.length_squared() > 0.001:
 						dir = dir.normalized()
 					if player.has_method("receive_hit"):
 						player.call("receive_hit", _attack_damage(), dir)
+			# State transition waits for the full animation to finish
+			if _anim_done:
 				_attack_timer = ATTACK_COOLDOWN
 				if dist_sq < ATTACK_DIST * ATTACK_DIST:
 					_set_state(State.IDLE_ATTACK)
@@ -462,6 +473,8 @@ func _set_state(new_state: State) -> void:
 		return
 	state     = new_state
 	_anim_done = false
+	in_combat = (state == State.NEUTRAL_TO_ATTACK or state == State.IDLE_ATTACK
+			or state == State.CHASE or state == State.ATTACK)
 
 	match state:
 		State.NEUTRAL_TO_ATTACK:
@@ -476,6 +489,7 @@ func _set_state(new_state: State) -> void:
 			_update_facing_toward(player.global_position)
 		State.ATTACK:
 			_chosen_attack = _pick_attack_anim()
+			_hit_applied   = false
 			_update_facing_toward(player.global_position)
 		State.DEAD:
 			_start_death_fade()
@@ -584,7 +598,13 @@ func _pick_attack_anim() -> String:
 				return "attack_slash" if randf() < 0.5 else "attack_bite"
 			if has_slash: return "attack_slash"
 			return "attack_bite"
-		"snake": return "attack_bite"
+		"snake":
+			var has_bite : bool = sprite.sprite_frames.has_animation("attack_bite_front")
+			var has_tail : bool = sprite.sprite_frames.has_animation("attack_tail_slam_front")
+			if has_bite and has_tail:
+				return "attack_tail_slam" if randf() < 0.5 else "attack_bite"
+			if has_tail: return "attack_tail_slam"
+			return "attack_bite"
 		_:       return "attack_bite"
 
 
