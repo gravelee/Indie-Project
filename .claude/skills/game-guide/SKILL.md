@@ -355,11 +355,24 @@ Key rules:
   Applies to all 4 approach directions.
 - `PUSH_SPEED = 2.5`, `PULL_SPEED = 1.8` (pull is noticeably slower).
 
-**Combat idle system** — `creature.gd` exposes `in_combat : bool` (set in `_set_state` for
-states NEUTRAL_TO_ATTACK / IDLE_ATTACK / CHASE / ATTACK). Player `_is_in_combat()` returns
-true if any creature with `in_combat=true` is within `COMBAT_DETECT_RANGE` (12 tiles) OR
-`_combat_timer > 0`. `COMBAT_TIMEOUT = 3.0s`. IDLE state anim key rebuilt every frame in
-`_sync_anim` so the switch back to `idle_neutral` happens automatically when combat ends.
+**Two-timer system (combat idle vs regen)** — player.gd uses two independent timers:
+- `_combat_timer` (`COMBAT_TIMEOUT = 3.0s`): set ONLY on creature interaction (player hits a
+  creature in `_do_attack`, or player receives a hit in `receive_hit`). Drives `_is_in_combat()`
+  and therefore the `idle_attack` animation. Cutting grass / hitting props never sets this.
+- `_regen_timer` (`REGEN_PAUSE = 3.0s`): set on ANY player action (attack start, receive_hit).
+  Pauses stat regen regardless of what was hit. Tunable independently of COMBAT_TIMEOUT.
+
+Regen runs only when both timers are zero:
+```gdscript
+if _combat_timer <= 0.0 and _regen_timer <= 0.0:
+    stats.regen(delta)
+```
+
+`_is_in_combat()` returns true if `_combat_timer > 0` OR any creature with `in_combat=true`
+is within `COMBAT_DETECT_RANGE` (12 tiles). `creature.gd` exposes `in_combat : bool` updated
+in `_set_state` for states NEUTRAL_TO_ATTACK / IDLE_ATTACK / CHASE / ATTACK.
+IDLE state anim key rebuilt every frame in `_sync_anim` so the switch back to `idle_neutral`
+happens automatically when combat ends.
 
 **Weapon-style animation routing** — player has `weapon_main : String` and `weapon_off : String`
 (empty = unarmed). All weapon-dependent anim keys are built as:

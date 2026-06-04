@@ -71,9 +71,11 @@ var _slot_requested : int     = -1
 var _active_ability : Ability = null
 
 # Combat state
-const COMBAT_TIMEOUT      : float = 3.0    # seconds after last hit/attack before regen resumes
+const COMBAT_TIMEOUT      : float = 3.0    # seconds after last creature hit/received — drives idle_attack
+const REGEN_PAUSE         : float = 3.0    # seconds after ANY action (attack, roll, etc.) — pauses regen
 const COMBAT_DETECT_RANGE : float = 12.0   # tiles — creatures beyond this don't trigger combat idle
-var _combat_timer : float = 0.0
+var _combat_timer : float = 0.0   # set only on creature interaction
+var _regen_timer  : float = 0.0   # set on any player action
 
 # Knockback
 const KNOCKBACK_STRENGTH : float = 6.0
@@ -242,7 +244,8 @@ func _physics_process(delta: float) -> void:
 
 	stats.tick(delta)
 	_combat_timer = maxf(0.0, _combat_timer - delta)
-	if _combat_timer <= 0.0:
+	_regen_timer  = maxf(0.0, _regen_timer  - delta)
+	if _combat_timer <= 0.0 and _regen_timer <= 0.0:
 		stats.regen(delta)
 
 
@@ -765,14 +768,15 @@ func _handle_attack(delta: float) -> void:
 
 	_hit_applied     = false
 	_active_ability  = ab
-	_combat_timer    = COMBAT_TIMEOUT
+	_regen_timer     = REGEN_PAUSE   # any attack pauses regen
 	ab.spend(stats)
 	_set_state(State.ATTACK)
 
 
 func receive_hit(damage: float, knockback_dir: Vector3) -> void:
 	stats.take_damage(damage)
-	_combat_timer = COMBAT_TIMEOUT
+	_combat_timer = COMBAT_TIMEOUT   # being hit by a creature is a combat event
+	_regen_timer  = REGEN_PAUSE      # taking damage also pauses regen
 	_start_hit_flash()
 	if state == State.GRAB or state == State.PULL or state == State.PUSH:
 		_release_grab()
@@ -806,6 +810,7 @@ func _do_attack() -> void:
 		if diff.length_squared() > 0.001 and diff.normalized().dot(atk_dir) < ATTACK_ARC_DOT:
 			continue
 		node.call("receive_hit", _active_ability.calc_damage(stats), diff)
+		_combat_timer = COMBAT_TIMEOUT   # creature was struck — enter/extend combat idle
 
 
 func _facing_to_world_dir() -> Vector3:
