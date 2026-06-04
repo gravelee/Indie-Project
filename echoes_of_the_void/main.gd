@@ -120,7 +120,7 @@ func _build_ui() -> void:
 	game_ui.name = "GameUI"
 	game_ui.set_script(load("res://scripts/game_ui.gd"))
 	add_child(game_ui)
-	game_ui.call("init", cam, camera_rig)
+	game_ui.call("init", cam, camera_rig, player_body)
 
 
 func _build_hud() -> void:

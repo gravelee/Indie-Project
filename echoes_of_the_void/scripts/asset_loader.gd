@@ -16,6 +16,7 @@ class_name AssetLoader
 static var _frames         : Dictionary = {}   # String → SpriteFrames
 static var _textures       : Dictionary = {}   # String → Texture2D
 static var _creature_stats : Dictionary = {}   # String → stat Dictionary (lazy-loaded from JSON)
+static var _player_stats   : Dictionary = {}   # String → stat Dictionary (lazy-loaded from JSON)
 
 
 # ---------------------------------------------------------------------------
@@ -66,16 +67,24 @@ static func get_creature_stats(p_type: String) -> Dictionary:
 
 
 static func _load_creature_stats() -> void:
-	const PATH : String = "res://assets/data/_creature_stats.json"
-	if not FileAccess.file_exists(PATH):
-		push_error("AssetLoader: _creature_stats.json not found at " + PATH)
-		return
-	var text   : String  = FileAccess.get_file_as_string(PATH)
-	var parsed : Variant = JSON.parse_string(text)
+	_creature_stats = _load_json("res://assets/data/_creature_stats.json")
+
+
+static func get_player_stats(p_id: String) -> Dictionary:
+	if _player_stats.is_empty():
+		_player_stats = _load_json("res://assets/data/_player_stats.json")
+	return _player_stats.get(p_id, {}) as Dictionary
+
+
+static func _load_json(path: String) -> Dictionary:
+	if not FileAccess.file_exists(path):
+		push_error("AssetLoader: file not found: " + path)
+		return {}
+	var parsed : Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if parsed is Dictionary:
-		_creature_stats = parsed as Dictionary
-	else:
-		push_error("AssetLoader: failed to parse _creature_stats.json")
+		return parsed as Dictionary
+	push_error("AssetLoader: failed to parse: " + path)
+	return {}
 
 
 # ---------------------------------------------------------------------------
@@ -86,3 +95,4 @@ static func clear() -> void:
 	_frames.clear()
 	_textures.clear()
 	_creature_stats.clear()
+	_player_stats.clear()

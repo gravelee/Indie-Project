@@ -16,10 +16,6 @@ const SPRITE_SIZE        : int    = 96
 const GRAVITY            : float  = -20.0
 const SPRITE_PATH        : String = "res://assets/spritesheets/player/"
 
-# Ares starting stats (STR AGI STA INT SPR RES DEF BMS EXP)
-# BMS=3, AGI=4 → mspd = 3 + 4*0.5 = 5.0
-const ARES_STATS : Array[int] = [4, 4, 4, 2, 2, 2, 2, 3, 0]
-
 const ATTACK_ARC_DOT      : float = 0.3   # min dot product — ~±73° cone
 const SPRINT_SPEED_MULT   : float = 1.2   # sprint is 20% faster than walking
 const SPRINT_ENERGY_COST  : float = 1.0   # energy drained per second while sprinting
@@ -65,6 +61,17 @@ var _anim_key : String = "idle_neutral_south"
 var weapon_main : String = ""   # main hand
 var weapon_off  : String = ""   # off-hand (shield, second weapon, or empty)
 
+# Attack range visual
+var show_attack_range : bool = false:   # toggled from settings — off by default
+	set(value):
+		show_attack_range = value
+		if _target != null:
+			_target.call("set_target_dot_visible", value)
+		if not value:
+			_hide_attack_range()
+var _atk_range_node : MeshInstance3D    = null
+var _atk_range_mat  : StandardMaterial3D = null
+
 # Abilities
 var ability_bar     : Array[Ability] = []   # 10 slots; null = empty
 var _slot_requested : int     = -1
@@ -88,6 +95,9 @@ const KNOCKBACK_STRENGTH : float = 6.0
 const KNOCKBACK_FRICTION : float = 20.0
 var _knockback_vel : Vector3 = Vector3.ZERO
 
+# Sprint energy drain — accumulates run-time across Shift taps to prevent free-running exploit
+var _run_energy_accum : float = 0.0
+
 # Push / pull state
 var _grabbed_obj        : CharacterBody3D  = null
 var _locked_move_dir    : Vector3          = Vector3.ZERO   # cardinal locked on PUSH/PULL entry
@@ -105,14 +115,23 @@ var _hit_applied : bool = false   # true once damage fires for the current swing
 
 func init(p_cam: CameraSettings) -> void:
 	cam   = p_cam
-	stats = Stats.new(
-		ARES_STATS[0], ARES_STATS[1], ARES_STATS[2], ARES_STATS[3],
-		ARES_STATS[4], ARES_STATS[5], ARES_STATS[6], ARES_STATS[7], ARES_STATS[8]
-	)
+	stats = _load_stats("ares")
 	_build_collision()
 	_build_sprite()
+	_build_attack_range_visual()
 	_load_animations()
 	_init_abilities()
+
+
+func _load_stats(p_id: String) -> Stats:
+	var d : Dictionary = AssetLoader.get_player_stats(p_id)
+	if d.is_empty():
+		push_warning("player.gd: no stats found for id '" + p_id + "' — using fallback")
+	return Stats.new(
+		d.get("str", 4), d.get("agi", 4), d.get("sta", 4),
+		d.get("int", 2), d.get("spr", 2), d.get("res", 2), d.get("def", 2),
+		d.get("bms", 3), d.get("exp", 0)
+	)
 
 
 func _build_collision() -> void:
@@ -134,6 +153,53 @@ func _build_sprite() -> void:
 	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	sprite.position.y = SPRITE_SIZE * sprite.pixel_size * 0.5
 	add_child(sprite)
+
+
+func _build_attack_range_visual() -> void:
+	_atk_range_mat                  = StandardMaterial3D.new()
+	_atk_range_mat.albedo_color     = Color(1.0, 0.65, 0.0, 0.28)
+	_atk_range_mat.transparency     = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_atk_range_mat.shading_mode     = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_atk_range_mat.no_depth_test    = true
+	_atk_range_mat.cull_mode        = BaseMaterial3D.CULL_DISABLED
+	_atk_range_mat.depth_draw_mode  = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	_atk_range_node         = MeshInstance3D.new()
+	_atk_range_node.visible = false
+	add_child(_atk_range_node)
+
+
+# Builds (or rebuilds) the attack arc mesh for the given ability and shows it.
+# Called at attack start — rebuilds so range matches the active ability.
+func _show_attack_range(ab: Ability) -> void:
+	if _atk_range_node == null or not show_attack_range:
+		return
+	var dir      : Vector3 = _facing_to_world_dir()
+	var r        : float   = ab.range_
+	var half_a   : float   = acos(ATTACK_ARC_DOT)          # ~1.266 rad ≈ 72.5°
+	var center_a : float   = atan2(dir.x, dir.z)
+	const SEGS   : int     = 24
+	const Y      : float   = 0.04                          # slightly above ground
+
+	var mesh := ImmediateMesh.new()
+	mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i : int in range(SEGS):
+		var a0 : float   = center_a + lerp(-half_a, half_a, float(i)   / float(SEGS))
+		var a1 : float   = center_a + lerp(-half_a, half_a, float(i+1) / float(SEGS))
+		var v0 : Vector3 = Vector3(sin(a0) * r, Y, cos(a0) * r)
+		var v1 : Vector3 = Vector3(sin(a1) * r, Y, cos(a1) * r)
+		mesh.surface_add_vertex(Vector3(0.0, Y, 0.0))
+		mesh.surface_add_vertex(v0)
+		mesh.surface_add_vertex(v1)
+	mesh.surface_end()
+
+	_atk_range_node.mesh = mesh
+	_atk_range_node.set_surface_override_material(0, _atk_range_mat)
+	_atk_range_node.visible = true
+
+
+func _hide_attack_range() -> void:
+	if _atk_range_node != null:
+		_atk_range_node.visible = false
 
 
 func _load_animations() -> void:
@@ -237,7 +303,11 @@ func _physics_process(delta: float) -> void:
 
 	_handle_movement(delta)
 	if state == State.RUN:
-		stats.energy = maxf(0.0, stats.energy - SPRINT_ENERGY_COST * delta)
+		_run_energy_accum += delta
+		if _run_energy_accum >= 1.0:
+			var ticks : int = int(_run_energy_accum)
+			stats.energy      = maxf(0.0, stats.energy - SPRINT_ENERGY_COST * ticks)
+			_run_energy_accum -= float(ticks)   # keep remainder — never reset to 0
 	_handle_attack(delta)
 
 	if _knockback_vel.length_squared() > 0.01:
@@ -301,14 +371,17 @@ func _is_in_combat() -> bool:
 func _set_target(node: Node) -> void:
 	if _target != null and _target != node:
 		_target.set("is_targeted", false)
+		_target.call("set_target_dot_visible", false)
 	_target = node
 	if node != null:
 		node.set("is_targeted", true)
+		node.call("set_target_dot_visible", show_attack_range)
 
 
 func _clear_target() -> void:
 	if _target != null:
 		_target.set("is_targeted", false)
+		_target.call("set_target_dot_visible", false)
 	_target = null
 	_tab_buffer.clear()
 
@@ -917,6 +990,7 @@ func _handle_attack(delta: float) -> void:
 			_hit_applied = true
 			_do_attack()
 		if not sprite.is_playing():
+			_hide_attack_range()
 			_set_state(State.IDLE)
 		return
 
@@ -933,9 +1007,15 @@ func _handle_attack(delta: float) -> void:
 
 	_hit_applied     = false
 	_active_ability  = ab
-	_regen_timer     = REGEN_PAUSE   # any attack pauses regen
+	_regen_timer     = REGEN_PAUSE
 	ab.spend(stats)
+	_show_attack_range(ab)
 	_set_state(State.ATTACK)
+
+
+func _extend_combat_timer() -> void:
+	# Called by any hostile creature each frame — keeps regen suppressed while being pursued.
+	_combat_timer = COMBAT_TIMEOUT
 
 
 func receive_hit(damage: float, knockback_dir: Vector3, attacker: Node = null) -> void:

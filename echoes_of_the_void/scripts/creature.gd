@@ -115,6 +115,7 @@ var _move_dir    : Vector3 = Vector3.BACK
 var _anim_done   : bool    = false
 var _fading      : bool    = false
 var _target_ring     : MeshInstance3D   = null
+var _target_dot      : MeshInstance3D   = null
 var _target_ring_mat : StandardMaterial3D = null
 
 # ── Wander ─────────────────────────────────────────────────────────────────
@@ -133,6 +134,7 @@ var _attack_timer   : float   = 0.0
 var _home_max_dist  : bool    = false   # set when leash exceeded during combat
 var _chosen_attack  : String  = ""      # locked on ATTACK state entry; stable for full swing
 var _hit_applied    : bool    = false   # true once hit-frame damage fires this swing
+var _pending_death  : bool    = false   # set when lethal hit received; death delayed until knockback settles
 
 
 # =============================================================================
@@ -198,6 +200,11 @@ func _build_sprite() -> void:
 	add_child(sprite)
 
 
+func set_target_dot_visible(v: bool) -> void:
+	if _target_dot != null:
+		_target_dot.visible = v
+
+
 func _update_ring_color() -> void:
 	if _target_ring_mat == null:
 		return
@@ -230,6 +237,21 @@ func _build_target_ring() -> void:
 	_target_ring.position = Vector3(0.0, 0.02, 0.0)
 	_target_ring.visible  = false
 	add_child(_target_ring)
+
+	# Center dot — same material so it auto-matches the ring color.
+	# Only visible when the player has show_attack_range enabled.
+	var dot_mesh := CylinderMesh.new()
+	dot_mesh.top_radius    = 0.10
+	dot_mesh.bottom_radius = 0.10
+	dot_mesh.height        = 0.05
+	dot_mesh.rings         = 1
+	dot_mesh.radial_segments = 12
+	dot_mesh.surface_set_material(0, _target_ring_mat)
+	_target_dot          = MeshInstance3D.new()
+	_target_dot.mesh     = dot_mesh
+	_target_dot.position = Vector3(0.0, 0.025, 0.0)
+	_target_dot.visible  = false
+	add_child(_target_dot)
 
 
 func _load_animations() -> void:
@@ -313,6 +335,9 @@ func _physics_process(delta: float) -> void:
 		_knockback_vel = _knockback_vel.move_toward(Vector3.ZERO, KNOCKBACK_FRICTION * delta)
 	else:
 		_knockback_vel = Vector3.ZERO
+		if _pending_death:
+			_pending_death = false
+			_enter_death()
 
 	_sync_anim()
 	move_and_slide()
@@ -323,6 +348,14 @@ func _physics_process(delta: float) -> void:
 			if get_slide_collision(i).get_normal().y < 0.5:
 				_force_wander = true
 				break
+
+	# Notify player to stay in combat while this creature is actively hostile
+	const HOSTILE_STATES : Array = [
+		State.NOTICE, State.NEUTRAL_TO_ATTACK,
+		State.CHASE, State.IDLE_ATTACK, State.ATTACK,
+	]
+	if state in HOSTILE_STATES and player != null and player.has_method("_extend_combat_timer"):
+		player.call("_extend_combat_timer")
 
 	stats.tick(delta)
 	# Regen only when out of combat
@@ -683,7 +716,7 @@ func receive_hit(damage: float, knockback_dir: Vector3) -> void:
 			_set_state(State.NEUTRAL_TO_ATTACK)
 
 	if not stats.is_alive():
-		_enter_death()
+		_pending_death = true
 
 
 func _start_hit_flash() -> void:
@@ -699,15 +732,17 @@ func _apply_knockback(dir: Vector3) -> void:
 
 
 func _attack_damage() -> float:
-	# Uses stats.patk — will be replaced by ability.calc_damage(stats) once wired
-	return stats.patk
+	# Resolve ability ID from type + chosen attack anim (e.g. rat + attack_bite → rat_bite)
+	var suffix : String  = _chosen_attack.trim_prefix("attack_")
+	var ab_id  : String  = type + "_" + suffix
+	var ab     : Ability = Abilities.get_ability(ab_id)
+	return ab.calc_damage(stats)
 
 
 func _enter_death() -> void:
-	state          = State.DEATH
-	_anim_done     = false
-	velocity       = Vector3.ZERO
-	_knockback_vel = Vector3.ZERO
+	state      = State.DEATH
+	_anim_done = false
+	velocity   = Vector3.ZERO
 	_update_facing_toward(player.global_position)
 	# _sync_anim() will play death_front / death_back this frame
 

@@ -54,12 +54,13 @@ Zone 2 implementation       → after Zone 2 story
 ```
 
 ### Current Status *(update this whenever a milestone is hit)*
-- **Last completed**: Full target system — WoW-style target frame UI (hud.gd), creature target
-  ring (hollow torus, state-reactive color), Tab cycling with LOS + two-tier on/off screen logic,
-  left-click ray cast targeting, auto-target on hit/receive-hit, target drop on range/returning.
+- **Last completed**: Knockback-before-death, sprint energy drain accumulation timer, and combat
+  regen suppression fix. Creature pings player each frame via `_extend_combat_timer()` while
+  chasing/attacking — keeps regen blocked without requiring damage exchange. Sprint drain
+  accumulates across Shift taps so tap-Shift exploit is closed. Attack-on-air only pauses regen
+  (`_regen_timer`), does not enter combat (`_combat_timer`).
 - **Active work**: Phase 2 Playability (Phase 1 fully done).
-- **Next session target**: Resource rename (rage→focus, mana→flow) in code, OR more abilities,
-  OR creature ability wiring (replace flat 5.0 stub).
+- **Next session target**: Creature loot drops + corpse looting, OR more Weaponmaster abilities.
 - **Blocked on**: Nothing.
 
 ### What the test map currently has (all hardcoded in main.gd `_ready()`)
@@ -356,9 +357,11 @@ Key rules:
 - `PUSH_SPEED = 2.5`, `PULL_SPEED = 1.8` (pull is noticeably slower).
 
 **Two-timer system (combat idle vs regen)** — player.gd uses two independent timers:
-- `_combat_timer` (`COMBAT_TIMEOUT = 3.0s`): set ONLY on creature interaction (player hits a
-  creature in `_do_attack`, or player receives a hit in `receive_hit`). Drives `_is_in_combat()`
-  and therefore the `idle_attack` animation. Cutting grass / hitting props never sets this.
+- `_combat_timer` (`COMBAT_TIMEOUT = 3.0s`): set by (a) player landing a hit on a creature in
+  `_do_attack`, (b) player receiving a hit in `receive_hit`, OR (c) any hostile creature calling
+  `player._extend_combat_timer()` each frame while in NOTICE/NEUTRAL_TO_ATTACK/CHASE/IDLE_ATTACK/
+  ATTACK states. Drives `_is_in_combat()` and the `idle_attack` animation.
+  Attacking into air does NOT set this — it only sets `_regen_timer`.
 - `_regen_timer` (`REGEN_PAUSE = 3.0s`): set on ANY player action (attack start, receive_hit).
   Pauses stat regen regardless of what was hit. Tunable independently of COMBAT_TIMEOUT.
 
@@ -368,9 +371,21 @@ if _combat_timer <= 0.0 and _regen_timer <= 0.0:
     stats.regen(delta)
 ```
 
-`_is_in_combat()` returns true if `_combat_timer > 0` OR any creature with `in_combat=true`
-is within `COMBAT_DETECT_RANGE` (12 tiles). `creature.gd` exposes `in_combat : bool` updated
-in `_set_state` for states NEUTRAL_TO_ATTACK / IDLE_ATTACK / CHASE / ATTACK.
+Creature ping (creature.gd `_physics_process`, after `_update_state`):
+```gdscript
+const HOSTILE_STATES : Array = [
+    State.NOTICE, State.NEUTRAL_TO_ATTACK,
+    State.CHASE, State.IDLE_ATTACK, State.ATTACK,
+]
+if state in HOSTILE_STATES and player != null and player.has_method("_extend_combat_timer"):
+    player.call("_extend_combat_timer")
+```
+This means regen is suppressed the entire time a creature is chasing the player, not just when
+damage is exchanged. As soon as all hostile creatures leave HOSTILE_STATES (die, return home,
+go neutral), `_combat_timer` starts counting down and regen resumes after 3 seconds.
+
+`_is_in_combat()` returns true if `_combat_timer > 0`. `creature.gd` exposes `in_combat : bool`
+updated in `_set_state` for states NEUTRAL_TO_ATTACK / IDLE_ATTACK / CHASE / ATTACK.
 IDLE state anim key rebuilt every frame in `_sync_anim` so the switch back to `idle_neutral`
 happens automatically when combat ends.
 
@@ -477,6 +492,39 @@ func _apply_knockback(dir: Vector3) -> void:
 ```
 Applied in: `player.gd`, `creature.gd`. Tune: STRENGTH = force of push, FRICTION = decay speed
 (higher = shorter slide). At 6.0 / 20.0 the slide lasts ~0.3s.
+
+**Knockback-before-death** — creature must play out its knockback before entering DEATH state.
+Never call `_enter_death()` immediately on lethal damage. Use `_pending_death : bool`:
+```gdscript
+# In receive_hit(), on lethal damage:
+_pending_death = true   # do NOT call _enter_death() here
+
+# In _physics_process, in the knockback else-branch (velocity settled):
+else:
+    _knockback_vel = Vector3.ZERO
+    if _pending_death:
+        _pending_death = false
+        _enter_death()
+
+# _enter_death() does NOT zero _knockback_vel (already settled by the time it runs).
+```
+This ensures the corpse slides visibly before the death animation begins.
+Also guard `receive_hit()` against double-death: check `state == State.DEATH` at entry.
+
+**Sprint energy drain** — accumulate run-time across Shift taps to prevent tap-Shift exploit:
+```gdscript
+var _run_energy_accum : float = 0.0   # persists between Shift presses
+
+# In _physics_process, after _handle_movement():
+if state == State.RUN:
+    _run_energy_accum += delta
+    if _run_energy_accum >= 1.0:
+        var ticks : int = int(_run_energy_accum)
+        stats.energy      = maxf(0.0, stats.energy - SPRINT_ENERGY_COST * ticks)
+        _run_energy_accum -= float(ticks)   # keep remainder — never reset to 0
+```
+Accumulator is NOT reset when the player stops running. Tap 0.9s + tap 0.1s = 1.0s = 1 energy
+drain. Only resets to 0 when the full-second threshold fires.
 
 **Sprite rendering — required on every new SpriteBase3D node:**
 ```gdscript

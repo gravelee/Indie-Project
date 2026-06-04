@@ -1,0 +1,7 @@
+{
+	"ares": {
+		"str": 4, "agi": 4, "sta": 4,
+		"int": 2, "spr": 2, "res": 2, "def": 2,
+		"bms": 3, "exp": 0
+	}
+}

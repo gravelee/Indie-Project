@@ -10,6 +10,7 @@ const SETTINGS_SAVE_PATH : String = "user://camera_settings.tres"
 
 var cam        : CameraSettings
 var camera_rig : Node3D   # typed as Node3D; duck-typed access to rig properties
+var player     : Node     # player.gd node — for player-specific settings
 
 var pause_open         : bool = false
 var settings_page_open : bool = false
@@ -25,9 +26,10 @@ var settings_opt_scroll  : ScrollContainer
 var settings_first_focus : Control
 
 
-func init(p_cam: CameraSettings, p_camera_rig: Node3D) -> void:
+func init(p_cam: CameraSettings, p_camera_rig: Node3D, p_player: Node) -> void:
 	cam        = p_cam
 	camera_rig = p_camera_rig
+	player     = p_player
 	_build_pause_menu()
 	_build_settings_page()
 
@@ -330,6 +332,13 @@ func _build_settings_page() -> void:
 	_build_section(opt_vbox, "VISUAL")
 	_build_int_slider(opt_vbox, "Player fade opacity (0-255)", cam.player_fade_alpha, 0, 255,
 		func(v: int) -> void: cam.player_fade_alpha = v)
+
+	# --- PLAYER ---
+	_build_section(opt_vbox, "PLAYER")
+	_build_checkbox(opt_vbox, "Show attack range", false,
+		func(v: bool) -> void:
+			if player != null:
+				player.set("show_attack_range", v))
 
 
 # ---------------------------------------------------------------------------
