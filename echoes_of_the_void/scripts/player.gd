@@ -74,8 +74,14 @@ var _active_ability : Ability = null
 const COMBAT_TIMEOUT      : float = 3.0    # seconds after last creature hit/received — drives idle_attack
 const REGEN_PAUSE         : float = 3.0    # seconds after ANY action (attack, roll, etc.) — pauses regen
 const COMBAT_DETECT_RANGE : float = 12.0   # tiles — creatures beyond this don't trigger combat idle
+const TAB_TARGET_RANGE    : float = 40.0   # max range for Tab targeting (world units)
 var _combat_timer : float = 0.0   # set only on creature interaction
 var _regen_timer  : float = 0.0   # set on any player action
+
+# Target system
+var _target     : Node         = null   # current targeted creature (null = no target)
+var _tab_buffer : Array[Node]  = []     # creatures visited this tab session
+var _tab_tier   : int          = 0      # 0 = unset, 1 = on-screen, 2 = off-screen fallback
 
 # Knockback
 const KNOCKBACK_STRENGTH : float = 6.0
@@ -181,6 +187,11 @@ func _add_strip(frames: SpriteFrames, anim: String, fps: float,
 # =============================================================================
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Left click — target creature or clear target
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		_handle_click(event.position)
+		return
+
 	if not (event is InputEventKey):
 		return
 
@@ -205,6 +216,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_9:     _slot_requested = 8
 		KEY_0:     _slot_requested = 9
 		KEY_SPACE: _slot_requested = 0
+		KEY_TAB:   _try_tab_target()
 		KEY_SHIFT:
 			# Grab only from IDLE or WALK — not while already sprinting.
 			# If no block is found, normal sprint logic in _handle_movement takes over.
@@ -248,6 +260,19 @@ func _physics_process(delta: float) -> void:
 	if _combat_timer <= 0.0 and _regen_timer <= 0.0:
 		stats.regen(delta)
 
+	# Target: clear if dead or out of tab range; clean tab buffer of dead creatures
+	if _target != null:
+		var tgt_ok : bool = is_instance_valid(_target) and not _target.get("is_dead")
+		if tgt_ok:
+			var tgt_diff : Vector3 = _target.global_position - global_position
+			tgt_diff.y = 0.0
+			tgt_ok = tgt_diff.length_squared() <= TAB_TARGET_RANGE * TAB_TARGET_RANGE
+		if not tgt_ok:
+			_clear_target()
+	_tab_buffer = _tab_buffer.filter(
+		func(n : Node) -> bool: return is_instance_valid(n) and not n.get("is_dead")
+	)
+
 
 # =============================================================================
 # COMBAT DETECTION
@@ -267,6 +292,146 @@ func _is_in_combat() -> bool:
 		if node.get("in_combat"):
 			return true
 	return false
+
+
+# =============================================================================
+# TARGET SYSTEM
+# =============================================================================
+
+func _set_target(node: Node) -> void:
+	if _target != null and _target != node:
+		_target.set("is_targeted", false)
+	_target = node
+	if node != null:
+		node.set("is_targeted", true)
+
+
+func _clear_target() -> void:
+	if _target != null:
+		_target.set("is_targeted", false)
+	_target = null
+	_tab_buffer.clear()
+
+
+# Left-click: ray cast from camera into world. Targets creature, clears on empty space.
+func _handle_click(mouse_pos: Vector2) -> void:
+	if camera_rig == null:
+		return
+	var cam : Camera3D = camera_rig.get("camera") as Camera3D
+	if cam == null:
+		return
+	var space  : PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+	var params := PhysicsRayQueryParameters3D.new()
+	params.from    = cam.global_position
+	params.to      = cam.global_position + cam.project_ray_normal(mouse_pos) * 200.0
+	params.exclude = [self]
+	var result : Dictionary = space.intersect_ray(params)
+	if result.is_empty():
+		_clear_target()
+		return
+	var hit : Node = result.collider as Node
+	if hit != null and hit.is_in_group("creatures"):
+		_set_target(hit)
+	else:
+		_clear_target()
+
+
+# Tab targeting — two tiers, evaluated fresh on every key press:
+#   Tier 1 (on-screen): creatures visible in camera + range + LOS, nearest first.
+#   Tier 2 (off-screen fallback): all range + LOS creatures, nearest first.
+# If the active tier changes between presses (e.g. a creature enters the screen),
+# the buffer resets so cycling restarts from the new pool.
+func _try_tab_target() -> void:
+	if camera_rig == null:
+		return
+	var cam      : Camera3D                  = camera_rig.get("camera") as Camera3D
+	var space    : PhysicsDirectSpaceState3D = get_world_3d().direct_space_state
+	var range_sq : float                     = TAB_TARGET_RANGE * TAB_TARGET_RANGE
+
+	# Full pool: alive, within range, clear LOS.
+	var pool : Array[Node] = []
+	for node : Node in get_tree().get_nodes_in_group("creatures"):
+		if node.get("is_dead"):
+			continue
+		var diff : Vector3 = node.global_position - global_position
+		diff.y = 0.0
+		if diff.length_squared() > range_sq:
+			continue
+		if not _has_los(node, space):
+			continue
+		pool.append(node)
+
+	if pool.is_empty():
+		return
+
+	# Tier 1: on-screen subset.
+	var on_screen : Array[Node] = []
+	if cam != null:
+		for node : Node in pool:
+			if cam.is_position_in_frustum(node.global_position):
+				on_screen.append(node)
+
+	var new_tier   : int        = 1 if not on_screen.is_empty() else 2
+	var candidates : Array[Node] = on_screen if new_tier == 1 else pool.duplicate()
+
+	# Reset buffer if the tier changed since last Tab press.
+	if new_tier != _tab_tier:
+		_tab_tier = new_tier
+		_tab_buffer.clear()
+
+	# Sort nearest first.
+	candidates.sort_custom(func(a : Node, b : Node) -> bool:
+		return a.global_position.distance_squared_to(global_position) \
+			 < b.global_position.distance_squared_to(global_position)
+	)
+
+	# Cycle: first unvisited candidate.
+	for c : Node in candidates:
+		if not _tab_buffer.has(c):
+			_set_target(c)
+			_tab_buffer.append(c)
+			return
+	# All visited — wrap.
+	_tab_buffer.clear()
+	_set_target(candidates[0])
+	_tab_buffer.append(candidates[0])
+
+
+# Returns clockwise angle [0, TAU) from player facing direction to the given node.
+func _angle_from_facing(node: Node) -> float:
+	var h     : float   = camera_rig.h_angle
+	var fwd   : Vector3 = Vector3(-sin(h), 0.0, -cos(h))
+	var right : Vector3 = Vector3( cos(h), 0.0, -sin(h))
+	var diff  : Vector3 = node.global_position - global_position
+	diff.y = 0.0
+	if diff.length_squared() < 0.001:
+		return 0.0
+	diff = diff.normalized()
+	var angle : float = atan2(diff.dot(right), diff.dot(fwd))
+	if angle < 0.0:
+		angle += TAU
+	return angle
+
+
+# Returns true if there is clear line of sight from the player's head to the
+# creature's head (top of capsule). Excludes all creatures so only static world
+# geometry (walls, terrain) can block the ray. A wall shorter than the player's
+# eyes, or a creature taller than the wall, will pass the check correctly.
+func _has_los(node: Node, space: PhysicsDirectSpaceState3D) -> bool:
+	const PLAYER_HEAD : float = 0.90   # matches shp.height in _build_collision
+	var creature_head : float = node.get("head_height") if "head_height" in node else 0.70
+	var from_pos : Vector3 = global_position + Vector3(0.0, PLAYER_HEAD, 0.0)
+	var to_pos   : Vector3 = node.global_position + Vector3(0.0, creature_head, 0.0)
+	var params   := PhysicsRayQueryParameters3D.new()
+	params.from  = from_pos
+	params.to    = to_pos
+	# Exclude the player itself and every creature so only static world blocks the ray
+	var excluded : Array[RID] = [self.get_rid()]
+	for c : Node in get_tree().get_nodes_in_group("creatures"):
+		if c is CollisionObject3D:
+			excluded.append((c as CollisionObject3D).get_rid())
+	params.exclude = excluded
+	return space.intersect_ray(params).is_empty()
 
 
 # =============================================================================
@@ -773,10 +938,13 @@ func _handle_attack(delta: float) -> void:
 	_set_state(State.ATTACK)
 
 
-func receive_hit(damage: float, knockback_dir: Vector3) -> void:
+func receive_hit(damage: float, knockback_dir: Vector3, attacker: Node = null) -> void:
 	stats.take_damage(damage)
-	_combat_timer = COMBAT_TIMEOUT   # being hit by a creature is a combat event
-	_regen_timer  = REGEN_PAUSE      # taking damage also pauses regen
+	_combat_timer = COMBAT_TIMEOUT
+	_regen_timer  = REGEN_PAUSE
+	# Auto-target attacker only if player has no current target
+	if attacker != null and _target == null:
+		_set_target(attacker)
 	_start_hit_flash()
 	if state == State.GRAB or state == State.PULL or state == State.PUSH:
 		_release_grab()
@@ -798,9 +966,11 @@ func _apply_knockback(dir: Vector3) -> void:
 func _do_attack() -> void:
 	if _active_ability == null:
 		return
-	var range_sq : float   = _active_ability.range_ * _active_ability.range_
-	var atk_dir  : Vector3 = _facing_to_world_dir()
-	var atk_pos  : Vector3 = global_position
+	var range_sq        : float  = _active_ability.range_ * _active_ability.range_
+	var atk_dir         : Vector3 = _facing_to_world_dir()
+	var atk_pos         : Vector3 = global_position
+	var nearest_dist_sq : float   = INF
+	var nearest_node    : Node    = null
 	for node : Node in get_tree().get_nodes_in_group("creatures"):
 		var c_pos : Vector3 = node.global_position
 		var diff  : Vector3 = c_pos - atk_pos
@@ -811,6 +981,12 @@ func _do_attack() -> void:
 			continue
 		node.call("receive_hit", _active_ability.calc_damage(stats), diff)
 		_combat_timer = COMBAT_TIMEOUT   # creature was struck — enter/extend combat idle
+		if diff.length_squared() < nearest_dist_sq:
+			nearest_dist_sq = diff.length_squared()
+			nearest_node    = node
+	# Auto-target nearest hit creature only if player has no current target
+	if nearest_node != null and _target == null:
+		_set_target(nearest_node)
 
 
 func _facing_to_world_dir() -> Vector3:

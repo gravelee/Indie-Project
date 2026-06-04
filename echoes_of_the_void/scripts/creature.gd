@@ -79,10 +79,11 @@ const ONE_SHOT_STATES : Dictionary = {
 
 # ── Public refs ────────────────────────────────────────────────────────────
 
-var sprite     : AnimatedSprite3D
-var stats      : Stats
-var camera_rig : Node3D
-var player     : CharacterBody3D
+var sprite      : AnimatedSprite3D
+var stats       : Stats
+var camera_rig  : Node3D
+var player      : CharacterBody3D
+var head_height : float = 0.70   # top of capsule — set in _build_collision()
 
 # ── Creature type ──────────────────────────────────────────────────────────
 
@@ -100,13 +101,21 @@ var temp_home     : bool    = false   # true when immigrant sets combat entry as
 
 # ── Animation / state ──────────────────────────────────────────────────────
 
-var state        : State   = State.IDLE_NEUTRAL
-var in_combat    : bool    = false   # true while in NEUTRAL_TO_ATTACK / IDLE_ATTACK / CHASE / ATTACK
+var state     : State = State.IDLE_NEUTRAL
+var in_combat : bool  = false   # true while in NEUTRAL_TO_ATTACK / IDLE_ATTACK / CHASE / ATTACK
+var is_dead      : bool    = false   # true once DEATH state is entered — used by player target system
+var is_targeted  : bool    = false:
+	set(value):
+		is_targeted = value
+		if _target_ring != null:
+			_target_ring.visible = value
 var facing_right : bool    = false
 var facing_back  : bool    = false
 var _move_dir    : Vector3 = Vector3.BACK
 var _anim_done   : bool    = false
 var _fading      : bool    = false
+var _target_ring     : MeshInstance3D   = null
+var _target_ring_mat : StandardMaterial3D = null
 
 # ── Wander ─────────────────────────────────────────────────────────────────
 
@@ -152,6 +161,7 @@ func init(p_type: String, p_camera_rig: Node3D, p_player: CharacterBody3D,
 
 	_build_collision()
 	_build_sprite()
+	_build_target_ring()
 	_load_animations()
 
 
@@ -170,6 +180,7 @@ func _build_collision() -> void:
 	shp.height     = 0.70
 	col.position.y = shp.height * 0.5
 	col.shape      = shp
+	head_height    = shp.height
 	add_child(col)
 
 
@@ -182,6 +193,40 @@ func _build_sprite() -> void:
 	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	sprite.position.y     = float(SPRITE_SIZE) * sprite.pixel_size * 0.5
 	add_child(sprite)
+
+
+func _update_ring_color() -> void:
+	if _target_ring_mat == null:
+		return
+	match state:
+		State.IDLE_ATTACK, State.CHASE, State.ATTACK:
+			_target_ring_mat.albedo_color = Color(1.0, 0.15, 0.15, 0.80)   # red — in combat
+		State.NOTICE, State.NEUTRAL_TO_ATTACK, State.ATTACK_TO_NEUTRAL:
+			_target_ring_mat.albedo_color = Color(1.0, 0.50, 0.00, 0.80)   # orange — transitioning
+		_:
+			_target_ring_mat.albedo_color = Color(1.0, 0.85, 0.00, 0.75)   # gold — neutral
+
+
+func _build_target_ring() -> void:
+	var mesh := TorusMesh.new()
+	mesh.inner_radius    = 0.40
+	mesh.outer_radius    = 0.55
+	mesh.rings           = 6
+	mesh.ring_segments   = 24
+
+	_target_ring_mat = StandardMaterial3D.new()
+	_target_ring_mat.albedo_color    = Color(1.0, 0.85, 0.0, 0.75)
+	_target_ring_mat.transparency    = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_target_ring_mat.shading_mode    = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_target_ring_mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS
+	_target_ring_mat.no_depth_test   = true
+	mesh.surface_set_material(0, _target_ring_mat)
+
+	_target_ring          = MeshInstance3D.new()
+	_target_ring.mesh     = mesh
+	_target_ring.position = Vector3(0.0, 0.02, 0.0)
+	_target_ring.visible  = false
+	add_child(_target_ring)
 
 
 func _load_animations() -> void:
@@ -424,7 +469,7 @@ func _update_state(delta: float) -> void:
 					if dir.length_squared() > 0.001:
 						dir = dir.normalized()
 					if player.has_method("receive_hit"):
-						player.call("receive_hit", _attack_damage(), dir)
+						player.call("receive_hit", _attack_damage(), dir, self)
 			# State transition waits for the full animation to finish
 			if _anim_done:
 				_attack_timer = ATTACK_COOLDOWN
@@ -475,8 +520,13 @@ func _set_state(new_state: State) -> void:
 	_anim_done = false
 	in_combat = (state == State.NEUTRAL_TO_ATTACK or state == State.IDLE_ATTACK
 			or state == State.CHASE or state == State.ATTACK)
+	is_dead   = (state == State.DEATH or state == State.DEAD)
+	_update_ring_color()
 
 	match state:
+		State.RETURNING:
+			if is_targeted:
+				player.call("_clear_target")
 		State.NEUTRAL_TO_ATTACK:
 			# Immigrants record combat entry position as temp home (combat leash origin)
 			if not has_home:

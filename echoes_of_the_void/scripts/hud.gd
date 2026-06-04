@@ -8,12 +8,20 @@ extends CanvasLayer
 #   canvas.call("refresh")   ← once per frame from main.gd._process()
 # =============================================================================
 
-# Bar geometry (bottom-left, just above hotbar)
+# Player bar geometry (bottom-left, just above hotbar)
 const BAR_W   : int = 200
 const BAR_H   : int = 12
 const BAR_PAD : int = 4      # gap between bars
 const BAR_X   : int = 8
 const BAR_Y   : int = 956    # 1028 - 4*(12+4) - 8
+
+# Target frame geometry (top-left)
+const TGT_X      : int = 8
+const TGT_Y      : int = 8
+const TGT_NAME_H : int = 14   # name label height
+const TGT_BAR_W  : int = 200
+const TGT_BAR_H  : int = 12
+const TGT_PAD    : int = 4
 
 # Hotbar geometry (bottom-center)
 const SLOT_SIZE : int = 44
@@ -35,12 +43,25 @@ var _bar_fills   : Array[ColorRect] = []   # indexed [0]=HP [1]=Energy [2]=Focus
 var _slot_frames : Array[ColorRect] = []   # slot backgrounds (10)
 var _slot_covers : Array[ColorRect] = []   # cooldown overlays (10)
 
-# Dirty-check caches
+# Target frame nodes
+var _tgt_root      : Control          = null   # container — hidden when no target
+var _tgt_name_lbl  : Label            = null
+var _tgt_bar_bgs   : Array[ColorRect] = []     # bar backgrounds (up to 4)
+var _tgt_bar_fills : Array[ColorRect] = []     # bar fills (up to 4)
+
+# Dirty-check caches — player
 var _last_hp     : float = -1.0
 var _last_energy : float = -1.0
 var _last_focus  : float = -1.0
 var _last_flow   : float = -1.0
 var _last_cdpct  : Array[float] = []
+
+# Dirty-check caches — target
+var _last_tgt          : Node    = null
+var _last_tgt_hp       : float   = -1.0
+var _last_tgt_energy   : float   = -1.0
+var _last_tgt_focus    : float   = -1.0
+var _last_tgt_flow     : float   = -1.0
 
 
 # =============================================================================
@@ -52,6 +73,7 @@ func init(p_player: CharacterBody3D) -> void:
 	layer   = 1
 	_build_bars()
 	_build_hotbar()
+	_build_target_frame()
 	_last_cdpct.resize(10)
 	_last_cdpct.fill(-1.0)
 
@@ -102,6 +124,38 @@ func _build_hotbar() -> void:
 		_slot_covers.append(cover)
 
 
+func _build_target_frame() -> void:
+	_tgt_root = Control.new()
+	_tgt_root.position = Vector2(TGT_X, TGT_Y)
+	_tgt_root.visible  = false
+	add_child(_tgt_root)
+
+	# Name label
+	_tgt_name_lbl = Label.new()
+	_tgt_name_lbl.position = Vector2(0, 0)
+	_tgt_name_lbl.size     = Vector2(TGT_BAR_W, TGT_NAME_H)
+	_tgt_name_lbl.add_theme_font_size_override("font_size", 11)
+	_tgt_name_lbl.add_theme_color_override("font_color", Color(0.90, 0.90, 0.90))
+	_tgt_root.add_child(_tgt_name_lbl)
+
+	# 4 bar slots (HP / Energy / Focus / Flow) — all built, shown/hidden per target
+	var colors : Array[Color] = [COLOR_HP, COLOR_ENERGY, COLOR_FOCUS, COLOR_FLOW]
+	for i : int in range(4):
+		var y : int = TGT_NAME_H + TGT_PAD + i * (TGT_BAR_H + TGT_PAD)
+		var bg := ColorRect.new()
+		bg.color    = COLOR_BG
+		bg.position = Vector2(0, y)
+		bg.size     = Vector2(TGT_BAR_W, TGT_BAR_H)
+		_tgt_root.add_child(bg)
+		_tgt_bar_bgs.append(bg)
+		var fill := ColorRect.new()
+		fill.color    = colors[i]
+		fill.position = Vector2(0, y)
+		fill.size     = Vector2(TGT_BAR_W, TGT_BAR_H)
+		_tgt_root.add_child(fill)
+		_tgt_bar_fills.append(fill)
+
+
 # =============================================================================
 # REFRESH — call once per frame from main.gd._process()
 # =============================================================================
@@ -145,3 +199,53 @@ func refresh() -> void:
 			cover.visible    = true
 			cover.size.y     = SLOT_SIZE * (1.0 - pct)
 			cover.position.y = float(HOTBAR_Y)
+
+	_refresh_target()
+
+
+func _refresh_target() -> void:
+	var tgt : Node = _player.get("_target")
+
+	# Show/hide frame and reset dirty cache when target changes
+	if tgt != _last_tgt:
+		_last_tgt        = tgt
+		_last_tgt_hp     = -1.0
+		_last_tgt_energy = -1.0
+		_last_tgt_focus  = -1.0
+		_last_tgt_flow   = -1.0
+		_tgt_root.visible = tgt != null
+		if tgt != null:
+			# Capitalise first letter of creature type for display name
+			var raw : String = tgt.get("type") if "type" in tgt else "?"
+			_tgt_name_lbl.text = raw.capitalize()
+			# Show only bars the creature actually has (max > 0)
+			var ts : Stats = tgt.get("stats") as Stats
+			_tgt_bar_bgs[0].visible   = true    # HP always shown
+			_tgt_bar_fills[0].visible = true
+			_tgt_bar_bgs[1].visible   = ts != null and ts.energy_max > 0
+			_tgt_bar_fills[1].visible = ts != null and ts.energy_max > 0
+			_tgt_bar_bgs[2].visible   = ts != null and ts.focus_max  > 0
+			_tgt_bar_fills[2].visible = ts != null and ts.focus_max  > 0
+			_tgt_bar_bgs[3].visible   = ts != null and ts.flow_max   > 0
+			_tgt_bar_fills[3].visible = ts != null and ts.flow_max   > 0
+		return
+
+	if tgt == null:
+		return
+
+	# Update bars dirty-checked
+	var ts : Stats = tgt.get("stats") as Stats
+	if ts == null:
+		return
+	if ts.hp != _last_tgt_hp:
+		_last_tgt_hp = ts.hp
+		_tgt_bar_fills[0].size.x = TGT_BAR_W * clampf(ts.hp_pct(), 0.0, 1.0)
+	if ts.energy_max > 0 and ts.energy != _last_tgt_energy:
+		_last_tgt_energy = ts.energy
+		_tgt_bar_fills[1].size.x = TGT_BAR_W * clampf(ts.energy_pct(), 0.0, 1.0)
+	if ts.focus_max > 0 and ts.focus != _last_tgt_focus:
+		_last_tgt_focus = ts.focus
+		_tgt_bar_fills[2].size.x = TGT_BAR_W * clampf(ts.focus_pct(), 0.0, 1.0)
+	if ts.flow_max > 0 and ts.flow != _last_tgt_flow:
+		_last_tgt_flow = ts.flow
+		_tgt_bar_fills[3].size.x = TGT_BAR_W * clampf(ts.flow_pct(), 0.0, 1.0)
