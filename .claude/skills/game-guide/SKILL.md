@@ -54,9 +54,9 @@ Zone 2 implementation       → after Zone 2 story
 ```
 
 ### Current Status *(update this whenever a milestone is hit)*
-- **Last completed**: Push/pull mechanic, combat idle system, weapon slot stubs, hit-frame
-  mechanic for player attacks, animation pipeline restructured for weapon-style variants,
-  grab alignment tightened + snap-to-grab on all 4 sides.
+- **Last completed**: Full target system — WoW-style target frame UI (hud.gd), creature target
+  ring (hollow torus, state-reactive color), Tab cycling with LOS + two-tier on/off screen logic,
+  left-click ray cast targeting, auto-target on hit/receive-hit, target drop on range/returning.
 - **Active work**: Phase 2 Playability (Phase 1 fully done).
 - **Next session target**: Resource rename (rage→focus, mana→flow) in code, OR more abilities,
   OR creature ability wiring (replace flat 5.0 stub).
@@ -385,6 +385,38 @@ Export script source paths follow `{dir}/{anim_type}/{style}/` (e.g. `south/atta
 Output PNGs: `attack_unarmed_south.png`, `idle_attack_unarmed_south.png`, etc.
 Adding a new weapon = new export block + new `_add_strip` block + set `weapon_main`.
 
+**Target system** — WoW-style single target. Lives in `player.gd` and `creature.gd`.
+
+- `_target : Node` — current target (null = none). Set via `_set_target(node)` / `_clear_target()`.
+- `_set_target` toggles `is_targeted` on old and new creature — property setter shows/hides the ring.
+- Target drops automatically when: creature dies, creature enters RETURNING state, creature walks
+  beyond `TAB_TARGET_RANGE` (40 units). Persists through walls (LOS loss does not clear it).
+- Auto-target: `_do_attack()` targets nearest struck creature if no current target.
+  `receive_hit()` targets the attacker if no current target.
+
+Tab cycling — `_try_tab_target()`:
+- Full pool: alive + within 40 units + clear LOS (`_has_los()` ray from player head to creature head,
+  excludes all creatures so only world geometry blocks it).
+- Tier 1 (on-screen): creatures visible in camera frustum, sorted nearest first.
+- Tier 2 fallback: nothing on screen → all pool creatures, nearest first.
+- `_tab_tier` tracks active tier; buffer resets on tier switch so cycling restarts cleanly.
+- `_tab_buffer` tracks visited creatures per session; wraps when all visited.
+
+Target ring (creature.gd):
+- Hollow `TorusMesh` at ground level under creature. Built in `_build_target_ring()`, hidden by default.
+- `is_targeted : bool` property setter shows/hides the ring.
+- Color driven by `_update_ring_color()` called on every `_set_state()` transition:
+  - Gold: `IDLE_NEUTRAL`, `WANDER`, `RETURNING` (and all other neutral states)
+  - Orange: `NOTICE`, `NEUTRAL_TO_ATTACK`, `ATTACK_TO_NEUTRAL`
+  - Red: `IDLE_ATTACK`, `CHASE`, `ATTACK`
+- `head_height : float` on creature = top of capsule (set in `_build_collision`). Used by LOS ray.
+
+Target frame HUD (hud.gd):
+- Built in `_build_target_frame()` — name label + up to 4 resource bars (HP/Energy/Focus/Flow).
+- Bars visible only if creature has that resource (`stat_max > 0`).
+- Dirty-checked in `_refresh_target()` called from `refresh()` each frame.
+- Name = `creature.type.capitalize()`.
+
 **Guard flags for one-shot async actions** — when a Tween or async operation must only start
 once, use a bool guard checked at entry:
 ```gdscript
@@ -557,12 +589,13 @@ the player must read to dodge.
 **Phase 2 — Playability**
 1. Resource rename in code (rage→focus, mana→flow)
 2. ~~Hotbar UI~~ ✓ DONE
-3. Ability / talent book panel UI
-4. More Weaponmaster abilities (melee + ranged options)
-5. ~~Neutral creature type~~ ✓ DONE
-6. Creature loot drops + corpse looting
-7. Player backpack / inventory panel
-8. Attack area review (unarmed range/arc tested, weapon variants will differ)
+3. ~~Target system~~ ✓ DONE — see target system pattern below
+4. Ability / talent book panel UI
+5. More Weaponmaster abilities (melee + ranged options)
+6. ~~Neutral creature type~~ ✓ DONE
+7. Creature loot drops + corpse looting
+8. Player backpack / inventory panel
+9. Attack area review (unarmed range/arc tested, weapon variants will differ)
 
 **Phase 3 — First Dungeon Loop**
 1. Dungeon room system (room-based maps, door transitions)
