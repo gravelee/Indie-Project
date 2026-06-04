@@ -82,10 +82,10 @@ func _ready() -> void:
 	_build_hud()
 	_build_test_block()
 	# Test cases — scattered to map corners so they can be engaged one at a time
-	_build_creature("rat",   Vector3( 2.0, 0.0,  2.0), "hostile", true,  true)   # NW — home + wander
-	_build_creature("rat",   Vector3(23.0, 0.0,  2.0), "hostile", true,  false)  # NE — home + guard
-	_build_creature("snake", Vector3( 2.0, 0.0, 23.0), "hostile", false, true)   # SW — immigrant + wander
-	_build_creature("rat",   Vector3(23.0, 0.0, 23.0), "neutral", false, false)  # SE — neutral, no home
+	_build_creature("rat",   "rat_common",   Vector3( 2.0, 0.0,  2.0), "hostile", true,  true)   # NW — home + wander      lv2
+	_build_creature("rat",   "rat_scrapper", Vector3(23.0, 0.0,  2.0), "hostile", true,  false)  # NE — home + guard       lv2
+	_build_creature("snake", "snake_common", Vector3( 2.0, 0.0, 23.0), "hostile", false, true)   # SW — immigrant + wander  lv3
+	_build_creature("rat",   "rat_young",    Vector3(23.0, 0.0, 23.0), "neutral", false, false)  # SE — neutral, no home    lv1
 	_build_ui()
 	_build_debug_label()
 
@@ -400,7 +400,7 @@ func _build_test_block() -> void:
 	add_child(body)
 
 
-func _build_creature(type: String, world_pos: Vector3,
+func _build_creature(type: String, stat_id: String, world_pos: Vector3,
 		aggression: String, has_home: bool, can_wander: bool) -> void:
 	var body := CharacterBody3D.new()
 	body.name = type.capitalize()
@@ -408,7 +408,7 @@ func _build_creature(type: String, world_pos: Vector3,
 	body.set_script(load("res://scripts/creature.gd"))
 	add_child(body)
 	# home_position is recorded inside init() from body.global_position — set AFTER add_child
-	body.call("init", type, camera_rig, player_body, aggression, has_home, can_wander)
+	body.call("init", type, stat_id, camera_rig, player_body, aggression, has_home, can_wander)
 
 
 

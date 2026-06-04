@@ -136,7 +136,7 @@ func _recalculate_all() -> void:
 	dodge      = (agi  * 0.1) + (sta * 0.1)
 	block      = (def_ * 0.1) + (sta * 0.1)
 	resist     = res  * 0.1
-	mspd       = bms  + (agi  * 0.5)
+	mspd       = bms  + (agi  * 0.005)   # 0.005 per agi ≈ 0.25% per point on bms=2 base
 
 
 func _calc_level() -> int:

@@ -1,0 +1,22 @@
+{
+	"rat_young": {
+		"str": 1, "agi": 1, "sta": 3,
+		"int": 0, "spr": 0, "res": 0, "def": 0,
+		"bms": 2, "exp": 5
+	},
+	"rat_common": {
+		"str": 1, "agi": 1, "sta": 5,
+		"int": 0, "spr": 0, "res": 0, "def": 0,
+		"bms": 2, "exp": 10
+	},
+	"rat_scrapper": {
+		"str": 2, "agi": 0, "sta": 6,
+		"int": 0, "spr": 0, "res": 0, "def": 1,
+		"bms": 2, "exp": 12
+	},
+	"snake_common": {
+		"str": 3, "agi": 2, "sta": 7,
+		"int": 0, "spr": 0, "res": 1, "def": 1,
+		"bms": 2.2, "exp": 20
+	}
+}

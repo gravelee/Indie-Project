@@ -139,7 +139,7 @@ var _hit_applied    : bool    = false   # true once hit-frame damage fires this 
 # INIT
 # =============================================================================
 
-func init(p_type: String, p_camera_rig: Node3D, p_player: CharacterBody3D,
+func init(p_type: String, p_stat_id: String, p_camera_rig: Node3D, p_player: CharacterBody3D,
 		p_aggression: String, p_has_home: bool, p_can_wander: bool) -> void:
 	type           = p_type
 	sprite_path    = SPRITE_PATH + type + "/"
@@ -153,8 +153,8 @@ func init(p_type: String, p_camera_rig: Node3D, p_player: CharacterBody3D,
 	if has_home:
 		home_position = global_position   # set after add_child in main.gd
 
-	var s : Array = _stat_preset(type)
-	stats = Stats.new(s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8])
+	var stat_key : String = p_stat_id if p_stat_id != "" else p_type
+	stats = _load_stats(stat_key)
 
 	_wander_timer    = randf_range(0.0, 1.0)
 	_wander_interval = randf_range(WANDER_INTERVAL_MIN, WANDER_INTERVAL_MAX)
@@ -165,12 +165,15 @@ func init(p_type: String, p_camera_rig: Node3D, p_player: CharacterBody3D,
 	_load_animations()
 
 
-func _stat_preset(p_type: String) -> Array:
-	# [STR, AGI, STA, INT, SPR, RES, DEF, BMS, EXP]
-	match p_type:
-		"rat":   return [1, 1, 5, 0, 0, 0, 0, 2, 10]   # mspd = 2.5
-		"snake": return [2, 2, 3, 0, 0, 0, 0, 2, 15]   # mspd = 3.0
-		_:       return [1, 1, 5, 0, 0, 0, 0, 2, 10]
+func _load_stats(p_type: String) -> Stats:
+	var d : Dictionary = AssetLoader.get_creature_stats(p_type)
+	if d.is_empty():
+		push_warning("creature.gd: no stats found for type '" + p_type + "' — using fallback")
+	return Stats.new(
+		d.get("str", 1), d.get("agi", 1), d.get("sta", 5),
+		d.get("int", 0), d.get("spr", 0), d.get("res", 0), d.get("def", 0),
+		d.get("bms", 2), d.get("exp", 10)
+	)
 
 
 func _build_collision() -> void:
@@ -696,8 +699,8 @@ func _apply_knockback(dir: Vector3) -> void:
 
 
 func _attack_damage() -> float:
-	# TODO: replace with ability.use() once ability system is wired
-	return 5.0
+	# Uses stats.patk — will be replaced by ability.calc_damage(stats) once wired
+	return stats.patk
 
 
 func _enter_death() -> void:

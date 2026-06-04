@@ -564,10 +564,11 @@ creature locks its swing direction on the first frame — the wind-up becomes th
 the player must read to dodge.
 
 ### Code Stubs (to replace in later phases)
-- `creature.gd _attack_damage()` — returns flat 5.0. Replace with `Abilities.get_ability(id)`
-  + `ab.calc_damage(stats)` once creatures have their own Stats objects.
-- `creature.gd State.ATTACK` — calls `player.receive_hit(flat_damage, dir)` directly.
-  Replace with ability resolution (resist → dodge → block → damage → crit).
+- `creature.gd _attack_damage()` — currently returns `stats.patk` (real value, no multiplier).
+  Replace with `Abilities.get_ability(id)` + `ab.calc_damage(stats)` to apply `damage_mult`,
+  crit, resist, and block resolution properly.
+- `creature.gd State.ATTACK` — calls `player.receive_hit(patk, dir)` directly.
+  Replace with full ability resolution (resist → dodge → block → damage → crit).
 - A* pathfinding not yet ported — creatures use direct `move_toward` (ignore obstacles).
   Add `pathfinder.gd` port from old project as a separate task.
 
@@ -587,9 +588,9 @@ the player must read to dodge.
 - [x] Hit-frame mechanic for player (sprite.frame >= ability.hit_frame before damage fires)
 
 **Phase 2 — Playability**
-1. Resource rename in code (rage→focus, mana→flow)
-2. ~~Hotbar UI~~ ✓ DONE
-3. ~~Target system~~ ✓ DONE — see target system pattern below
+1. ~~Hotbar UI~~ ✓ DONE
+2. ~~Target system~~ ✓ DONE — see target system pattern below
+3. ~~Creature stats from JSON~~ ✓ DONE — `assets/data/_creature_stats.json`, loaded via AssetLoader
 4. Ability / talent book panel UI
 5. More Weaponmaster abilities (melee + ranged options)
 6. ~~Neutral creature type~~ ✓ DONE

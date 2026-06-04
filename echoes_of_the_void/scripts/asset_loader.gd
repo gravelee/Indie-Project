@@ -13,8 +13,9 @@ class_name AssetLoader
 # Call AssetLoader.clear() on scene unload to release all cached resources.
 # =============================================================================
 
-static var _frames   : Dictionary = {}   # String → SpriteFrames
-static var _textures : Dictionary = {}   # String → Texture2D
+static var _frames         : Dictionary = {}   # String → SpriteFrames
+static var _textures       : Dictionary = {}   # String → Texture2D
+static var _creature_stats : Dictionary = {}   # String → stat Dictionary (lazy-loaded from JSON)
 
 
 # ---------------------------------------------------------------------------
@@ -54,9 +55,34 @@ static func load_texture(path: String) -> Texture2D:
 
 
 # ---------------------------------------------------------------------------
+# Creature stats — loaded once from JSON, keyed by creature type string.
+# Returns an empty Dictionary if the type is unknown or file is missing.
+# ---------------------------------------------------------------------------
+
+static func get_creature_stats(p_type: String) -> Dictionary:
+	if _creature_stats.is_empty():
+		_load_creature_stats()
+	return _creature_stats.get(p_type, {}) as Dictionary
+
+
+static func _load_creature_stats() -> void:
+	const PATH : String = "res://assets/data/_creature_stats.json"
+	if not FileAccess.file_exists(PATH):
+		push_error("AssetLoader: _creature_stats.json not found at " + PATH)
+		return
+	var text   : String  = FileAccess.get_file_as_string(PATH)
+	var parsed : Variant = JSON.parse_string(text)
+	if parsed is Dictionary:
+		_creature_stats = parsed as Dictionary
+	else:
+		push_error("AssetLoader: failed to parse _creature_stats.json")
+
+
+# ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------
 
 static func clear() -> void:
 	_frames.clear()
 	_textures.clear()
+	_creature_stats.clear()
