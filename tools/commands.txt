@@ -1,3 +1,5 @@
+stop script: ctrl + c
+
 python3 tools/export_sprite.py
 
 ./tools/sort_folders.sh

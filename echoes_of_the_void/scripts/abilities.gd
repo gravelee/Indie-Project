@@ -20,7 +20,7 @@ const _DATA : Dictionary = {
 		"range_":       1.5,
 		"cooldown":     0.5,
 		"energy_cost":  1,
-		"hit_frame":    3,
+		"hit_frame":    2,
 	},
 
 	"heavy_strike": {
