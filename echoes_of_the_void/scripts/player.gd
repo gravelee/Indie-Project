@@ -302,7 +302,7 @@ func _physics_process(delta: float) -> void:
 		velocity.y = 0.0
 
 	_handle_movement(delta)
-	if state == State.RUN:
+	if state == State.RUN or state == State.PUSH or state == State.PULL:
 		_run_energy_accum += delta
 		if _run_energy_accum >= 1.0:
 			var ticks : int = int(_run_energy_accum)
@@ -327,7 +327,9 @@ func _physics_process(delta: float) -> void:
 	stats.tick(delta)
 	_combat_timer = maxf(0.0, _combat_timer - delta)
 	_regen_timer  = maxf(0.0, _regen_timer  - delta)
-	if _combat_timer <= 0.0 and _regen_timer <= 0.0:
+	if _combat_timer <= 0.0 and _regen_timer <= 0.0 \
+			and state != State.RUN and state != State.PUSH \
+			and state != State.PULL and state != State.GRAB:
 		stats.regen(delta)
 
 	# Target: clear if dead or out of tab range; clean tab buffer of dead creatures

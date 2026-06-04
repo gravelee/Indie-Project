@@ -54,11 +54,9 @@ Zone 2 implementation       → after Zone 2 story
 ```
 
 ### Current Status *(update this whenever a milestone is hit)*
-- **Last completed**: Knockback-before-death, sprint energy drain accumulation timer, and combat
-  regen suppression fix. Creature pings player each frame via `_extend_combat_timer()` while
-  chasing/attacking — keeps regen blocked without requiring damage exchange. Sprint drain
-  accumulates across Shift taps so tap-Shift exploit is closed. Attack-on-air only pauses regen
-  (`_regen_timer`), does not enter combat (`_combat_timer`).
+- **Last completed**: Knockback-before-death, sprint energy drain accumulation timer, combat regen
+  suppression fix, UI bars update on integer steps only, no regen while running/pushing/pulling,
+  PUSH and PULL states drain energy at same rate as RUN (1/s, shared accumulator).
 - **Active work**: Phase 2 Playability (Phase 1 fully done).
 - **Next session target**: Creature loot drops + corpse looting, OR more Weaponmaster abilities.
 - **Blocked on**: Nothing.
@@ -511,20 +509,28 @@ else:
 This ensures the corpse slides visibly before the death animation begins.
 Also guard `receive_hit()` against double-death: check `state == State.DEATH` at entry.
 
-**Sprint energy drain** — accumulate run-time across Shift taps to prevent tap-Shift exploit:
+**Sprint/exertion energy drain** — accumulate active-time across state transitions to prevent
+tap-exploit. Applies to RUN, PUSH, and PULL equally (all cost 1 energy/second):
 ```gdscript
-var _run_energy_accum : float = 0.0   # persists between Shift presses
+var _run_energy_accum : float = 0.0   # persists; shared across RUN/PUSH/PULL
 
 # In _physics_process, after _handle_movement():
-if state == State.RUN:
+if state == State.RUN or state == State.PUSH or state == State.PULL:
     _run_energy_accum += delta
     if _run_energy_accum >= 1.0:
         var ticks : int = int(_run_energy_accum)
         stats.energy      = maxf(0.0, stats.energy - SPRINT_ENERGY_COST * ticks)
         _run_energy_accum -= float(ticks)   # keep remainder — never reset to 0
 ```
-Accumulator is NOT reset when the player stops running. Tap 0.9s + tap 0.1s = 1.0s = 1 energy
-drain. Only resets to 0 when the full-second threshold fires.
+Accumulator persists between exertion bursts — tap-running and tap-pushing both accumulate.
+
+Regen is blocked while in any exertion state (RUN, PUSH, PULL, GRAB):
+```gdscript
+if _combat_timer <= 0.0 and _regen_timer <= 0.0 \
+        and state != State.RUN and state != State.PUSH \
+        and state != State.PULL and state != State.GRAB:
+    stats.regen(delta)
+```
 
 **Sprite rendering — required on every new SpriteBase3D node:**
 ```gdscript

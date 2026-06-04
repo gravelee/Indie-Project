@@ -167,19 +167,19 @@ func refresh() -> void:
 	if s == null:
 		return
 
-	# Resource bars
-	if s.hp != _last_hp:
+	# Resource bars — update only on whole-integer changes (no bar flicker during regen)
+	if int(s.hp) != int(_last_hp):
 		_last_hp = s.hp
-		_bar_fills[0].size.x = BAR_W * clampf(s.hp_pct(), 0.0, 1.0)
-	if s.energy != _last_energy:
+		_bar_fills[0].size.x = BAR_W * clampf(float(int(s.hp)) / s.hp_max, 0.0, 1.0)
+	if int(s.energy) != int(_last_energy):
 		_last_energy = s.energy
-		_bar_fills[1].size.x = BAR_W * clampf(s.energy_pct(), 0.0, 1.0)
-	if s.focus != _last_focus:
+		_bar_fills[1].size.x = BAR_W * clampf(float(int(s.energy)) / s.energy_max, 0.0, 1.0)
+	if int(s.focus) != int(_last_focus):
 		_last_focus = s.focus
-		_bar_fills[2].size.x = BAR_W * clampf(s.focus_pct(), 0.0, 1.0)
-	if s.flow != _last_flow:
+		_bar_fills[2].size.x = BAR_W * clampf(float(int(s.focus)) / s.focus_max, 0.0, 1.0)
+	if int(s.flow) != int(_last_flow):
 		_last_flow = s.flow
-		_bar_fills[3].size.x = BAR_W * clampf(s.flow_pct(), 0.0, 1.0)
+		_bar_fills[3].size.x = BAR_W * clampf(float(int(s.flow)) / s.flow_max, 0.0, 1.0)
 
 	# Hotbar cooldowns
 	var ability_bar : Array = _player.get("ability_bar")
@@ -237,15 +237,15 @@ func _refresh_target() -> void:
 	var ts : Stats = tgt.get("stats") as Stats
 	if ts == null:
 		return
-	if ts.hp != _last_tgt_hp:
+	if int(ts.hp) != int(_last_tgt_hp):
 		_last_tgt_hp = ts.hp
-		_tgt_bar_fills[0].size.x = TGT_BAR_W * clampf(ts.hp_pct(), 0.0, 1.0)
-	if ts.energy_max > 0 and ts.energy != _last_tgt_energy:
+		_tgt_bar_fills[0].size.x = TGT_BAR_W * clampf(float(int(ts.hp)) / ts.hp_max, 0.0, 1.0)
+	if ts.energy_max > 0 and int(ts.energy) != int(_last_tgt_energy):
 		_last_tgt_energy = ts.energy
-		_tgt_bar_fills[1].size.x = TGT_BAR_W * clampf(ts.energy_pct(), 0.0, 1.0)
-	if ts.focus_max > 0 and ts.focus != _last_tgt_focus:
+		_tgt_bar_fills[1].size.x = TGT_BAR_W * clampf(float(int(ts.energy)) / ts.energy_max, 0.0, 1.0)
+	if ts.focus_max > 0 and int(ts.focus) != int(_last_tgt_focus):
 		_last_tgt_focus = ts.focus
-		_tgt_bar_fills[2].size.x = TGT_BAR_W * clampf(ts.focus_pct(), 0.0, 1.0)
-	if ts.flow_max > 0 and ts.flow != _last_tgt_flow:
+		_tgt_bar_fills[2].size.x = TGT_BAR_W * clampf(float(int(ts.focus)) / ts.focus_max, 0.0, 1.0)
+	if ts.flow_max > 0 and int(ts.flow) != int(_last_tgt_flow):
 		_last_tgt_flow = ts.flow
-		_tgt_bar_fills[3].size.x = TGT_BAR_W * clampf(ts.flow_pct(), 0.0, 1.0)
+		_tgt_bar_fills[3].size.x = TGT_BAR_W * clampf(float(int(ts.flow)) / ts.flow_max, 0.0, 1.0)
