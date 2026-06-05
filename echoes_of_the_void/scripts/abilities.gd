@@ -13,12 +13,12 @@ const _DATA : Dictionary = {
 
 	"punch": {
 		"display_name": "Punch",
-		"description":  "A basic melee strike.",
+		"description":  "A basic melee punch.",
 		"anim":         "attack",
 		"is_magic":     false,
 		"damage_mult":  1.0,
 		"range_":       1.5,
-		"cooldown":     0.5,
+		"cooldown":     1.0,
 		"energy_cost":  1,
 		"hit_frame":    2,
 	},
@@ -32,6 +32,7 @@ const _DATA : Dictionary = {
 		"range_":       1.5,
 		"cooldown":     5.0,
 		"energy_cost":  3,
+		"focus_cost":   10,
 	},
 
 	# ---- Creature abilities -----------------------------------------------------
@@ -42,8 +43,9 @@ const _DATA : Dictionary = {
 		"anim":         "attack_bite",
 		"is_magic":     false,
 		"damage_mult":  1.0,
-		"range_":       1.2,
-		"cooldown":     2.5,
+		"range_":       1.5,
+		"cooldown":     2.0,
+		"energy_cost":  1,
 		"hit_frame":    4,
 	},
 
@@ -52,9 +54,11 @@ const _DATA : Dictionary = {
 		"description":  "Rat rakes with its claws.",
 		"anim":         "attack_slash",
 		"is_magic":     false,
-		"damage_mult":  1.2,
-		"range_":       1.3,
-		"cooldown":     3.0,
+		"damage_mult":  1.4,
+		"range_":       1.6,
+		"cooldown":     6.0,
+		"energy_cost":  1,
+		"focus_cost":   10,
 		"hit_frame":    5,
 	},
 
@@ -64,8 +68,9 @@ const _DATA : Dictionary = {
 		"anim":         "attack_bite",
 		"is_magic":     false,
 		"damage_mult":  1.0,
-		"range_":       1.2,
+		"range_":       1.5,
 		"cooldown":     3.0,
+		"energy_cost":  1,
 		"hit_frame":    4,
 	},
 
@@ -74,12 +79,23 @@ const _DATA : Dictionary = {
 		"description":  "Snake sweeps its tail in a wide arc.",
 		"anim":         "attack_tail_slam",
 		"is_magic":     false,
-		"damage_mult":  0.8,
-		"range_":       1.6,
+		"damage_mult":  1.5,
+		"range_":       1.7,
 		"cooldown":     4.0,
+		"energy_cost":  1,
+		"focus_cost":   10,
 		"hit_frame":    5,
 	},
 }
+
+
+static func get_ids_for_type(creature_type: String) -> Array[String]:
+	var result : Array[String] = []
+	var prefix : String = creature_type + "_"
+	for id : String in _DATA:
+		if id.begins_with(prefix):
+			result.append(id)
+	return result
 
 
 static func get_ability(p_id: String) -> Ability:

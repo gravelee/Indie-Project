@@ -54,12 +54,18 @@ Zone 2 implementation       → after Zone 2 story
 ```
 
 ### Current Status *(update this whenever a milestone is hit)*
-- **Last completed**: Knockback-before-death, sprint energy drain accumulation timer, combat regen
-  suppression fix, UI bars update on integer steps only, no regen while running/pushing/pulling,
-  PUSH and PULL states drain energy at same rate as RUN (1/s, shared accumulator).
-- **Active work**: Phase 2 Playability (Phase 1 fully done).
-- **Next session target**: Creature loot drops + corpse looting, OR more Weaponmaster abilities.
-- **Blocked on**: Nothing.
+- **Last completed**: Full creature ability system overhaul (per-ability cooldowns, max-damage
+  selection, ability range drives engagement distance), debug panel (replaces target frame),
+  HP integer snap + is_alive() >= 1.0 fix, dead creature targeting (gray ring, persists until
+  out of range/tab/click-elsewhere), sprint gate at energy >= 1.0, fullscreen + no boot splash,
+  Focus gain for creatures (same formula as player), focus_cost on heavy abilities.
+- **Active work**: Design conversation — Weaponmaster/Spellcaster subclasses, level cap, Focus/Flow
+  lore, stat-point progression from nothing.
+- **Next session target**: Lock subclass ability lists and progression design, then implement
+  first pass of talent/stat-point UI and starting-from-nothing flow.
+- **Blocked on**: Design questions — (1) Does pet have HP and can it die? (2) Is stealth a button
+  or ability-only? (3) Level cap final decision (leaning 30). (4) Player starting stats: all 1s or
+  preset minimum?
 
 ### What the test map currently has (all hardcoded in main.gd `_ready()`)
 - Ground: 25×25 checkerboard PlaneMesh tiles + WorldBoundaryShape3D collision
@@ -372,14 +378,16 @@ if _combat_timer <= 0.0 and _regen_timer <= 0.0:
 Creature ping (creature.gd `_physics_process`, after `_update_state`):
 ```gdscript
 const HOSTILE_STATES : Array = [
-    State.NOTICE, State.NEUTRAL_TO_ATTACK,
+    State.NEUTRAL_TO_ATTACK,
     State.CHASE, State.IDLE_ATTACK, State.ATTACK,
 ]
 if state in HOSTILE_STATES and player != null and player.has_method("_extend_combat_timer"):
     player.call("_extend_combat_timer")
 ```
-This means regen is suppressed the entire time a creature is chasing the player, not just when
-damage is exchanged. As soon as all hostile creatures leave HOSTILE_STATES (die, return home,
+NOTICE is NOT in HOSTILE_STATES — it's pre-combat awareness, not aggression. The creature
+noticed the player but has not committed to attack yet. Neither side enters combat during NOTICE.
+This means regen is suppressed the entire time a creature is actively chasing/attacking, not just
+when damage is exchanged. As soon as all hostile creatures leave HOSTILE_STATES (die, return home,
 go neutral), `_combat_timer` starts counting down and regen resumes after 3 seconds.
 
 `_is_in_combat()` returns true if `_combat_timer > 0`. `creature.gd` exposes `in_combat : bool`
@@ -424,11 +432,20 @@ Target ring (creature.gd):
   - Red: `IDLE_ATTACK`, `CHASE`, `ATTACK`
 - `head_height : float` on creature = top of capsule (set in `_build_collision`). Used by LOS ray.
 
-Target frame HUD (hud.gd):
-- Built in `_build_target_frame()` — name label + up to 4 resource bars (HP/Energy/Focus/Flow).
-- Bars visible only if creature has that resource (`stat_max > 0`).
-- Dirty-checked in `_refresh_target()` called from `refresh()` each frame.
-- Name = `creature.type.capitalize()`.
+**Debug panel** (`debug_panel.gd`) — replaces old target frame. `Node2D` on a `CanvasLayer`
+(layer=2), `PROCESS_MODE_ALWAYS` (works while paused).
+- Creature panel: top-left, shown when `_player._target != null`. Always visible: name + resource
+  bars (HP/Energy/Focus/Flow) with integer current/max. Collapsible: STATS / STATE / AI sections.
+  AI section shows per-ability cooldown timers.
+- Player panel: top-right, P key toggles + pauses game. Same bar + section structure.
+- Dead creature: gray ring, no attack-range dot. Panel stays open until out of range / Tab / click.
+- Creature selection: left-click within 52px of screen-projected `global_position` (ignores dead
+  if game is live; allows dead when inspecting via panel). `set_input_as_handled()` after every
+  handled click/Tab prevents `player._unhandled_input` from double-processing.
+- Click outside panel: clears target via `_clear_target()`.
+- Tab while paused: calls `_player._try_tab_target()` directly (panel has PROCESS_MODE_ALWAYS).
+- `_had_target : bool` ensures one final `queue_redraw()` when target is cleared so panel erases.
+- Integer bars: pct = `float(int(value)) / float(max)` — bar moves only on whole-number change.
 
 **Guard flags for one-shot async actions** — when a Tween or async operation must only start
 once, use a bool guard checked at entry:
@@ -465,6 +482,31 @@ ab.spend(stats)
 _set_state(State.ATTACK)
 ```
 New abilities: add entry to `_DATA` dict in `abilities.gd`, then `Abilities.get_ability("id")`.
+
+**Creature ability system** — creatures own per-instance `Array[Ability]` with individual timers.
+
+- `_creature_abilities` populated in `_init_creature_abilities()` (called after `_load_animations()`).
+  Uses `Abilities.get_ids_for_type(type)` to auto-discover all `type_*` entries, then filters by
+  whether the animation (`ab.anim + "_front"`) exists in the creature's spritesheet.
+- `_attack_dist` derived from the **minimum** ability range in the pool — creature closes until
+  ALL its abilities can reach. Wider-range abilities are still in range at this distance.
+- `_pick_best_ability()`: iterates pool, filters by `can_use(stats)` (cooldown + resources) and
+  `dist <= ab.range_`, returns highest `damage_mult`. Returns null if nothing ready.
+- IDLE_ATTACK fires immediately when `_pick_best_ability() != null` — no fixed cooldown timer.
+- On ATTACK state entry: pick + `spend(stats)` (starts per-ability cooldown). `_chosen_attack`
+  set from `_active_ability.anim`. Hit frame from `_active_ability.hit_frame`.
+- Ability tick gated: `if not is_dead: for ab in _creature_abilities: ab.tick(delta)`.
+- Focus gain mirrors player: `gain_focus_on_hit(dmg)` on landing, `gain_focus_on_receive(actual)`
+  in `receive_hit()`. Heavy abilities (rat_slash, snake_tail_slam) cost 10 focus.
+- To add a new creature ability: add entry to `abilities.gd _DATA` with key `type_name`, set
+  `anim` to the animation prefix, add energy/focus costs. No changes to creature.gd needed.
+
+**HP / resource integer contract** — resources accumulate as floats internally (regen uses delta),
+but the integer value is authoritative for all gameplay decisions:
+- `stats.is_alive()` → `hp >= 1.0` (not `> 0.0`). Fractional hp below 1 = dead.
+- `take_damage()` snaps hp to 0 if result < 1.0 after applying damage.
+- Sprint gate: `stats.energy >= 1.0` (not `> 0.0`) prevents re-entering RUN on fractional regen.
+- UI bars use `float(int(value)) / float(max)` — moves only on whole-number changes.
 
 **Knockback impulse** — never add knockback directly to `velocity`. `_handle_movement()` runs
 next frame and overwrites `velocity.x/z`, killing the impulse in one tick (invisible). Instead,

@@ -40,7 +40,7 @@ const GRAVITY     : float  = -20.0
 const NOTICE_DIR_DIST  : float = 10.0   # creature faces player, still won't wander
 const NOTICE_DIST      : float = 8.0    # triggers NOTICE state
 const CHASE_DIST       : float = 18.0   # leash — beyond this exits combat
-const ATTACK_DIST      : float = 1.6    # melee range (~1 tile + reach)
+const ATTACK_DIST_DEFAULT : float = 1.6  # fallback when no abilities loaded yet
 const HOME_MAX_DIST    : float = 25.0   # forced return: applies in ALL states
 const HOME_ARRIVE_DIST : float = 0.5    # snap-to-home arrival threshold
 
@@ -55,7 +55,6 @@ const WANDER_CHANCE       : float = 1.0
 # ── Combat ─────────────────────────────────────────────────────────────────
 
 
-const ATTACK_COOLDOWN    : float = 1.5   # seconds between attacks (stub)
 const ATTACK_HIT_GRACE   : float = 1.2  # extra melee range at hit frame — creature committed to swing
 const CHASE_SPEED_MULT   : float = 1.5   # chase is 50% faster than wander
 const RETURN_SPEED_MULT  : float = 2.0   # return is faster than chase
@@ -129,12 +128,14 @@ var _force_wander    : bool    = false
 
 # ── Combat ─────────────────────────────────────────────────────────────────
 
-var _knockback_vel  : Vector3 = Vector3.ZERO
-var _attack_timer   : float   = 0.0
-var _home_max_dist  : bool    = false   # set when leash exceeded during combat
-var _chosen_attack  : String  = ""      # locked on ATTACK state entry; stable for full swing
-var _hit_applied    : bool    = false   # true once hit-frame damage fires this swing
-var _pending_death  : bool    = false   # set when lethal hit received; death delayed until knockback settles
+var _knockback_vel      : Vector3        = Vector3.ZERO
+var _attack_dist        : float          = ATTACK_DIST_DEFAULT  # max range of ability pool
+var _home_max_dist      : bool           = false   # set when leash exceeded during combat
+var _chosen_attack      : String         = ""      # locked on ATTACK state entry; stable for full swing
+var _active_ability     : Ability        = null    # ability being executed in current ATTACK swing
+var _creature_abilities : Array[Ability] = []      # per-instance ability pool with individual cooldowns
+var _hit_applied        : bool           = false   # true once hit-frame damage fires this swing
+var _pending_death      : bool           = false   # set when lethal hit received; death delayed until knockback settles
 
 
 # =============================================================================
@@ -165,6 +166,7 @@ func init(p_type: String, p_stat_id: String, p_camera_rig: Node3D, p_player: Cha
 	_build_sprite()
 	_build_target_ring()
 	_load_animations()
+	_init_creature_abilities()
 
 
 func _load_stats(p_type: String) -> Stats:
@@ -176,6 +178,24 @@ func _load_stats(p_type: String) -> Stats:
 		d.get("int", 0), d.get("spr", 0), d.get("res", 0), d.get("def", 0),
 		d.get("bms", 2), d.get("exp", 10)
 	)
+
+
+func _init_creature_abilities() -> void:
+	# Build the ability pool from abilities.gd data, filtered by animations that
+	# actually exist in this creature's spritesheet.
+	_creature_abilities.clear()
+	for id : String in Abilities.get_ids_for_type(type):
+		var ab : Ability = Abilities.get_ability(id)
+		if sprite.sprite_frames != null and sprite.sprite_frames.has_animation(ab.anim + "_front"):
+			_creature_abilities.append(ab)
+	# Derive engagement distance from the shortest-range ability in the pool so the
+	# creature closes until ALL abilities can reach — wider-range abilities are still
+	# in range at this distance and fill in when shorter-range ones are on cooldown.
+	var min_r : float = INF
+	for ab : Ability in _creature_abilities:
+		if ab.range_ < min_r:
+			min_r = ab.range_
+	_attack_dist = min_r if min_r < INF else ATTACK_DIST_DEFAULT
 
 
 func _build_collision() -> void:
@@ -202,11 +222,14 @@ func _build_sprite() -> void:
 
 func set_target_dot_visible(v: bool) -> void:
 	if _target_dot != null:
-		_target_dot.visible = v
+		_target_dot.visible = v and not is_dead
 
 
 func _update_ring_color() -> void:
 	if _target_ring_mat == null:
+		return
+	if is_dead:
+		_target_ring_mat.albedo_color = Color(0.45, 0.45, 0.45, 0.60)   # gray — dead
 		return
 	match state:
 		State.IDLE_ATTACK, State.CHASE, State.ATTACK:
@@ -351,13 +374,16 @@ func _physics_process(delta: float) -> void:
 
 	# Notify player to stay in combat while this creature is actively hostile
 	const HOSTILE_STATES : Array = [
-		State.NOTICE, State.NEUTRAL_TO_ATTACK,
+		State.NEUTRAL_TO_ATTACK,
 		State.CHASE, State.IDLE_ATTACK, State.ATTACK,
 	]
 	if state in HOSTILE_STATES and player != null and player.has_method("_extend_combat_timer"):
 		player.call("_extend_combat_timer")
 
 	stats.tick(delta)
+	if not is_dead:
+		for ab : Ability in _creature_abilities:
+			ab.tick(delta)
 	# Regen only when out of combat
 	if state == State.IDLE_NEUTRAL or state == State.WANDER or state == State.RETURNING:
 		stats.regen(delta)
@@ -430,7 +456,7 @@ func _update_state(delta: float) -> void:
 			velocity.x = 0.0
 			velocity.z = 0.0
 			# Player rushed into melee range — skip rest of notice anim
-			if dist_sq < ATTACK_DIST * ATTACK_DIST:
+			if dist_sq < _attack_dist * _attack_dist:
 				_set_state(State.NEUTRAL_TO_ATTACK)
 				return
 			if _anim_done:
@@ -447,7 +473,7 @@ func _update_state(delta: float) -> void:
 			if _anim_done:
 				if dist_sq > CHASE_DIST * CHASE_DIST:
 					_set_state(State.ATTACK_TO_NEUTRAL)
-				elif dist_sq < ATTACK_DIST * ATTACK_DIST:
+				elif dist_sq < _attack_dist * _attack_dist:
 					_set_state(State.IDLE_ATTACK)
 				else:
 					_set_state(State.CHASE)
@@ -462,15 +488,14 @@ func _update_state(delta: float) -> void:
 				_set_state(State.ATTACK_TO_NEUTRAL)
 				return
 			# Player moved out of melee range
-			if dist_sq >= ATTACK_DIST * ATTACK_DIST:
+			if dist_sq >= _attack_dist * _attack_dist:
 				if dist_sq < CHASE_DIST * CHASE_DIST:
 					_set_state(State.CHASE)
 				else:
 					_set_state(State.ATTACK_TO_NEUTRAL)
 				return
-			# Cooldown countdown → attack
-			_attack_timer = maxf(0.0, _attack_timer - delta)
-			if _attack_timer <= 0.0:
+			# Fire as soon as the best available ability is ready
+			if _pick_best_ability() != null:
 				_set_state(State.ATTACK)
 
 		State.CHASE:
@@ -484,7 +509,7 @@ func _update_state(delta: float) -> void:
 				_set_state(State.ATTACK_TO_NEUTRAL)
 				return
 			# Player within melee range
-			if dist_sq < ATTACK_DIST * ATTACK_DIST:
+			if dist_sq < _attack_dist * _attack_dist:
 				_update_facing_toward(player.global_position)
 				_set_state(State.IDLE_ATTACK)
 				return
@@ -495,21 +520,23 @@ func _update_state(delta: float) -> void:
 			velocity.z = 0.0
 			_update_facing_toward(player.global_position)
 			# Hit fires at the designated frame — not at animation end
-			var ability_id : String = type + "_" + _chosen_attack.substr("attack_".length())
-			if not _hit_applied and sprite.frame >= Abilities.get_hit_frame(ability_id):
+			if not _hit_applied and _active_ability != null \
+					and sprite.frame >= _active_ability.hit_frame:
 				_hit_applied = true
-				var hit_range : float = ATTACK_DIST + ATTACK_HIT_GRACE
+				var hit_range : float = _active_ability.range_ + ATTACK_HIT_GRACE
 				if dist_sq < hit_range * hit_range:
 					var dir : Vector3 = player.global_position - global_position
 					dir.y = 0.0
 					if dir.length_squared() > 0.001:
 						dir = dir.normalized()
 					if player.has_method("receive_hit"):
-						player.call("receive_hit", _attack_damage(), dir, self)
-			# State transition waits for the full animation to finish
+						var dmg : float = _active_ability.calc_damage(stats)
+						player.call("receive_hit", dmg, dir, self)
+						stats.gain_focus_on_hit(dmg)
+			# State transition waits for the full animation to finish.
+			# Per-ability cooldown already started on state entry — no global timer needed.
 			if _anim_done:
-				_attack_timer = ATTACK_COOLDOWN
-				if dist_sq < ATTACK_DIST * ATTACK_DIST:
+				if dist_sq < _attack_dist * _attack_dist:
 					_set_state(State.IDLE_ATTACK)
 				elif dist_sq < CHASE_DIST * CHASE_DIST:
 					_set_state(State.CHASE)
@@ -574,7 +601,13 @@ func _set_state(new_state: State) -> void:
 		State.IDLE_ATTACK:
 			_update_facing_toward(player.global_position)
 		State.ATTACK:
-			_chosen_attack = _pick_attack_anim()
+			_active_ability = _pick_best_ability()
+			if _active_ability == null:
+				# Nothing ready (race condition) — fall back and wait
+				state = State.IDLE_ATTACK
+				return
+			_active_ability.spend(stats)
+			_chosen_attack = _active_ability.anim
 			_hit_applied   = false
 			_update_facing_toward(player.global_position)
 		State.DEAD:
@@ -675,23 +708,18 @@ func _sync_anim() -> void:
 	sprite.flip_h = not facing_right
 
 
-func _pick_attack_anim() -> String:
-	match type:
-		"rat":
-			var has_slash : bool = sprite.sprite_frames.has_animation("attack_slash_front")
-			var has_bite  : bool = sprite.sprite_frames.has_animation("attack_bite_front")
-			if has_slash and has_bite:
-				return "attack_slash" if randf() < 0.5 else "attack_bite"
-			if has_slash: return "attack_slash"
-			return "attack_bite"
-		"snake":
-			var has_bite : bool = sprite.sprite_frames.has_animation("attack_bite_front")
-			var has_tail : bool = sprite.sprite_frames.has_animation("attack_tail_slam_front")
-			if has_bite and has_tail:
-				return "attack_tail_slam" if randf() < 0.5 else "attack_bite"
-			if has_tail: return "attack_tail_slam"
-			return "attack_bite"
-		_:       return "attack_bite"
+func _pick_best_ability() -> Ability:
+	# Returns the ready ability with the highest damage_mult, or null if none ready.
+	var dist : float   = sqrt(_dist_sq_to_player())
+	var best : Ability = null
+	for ab : Ability in _creature_abilities:
+		if not ab.can_use(stats):
+			continue
+		if dist > ab.range_:
+			continue
+		if best == null or ab.damage_mult > best.damage_mult:
+			best = ab
+	return best
 
 
 # =============================================================================
@@ -701,7 +729,8 @@ func _pick_attack_anim() -> String:
 func receive_hit(damage: float, knockback_dir: Vector3) -> void:
 	if state == State.DEAD or state == State.DEATH:
 		return
-	stats.take_damage(damage)
+	var actual : float = stats.take_damage(damage)
+	stats.gain_focus_on_receive(actual)
 	_start_hit_flash()
 	_apply_knockback(knockback_dir)
 
@@ -730,13 +759,6 @@ func _apply_knockback(dir: Vector3) -> void:
 	if flat.length_squared() > 0.0:
 		_knockback_vel = flat.normalized() * KNOCKBACK_STRENGTH
 
-
-func _attack_damage() -> float:
-	# Resolve ability ID from type + chosen attack anim (e.g. rat + attack_bite → rat_bite)
-	var suffix : String  = _chosen_attack.trim_prefix("attack_")
-	var ab_id  : String  = type + "_" + suffix
-	var ab     : Ability = Abilities.get_ability(ab_id)
-	return ab.calc_damage(stats)
 
 
 func _enter_death() -> void:

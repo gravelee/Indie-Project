@@ -1,22 +1,22 @@
 {
 	"rat_young": {
-		"str": 1, "agi": 1, "sta": 3,
+		"str": 0, "agi": 1, "sta": 1,
 		"int": 0, "spr": 0, "res": 0, "def": 0,
-		"bms": 2, "exp": 5
+		"bms": 2, "exp": 0
 	},
 	"rat_common": {
-		"str": 1, "agi": 1, "sta": 5,
-		"int": 0, "spr": 0, "res": 0, "def": 0,
-		"bms": 2, "exp": 10
+		"str": 1, "agi": 1, "sta": 2,
+		"int": 0, "spr": 0, "res": 0, "def": 1,
+		"bms": 2, "exp": 0
 	},
 	"rat_scrapper": {
-		"str": 2, "agi": 0, "sta": 6,
-		"int": 0, "spr": 0, "res": 0, "def": 1,
-		"bms": 2, "exp": 12
+		"str": 1, "agi": 2, "sta": 3,
+		"int": 0, "spr": 0, "res": 1, "def": 1,
+		"bms": 2, "exp": 0
 	},
 	"snake_common": {
-		"str": 3, "agi": 2, "sta": 7,
-		"int": 0, "spr": 0, "res": 1, "def": 1,
-		"bms": 2.2, "exp": 20
+		"str": 3, "agi": 4, "sta": 5,
+		"int": 1, "spr": 2, "res": 1, "def": 2,
+		"bms": 2.2, "exp": 0
 	}
 }

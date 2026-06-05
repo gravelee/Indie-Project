@@ -125,7 +125,7 @@ func _recalculate_all() -> void:
 	level      = _calc_level()
 	hp_max     = 20 + (sta * 2) + (level * 2)
 	energy_max = 10 + level
-	focus_max  = 10 + level
+	focus_max  = 50 + (str_ * 5)
 	flow_max   = (spr * 2) + (level * 2)
 	patk       = (str_ * 3.0) + (level * 2.0)
 	matk       = (int_ * 3.0) + (level * 2.0)
@@ -173,6 +173,8 @@ func take_damage(raw_damage: float, is_magic: bool = false, is_crit: bool = fals
 	var minimum : float = 2.0  if is_crit  else 1.0
 	var actual  : float = floor(maxf(minimum, raw_damage - defense) + 0.4999)
 	hp = maxf(0.0, hp - actual)
+	if hp < 1.0:
+		hp = 0.0   # snap fractional remainder — displayed 0 must equal dead
 	return actual
 
 
@@ -274,11 +276,35 @@ func upgrade_stat(stat_name: String, exp_cost: float = 0.0) -> bool:
 
 
 # =============================================================================
+# FOCUS HELPERS
+# =============================================================================
+
+func gain_focus_on_hit(damage_dealt: float) -> void:
+	# Called when player lands a hit. Formula: hp_max / damage_dealt
+	if damage_dealt <= 0.0:
+		return
+	focus = minf(float(focus_max), focus + float(hp_max) / damage_dealt)
+
+
+func gain_focus_on_receive(damage_taken: float) -> void:
+	# Called when player takes a hit. Formula: hp_max / (damage_taken * 2)
+	if damage_taken <= 0.0:
+		return
+	focus = minf(float(focus_max), focus + float(hp_max) / (damage_taken * 2.0))
+
+
+func focus_damage_mult() -> float:
+	# Passive bonus multiplier: focus/10 % bonus damage.
+	# 100 focus → ×1.10, 50 focus → ×1.05, 0 focus → ×1.00
+	return 1.0 + focus * 0.001
+
+
+# =============================================================================
 # READ-ONLY HELPERS
 # =============================================================================
 
 func is_alive() -> bool:
-	return hp > 0.0
+	return hp >= 1.0   # fractional hp < 1 = dead (matches int display)
 
 func hp_pct()     -> float: return hp     / float(hp_max)     if hp_max     > 0 else 0.0
 func energy_pct() -> float: return energy / float(energy_max) if energy_max > 0 else 0.0

@@ -332,9 +332,10 @@ func _physics_process(delta: float) -> void:
 			and state != State.PULL and state != State.GRAB:
 		stats.regen(delta)
 
-	# Target: clear if dead or out of tab range; clean tab buffer of dead creatures
+	# Target: clear if node freed or out of range. Dead creatures stay targeted
+	# (inspectable via debug panel) until out of range, Tab, or click elsewhere.
 	if _target != null:
-		var tgt_ok : bool = is_instance_valid(_target) and not _target.get("is_dead")
+		var tgt_ok : bool = is_instance_valid(_target)
 		if tgt_ok:
 			var tgt_diff : Vector3 = _target.global_position - global_position
 			tgt_diff.y = 0.0
@@ -546,7 +547,7 @@ func _handle_movement(delta: float) -> void:
 		var h         : float   = camera_rig.h_angle
 		var fwd       : Vector3 = Vector3(-sin(h), 0.0, -cos(h))
 		var right     : Vector3 = Vector3( cos(h), 0.0, -sin(h))
-		var sprinting : bool    = Input.is_key_pressed(KEY_SHIFT) and stats.energy > 0.0
+		var sprinting : bool    = Input.is_key_pressed(KEY_SHIFT) and stats.energy >= 1.0
 		var speed     : float   = stats.mspd * (SPRINT_SPEED_MULT if sprinting else 1.0)
 		var move      : Vector3 = (fwd * (-raw.y) + right * raw.x) * speed
 		velocity.x = move.x
@@ -1021,7 +1022,8 @@ func _extend_combat_timer() -> void:
 
 
 func receive_hit(damage: float, knockback_dir: Vector3, attacker: Node = null) -> void:
-	stats.take_damage(damage)
+	var actual : float = stats.take_damage(damage)
+	stats.gain_focus_on_receive(actual)
 	_combat_timer = COMBAT_TIMEOUT
 	_regen_timer  = REGEN_PAUSE
 	# Auto-target attacker only if player has no current target
@@ -1061,7 +1063,9 @@ func _do_attack() -> void:
 			continue
 		if diff.length_squared() > 0.001 and diff.normalized().dot(atk_dir) < ATTACK_ARC_DOT:
 			continue
-		node.call("receive_hit", _active_ability.calc_damage(stats), diff)
+		var dmg : float = _active_ability.calc_damage(stats) * stats.focus_damage_mult()
+		node.call("receive_hit", dmg, diff)
+		stats.gain_focus_on_hit(dmg)
 		_combat_timer = COMBAT_TIMEOUT   # creature was struck — enter/extend combat idle
 		if diff.length_squared() < nearest_dist_sq:
 			nearest_dist_sq = diff.length_squared()

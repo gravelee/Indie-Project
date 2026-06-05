@@ -32,6 +32,7 @@ var cam        : CameraSettings
 var camera_rig : Node3D    # camera_rig.gd
 var game_ui    : Node      # game_ui.gd
 var hud        : CanvasLayer  # hud.gd
+var debug_panel : Node2D      # debug_panel.gd
 
 # Player
 var player_body   : CharacterBody3D
@@ -39,7 +40,6 @@ var player_sprite : AnimatedSprite3D
 var billboard_on  : bool = true
 
 # Scene refs
-var debug_label : Label
 var tree_sprites : Array[Sprite3D] = []
 
 # Materials
@@ -87,7 +87,6 @@ func _ready() -> void:
 	_build_creature("snake", "snake_common", Vector3( 2.0, 0.0, 23.0), "hostile", false, true)   # SW — immigrant + wander  lv3
 	_build_creature("rat",   "rat_young",    Vector3(23.0, 0.0, 23.0), "neutral", false, false)  # SE — neutral, no home    lv1
 	_build_ui()
-	_build_debug_label()
 
 
 # ---------------------------------------------------------------------------
@@ -125,10 +124,20 @@ func _build_ui() -> void:
 
 func _build_hud() -> void:
 	hud = CanvasLayer.new()
-	hud.name = "HUD"
+	hud.name  = "HUD"
+	hud.layer = 1
 	hud.set_script(load("res://scripts/hud.gd"))
 	add_child(hud)
 	hud.call("init", player_body)
+
+	var dp_canvas := CanvasLayer.new()
+	dp_canvas.name  = "DebugPanelCanvas"
+	dp_canvas.layer = 2
+	add_child(dp_canvas)
+	debug_panel = Node2D.new()
+	debug_panel.set_script(load("res://scripts/debug_panel.gd"))
+	dp_canvas.add_child(debug_panel)
+	debug_panel.call("init", player_body)
 
 
 # ---------------------------------------------------------------------------
@@ -161,21 +170,6 @@ func _process(delta: float) -> void:
 	hud.call("refresh")
 	_update_tree_fade(delta)
 
-	var rig    : Node3D  = camera_rig
-	var pos    : Vector3 = player_body.position
-	debug_label.text = (
-		"[v6]  WASD: move  RMB: orbit+pitch  Q/E: orbit  Shift+-/=: pitch  -/=: zoom  ESC: menu\n"
-		+ "Pitch: %.0f°   Zoom step: %d/10 (%.1f)   Zoom eff: %.1f   Orbit: %.0f°\n"
-		+ "Pos: (%.1f, %.2f, %.1f)   Floor: %s   Anim: %s   Alpha: %.2f   Scroll: %d"
-	) % [
-		rig.v_angle, rig.zoom_step, rig.zoom_target, rig.zoom_effective,
-		rad_to_deg(rig.h_angle),
-		pos.x, pos.y, pos.z,
-		str(player_body.is_on_floor()),
-		str(player_sprite.animation),
-		player_sprite.modulate.a,
-		rig.dbg_scroll
-	]
 
 
 
@@ -415,15 +409,6 @@ func _build_creature(type: String, stat_id: String, world_pos: Vector3,
 # ---------------------------------------------------------------------------
 # DEBUG LABEL
 # ---------------------------------------------------------------------------
-
-func _build_debug_label() -> void:
-	var canvas := CanvasLayer.new()
-	add_child(canvas)
-	debug_label = Label.new()
-	debug_label.position = Vector2(16, 16)
-	debug_label.add_theme_font_size_override("font_size", 16)
-	canvas.add_child(debug_label)
-
 
 # ---------------------------------------------------------------------------
 # TEXTURES

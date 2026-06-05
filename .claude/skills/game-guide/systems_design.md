@@ -324,8 +324,20 @@ ring ×2, necklace. Items drop from bosses and creatures. Rarity tiers exist for
   rule (already in stats.gd).
 - **EXP spent on talent points**: talent points spent on chain-unlocked talents in talent book.
 - **Level**: derived from base stats average `(STR+AGI+STA+INT+SPR+RES+DEF)/7 + 1`.
+- **Level cap: 30.** To reach level 30: average stat ~29 across all 7 = ~203 total stat points.
+  Full game (~8 zones × ~20 quests = ~160 quest points) + EXP-bought points covers this naturally.
+  DLC expansions add horizontal depth (new talent chains, weapon types, ability tiers) — NOT a
+  higher level cap. Cap stays at 30 for the base game lifetime.
 - **HP**: `20 + STA×2 + level×2`.
 - **Rank**: 14 cosmetic ranks (Unranked → SSS/Kami) based on total EXP accumulated.
+
+### Starting From Nothing
+- Player begins with zero abilities beyond unarmed fists. No stat bonuses beyond base values.
+- First stat points come from Zone 1 quests — the player feels growth tied to story actions.
+- First real ability scroll: found in Zone 1 overworld (hidden), tied to the weapon the player chose.
+- First dungeon boss: drops a class-influenced scroll matching current stat profile.
+- The game never announces a class identity. The player discovers what they are through play.
+- By end of Zone 1: ~1-2 active abilities, a weapon, level 2-3. Identity is forming, not declared.
 
 ### Upgrade Sources
 - Dungeon bosses: gear drops (rarity-tiered), talent scrolls (chance-based, class-influenced).
