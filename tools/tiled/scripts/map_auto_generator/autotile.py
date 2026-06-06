@@ -2,6 +2,27 @@
 """
 autotile.py — Multi-phase terrain map generator using the TILESET_TSX tileset.
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+USAGE
+
+  Run from this folder:
+      cd tools/tiled/scripts/map_auto_generator
+      python3 autotile.py
+
+  Scenario A — Fresh random map (dark_grass layer only):
+      Delete or rename input.tmx before running.
+      Output: map_autotile_smooth.tmx with only the dark_grass layer.
+      Open it in Tiled, add all other layers manually (entities, flora,
+      dark_dirt, rock_path), then export each layer as CSV to:
+          echoes_of_the_void/assets/maps/level_01/
+
+  Scenario B — Re-roll grass on an existing map (keep all other layers):
+      Copy level_01/map.tmx → overwrite input.tmx, then run.
+      Output: map_autotile_smooth.tmx with all original layers intact
+      and only the dark_grass layer replaced by the smoothed result.
+      Export each layer as CSV to the same location as above.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 Phase 0. Read INPUT_TMX if it exists.
   If input.tmx is present, skip phases 1 and 2 and jump straight to phase 3.
   Only the layer named after TILESET_TSX (e.g. 'dark_grass') is extracted and

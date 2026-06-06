@@ -21,13 +21,23 @@ import xml.etree.ElementTree as ET
 
 # ── Edit these three things only ──────────────────────────────────────────────
 
-TMX_PATH = "/Users/Grproth/Desktop/Indie Project/tiled/level_01/map.tmx"
+TMX_PATH = "/Users/Grproth/Desktop/Indie Project/tools/tiled/level_01/map.tmx"
 
-TILESET  = "dark_grass.tsx"   # source name as it appears in the TMX
+TILESET  = "entities.tsx"   # source name as it appears in the TMX
 
 MAPPING  = {
-    15: 14,   # tile 15 → tile 14
-    18: 15,   # tile 18 → tile 15
+    # Old 1x1_h1 (now 1x1_h2) and everything after shifts +1.
+    # New ID 126 (new 1x1_h1) is freshly placed — no old tiles to remap to it.
+    135: 136,   # grass 3x1
+    134: 135,   # grass 2x1
+    133: 134,   # grass 1x1
+    132: 133,   # 3x2_h2
+    131: 132,   # 3x2_h1
+    130: 131,   # 3x2
+    129: 130,   # 2x2_h2
+    128: 129,   # 2x2_h1
+    127: 128,   # 2x2
+    126: 127,   # old 1x1_h1 → now 1x1_h2
 }
 
 # ── Do not edit below this line ───────────────────────────────────────────────

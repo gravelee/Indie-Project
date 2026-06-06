@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <map version="1.10" tiledversion="1.11.0" orientation="orthogonal" renderorder="right-down" width="100" height="100" tilewidth="32" tileheight="32" infinite="0" nextlayerid="6" nextobjectid="1">
  <editorsettings>
-  <export target="../../godot_project/assets/maps/level_01/.csv" format="csv" />
+  <export target="../../../../echoes_of_the_void/assets/maps/level_01/.csv" format="csv" />
  </editorsettings>
  <tileset firstgid="1" source="dark_grass.tsx" />
- <tileset firstgid="51" source="../entities.tsx" />
- <tileset firstgid="187" source="flora.tsx" />
- <tileset firstgid="237" source="dark_dirt.tsx" />
- <tileset firstgid="246" source="rock_path.tsx" />
+ <tileset firstgid="51" source="../../entities.tsx" />
+ <tileset firstgid="187" source="../../level_01/flora.tsx" />
+ <tileset firstgid="237" source="../../level_01/dark_dirt.tsx" />
+ <tileset firstgid="246" source="../../level_01/rock_path.tsx" />
  <layer id="5" name="dark_dirt" width="100" height="100" locked="1">
   <data encoding="csv">
 245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,245,

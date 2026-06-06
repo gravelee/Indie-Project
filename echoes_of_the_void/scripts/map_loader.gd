@@ -83,17 +83,18 @@ const PROP_TABLE : Dictionary = {
 	122: [1, 1, "bush", "spiky",   0,  1, false, true ],
 	123: [2, 2, "bush", "spiky",   0,  1, true,  true ],
 	124: [3, 3, "bush", "spiky",   0,  1, true,  true ],
-	125: [1, 1, "tree", "mystic",  0,  1, true,  false],
-	126: [1, 1, "tree", "mystic",  1,  1, true,  false],
-	127: [2, 2, "tree", "mystic",  0,  1, true,  false],
-	128: [2, 2, "tree", "mystic",  1,  1, true,  false],
-	129: [2, 2, "tree", "mystic",  2,  1, true,  false],
-	130: [3, 2, "tree", "mystic",  0,  1, true,  false],
-	131: [3, 2, "tree", "mystic",  1,  1, true,  false],
-	132: [3, 2, "tree", "mystic",  2,  1, true,  false],
-	133: [1, 1, "grass", "classic", 0, 1, false, true ],
-	134: [2, 1, "grass", "classic", 0, 1, false, true ],
-	135: [3, 1, "grass", "classic", 0, 1, false, true ],
+	125: [1, 1, "tree", "mystic",  0,  1, true,  false],  # 1x1
+	126: [1, 1, "tree", "mystic",  1,  1, true,  false],  # 1x1_h1 (new middle height)
+	127: [1, 1, "tree", "mystic",  2,  1, true,  false],  # 1x1_h2 (old h1, renamed)
+	128: [2, 2, "tree", "mystic",  0,  1, true,  false],  # 2x2
+	129: [2, 2, "tree", "mystic",  1,  1, true,  false],  # 2x2_h1
+	130: [2, 2, "tree", "mystic",  2,  1, true,  false],  # 2x2_h2
+	131: [3, 2, "tree", "mystic",  0,  1, true,  false],  # 3x2
+	132: [3, 2, "tree", "mystic",  1,  1, true,  false],  # 3x2_h1
+	133: [3, 2, "tree", "mystic",  2,  1, true,  false],  # 3x2_h2
+	134: [1, 1, "grass", "classic", 0, 1, false, true ],  # 1x1
+	135: [2, 1, "grass", "classic", 0, 1, false, true ],  # 2x1
+	136: [3, 1, "grass", "classic", 0, 1, false, true ],  # 3x1
 }
 
 # Creature defaults: tile_id → [type, stat_id, aggression, has_home, can_wander]

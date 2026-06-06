@@ -2,14 +2,23 @@
 """
 Sprite export tool for Echoes of the Void.
 
-Edit SCALE, METHOD and EXPORTS at the top, then run:
-  python3 tools/export_sprite.py
+Run:  python3 tools/export_sprite.py
 
-For each entry the script will:
-  1. Read numbered frames (0.png, 1.png ... N.png) from the source folder
-  2. Assemble them into a horizontal spritesheet and save it back to the
-     source folder as 0-sheet.png  (overwrites any existing sheet)
-  3. Scale up by SCALE using METHOD and save to the game assets path
+Two export modes:
+
+  ENTITY exports (EXPORTS list):
+    Reads numbered frames (0.png, 1.png … N.png) from an art_source folder,
+    assembles them into a horizontal strip, applies rotsprite scale-up by SCALE,
+    and writes the result to the game assets path.
+    Also saves an unscaled 0-sheet.png preview back into the source folder.
+    Used for: player, rat, snake — anything drawn at small base size.
+
+  PROP/TILEMAP exports (PROP_DIRS auto-discovery):
+    Walks art_source/props/ and art_source/tilemaps/ and for every .png found
+    applies rotsprite at PROP_SCALE and writes to the corresponding assets/ path.
+    PROP_SCALE=1 is a straight copy (rotsprite at 1x = identity). Raise it if
+    you redraw props at a smaller base resolution and need to scale up.
+    Used for: sprites, spritesheets/props, tilemaps — already at game resolution.
 """
 
 from PIL import Image
@@ -20,7 +29,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ── Settings ──────────────────────────────────────────────────────────────────
 
-SCALE  = 3           # upscale factor  (3 → 32 px becomes 96 px per frame)
+SCALE  = 3           # entity upscale factor  (3 → 32 px becomes 96 px per frame)
 
 METHOD = "rotsprite"  # "nearest"   — nearest-neighbor (sharp, no edge smoothing)
                       # "rotsprite" — pixel-art aware, same as LibreSprite RotSprite
@@ -28,6 +37,21 @@ METHOD = "rotsprite"  # "nearest"   — nearest-neighbor (sharp, no edge smoothi
                       #               4=2×2, 9=3×3). Any leftover factor uses nearest.
                       # "bilinear"  — smooth blur (not recommended for pixel art)
                       # "lanczos"   — high quality but also blurs pixel art
+
+# Prop/tilemap scale — 1 = straight copy (already at game resolution).
+# Raise to 2+ if you redraw props at a smaller base resolution.
+PROP_SCALE = 1
+
+# ── Prop/Tilemap auto-discovery ───────────────────────────────────────────────
+# Every .png under the art_source dir is exported to the matching path under
+# the game assets dir. No manual listing needed — add a file to art_source and
+# re-run the script; it appears in assets automatically.
+PROP_DIRS = [
+    # (art_source dir,                    game assets output dir)
+    ("art_source/props/sprites",          "echoes_of_the_void/assets/sprites"),
+    ("art_source/props/spritesheets",     "echoes_of_the_void/assets/spritesheets/props"),
+    ("art_source/tilemaps",              "echoes_of_the_void/assets/tilemaps"),
+]
 
 # ── Export list ───────────────────────────────────────────────────────────────
 # Each entry: (source_frames_folder, game_asset_output_path)
@@ -250,8 +274,44 @@ def _scale_image(img: Image.Image, scale: int, method: str) -> Image.Image:
     return img.resize((img.width * scale, img.height * scale), resample)
 
 
+def export_props() -> None:
+    """Export props and tilemaps from art_source to game assets using rotsprite."""
+    print(f"Props/Tilemaps — Scale: {PROP_SCALE}x   Method: rotsprite\n")
+    ok = 0
+
+    for src_base_rel, dst_base_rel in PROP_DIRS:
+        src_base = os.path.join(ROOT, src_base_rel)
+        dst_base = os.path.join(ROOT, dst_base_rel)
+
+        if not os.path.isdir(src_base):
+            print(f"  SKIP  (folder missing)  {src_base_rel}/")
+            continue
+
+        for dirpath, _, filenames in os.walk(src_base):
+            for fname in sorted(filenames):
+                if not fname.lower().endswith(".png"):
+                    continue
+
+                src = os.path.join(dirpath, fname)
+                rel = os.path.relpath(src, src_base)
+                dst = os.path.join(dst_base, rel)
+
+                img = Image.open(src).convert("RGBA")
+                if PROP_SCALE > 1:
+                    img = _scale_rotsprite(img, PROP_SCALE)
+
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                img.save(dst)
+
+                w, h = img.size
+                print(f"  OK    {w}x{h}px  |  {dst_base_rel}/{rel}")
+                ok += 1
+
+    print(f"\nDone.  {ok} exported.")
+
+
 def export_all() -> None:
-    print(f"Scale: {SCALE}x   Method: {METHOD}\n")
+    print(f"Entities — Scale: {SCALE}x   Method: {METHOD}\n")
 
     ok = skipped = 0
 
@@ -310,3 +370,5 @@ def export_all() -> None:
 
 if __name__ == "__main__":
     export_all()
+    print()
+    export_props()
