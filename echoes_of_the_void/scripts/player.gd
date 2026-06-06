@@ -351,7 +351,7 @@ func _physics_process(delta: float) -> void:
 	# Prop reaction — drive start/stop based on movement state
 	var _moving : bool = velocity.length_squared() > 0.01
 	if _moving:
-		for _rp : Variant in _react_overlap:
+		for _rp : Variant in _react_overlap.duplicate():
 			var _rpn : Node3D = _rp as Node3D
 			if is_instance_valid(_rpn) and not _react_driving.has(_rpn):
 				_react_driving.append(_rpn)
@@ -1180,6 +1180,19 @@ func _do_attack() -> void:
 	# Auto-target nearest hit creature only if player has no current target
 	if nearest_node != null and _target == null:
 		_set_target(nearest_node)
+
+	# Hit damageable props (bushes, grass) — same range + arc, one-hit kill, no combat/focus
+	for prop : Node in get_tree().get_nodes_in_group("damageable_props"):
+		if not prop.get("alive"):
+			continue
+		var p_pos : Vector3 = prop.global_position
+		var diff  : Vector3 = p_pos - atk_pos
+		diff.y = 0.0
+		if diff.length_squared() > range_sq:
+			continue
+		if diff.length_squared() > 0.001 and diff.normalized().dot(atk_dir) < ATTACK_ARC_DOT:
+			continue
+		prop.call("take_hit")
 
 
 func _facing_to_world_dir() -> Vector3:

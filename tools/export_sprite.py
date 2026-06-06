@@ -4,21 +4,30 @@ Sprite export tool for Echoes of the Void.
 
 Run:  python3 tools/export_sprite.py
 
-Two export modes:
+────────────────────────────────────────────────────────
+ENTITY exports (EXPORTS list)
+  Reads numbered frames (0.png, 1.png … N.png) from an art_source folder,
+  assembles them into a horizontal strip, applies rotsprite scale-up by SCALE,
+  and writes the result to the game assets path.
+  Also saves an unscaled 0-sheet.png preview back into the source folder.
+  Used for: player, rat, snake — anything drawn at small base size.
 
-  ENTITY exports (EXPORTS list):
-    Reads numbered frames (0.png, 1.png … N.png) from an art_source folder,
-    assembles them into a horizontal strip, applies rotsprite scale-up by SCALE,
-    and writes the result to the game assets path.
-    Also saves an unscaled 0-sheet.png preview back into the source folder.
-    Used for: player, rat, snake — anything drawn at small base size.
+PROP exports (PROP_DIRS + SCALABLE_PROPS)
+  Scalable props (bush, grass, tree):
+    Only the smallest source size(s) need to exist in art_source.
+    All larger sizes are generated automatically via rotsprite:
+      bush  → 1x1 (source), 2x2 (2×), 3x3 (3×)
+      grass → 1x1 (source), 2x1 (2×), 3x1 (3×)
+      tree  → 1x1 / 1x1_h1 / 1x1_h2 (source), 2x2/2x2_h* (2×), 3x2/3x2_h* (3×)
+    Works identically for sprites (idle) and spritesheets (bump/pass/death strips) —
+    the whole horizontal frame strip is scaled uniformly, so every frame scales with it.
+    Any old derived-size files (2x2, 3x3 …) still in art_source are silently ignored.
+    To add a new scalable prop type: add an entry to SCALABLE_PROPS below.
 
-  PROP/TILEMAP exports (PROP_DIRS auto-discovery):
-    Walks art_source/props/ and art_source/tilemaps/ and for every .png found
-    applies rotsprite at PROP_SCALE and writes to the corresponding assets/ path.
-    PROP_SCALE=1 is a straight copy (rotsprite at 1x = identity). Raise it if
-    you redraw props at a smaller base resolution and need to scale up.
-    Used for: sprites, spritesheets/props, tilemaps — already at game resolution.
+TILEMAP exports (pass-through)
+  Every .png in art_source/tilemaps/ is copied as-is (PROP_SCALE=1).
+  Tilemaps are pixel art drawn at final resolution — no scaling needed.
+────────────────────────────────────────────────────────
 """
 
 from PIL import Image
@@ -52,6 +61,36 @@ PROP_DIRS = [
     ("art_source/props/spritesheets",     "echoes_of_the_void/assets/spritesheets/props"),
     ("art_source/tilemaps",              "echoes_of_the_void/assets/tilemaps"),
 ]
+
+# ── Scalable prop rules ───────────────────────────────────────────────────────
+# Maps a path segment to {source_stem: [(output_stem, scale), ...]}.
+#
+# Rules:
+#   • A file whose stem is a key here is a SOURCE → all listed variants are
+#     generated from it via rotsprite.
+#   • A file whose stem is NOT a key (e.g. "2x2", "3x3" still in art_source)
+#     is a DERIVED SIZE → silently skipped.
+#   • A file whose path matches no key at all (tilemaps) is a PASS-THROUGH →
+#     copied as-is (at PROP_SCALE, default 1).
+#
+# Scaling is uniform: the whole image (or spritesheet strip) is scaled, so
+# every animation frame scales identically.
+#
+# To add a new scalable prop type: add an entry here.
+
+SCALABLE_PROPS = {
+    "/bush/":  {
+        "1x1":    [("1x1", 1), ("2x2", 2), ("3x3", 3)],
+    },
+    "/grass/": {
+        "1x1":    [("1x1", 1), ("2x1", 2), ("3x1", 3)],
+    },
+    "/tree/":  {
+        "1x1":    [("1x1", 1),    ("2x2", 2),    ("3x2", 3)   ],
+        "1x1_h1": [("1x1_h1", 1), ("2x2_h1", 2), ("3x2_h1", 3)],
+        "1x1_h2": [("1x1_h2", 1), ("2x2_h2", 2), ("3x2_h2", 3)],
+    },
+}
 
 # ── Export list ───────────────────────────────────────────────────────────────
 # Each entry: (source_frames_folder, game_asset_output_path)
@@ -274,10 +313,29 @@ def _scale_image(img: Image.Image, scale: int, method: str) -> Image.Image:
     return img.resize((img.width * scale, img.height * scale), resample)
 
 
+def _get_scalable_rule(norm_path: str, stem: str):
+    """
+    Look up a prop file in SCALABLE_PROPS.
+
+    Returns:
+      (prop_key, variants)  — prop_key str, variants list[(out_stem, scale)]
+                              → this is a source file; emit all variants
+      (prop_key, None)      — prop_key str, no entry for this stem
+                              → this is a derived size; silently skip
+      (None, None)          — path matches no scalable prop type
+                              → pass-through (tilemap / unknown)
+    """
+    check = "/" + norm_path   # ensure leading slash so "bush/..." matches "/bush/"
+    for prop_key, stems in SCALABLE_PROPS.items():
+        if prop_key in check:
+            return prop_key, stems.get(stem)
+    return None, None
+
+
 def export_props() -> None:
-    """Export props and tilemaps from art_source to game assets using rotsprite."""
-    print(f"Props/Tilemaps — Scale: {PROP_SCALE}x   Method: rotsprite\n")
-    ok = 0
+    """Export props and tilemaps from art_source to game assets."""
+    print(f"Props/Tilemaps — Method: rotsprite\n")
+    files_written = skipped = 0
 
     for src_base_rel, dst_base_rel in PROP_DIRS:
         src_base = os.path.join(ROOT, src_base_rel)
@@ -292,22 +350,43 @@ def export_props() -> None:
                 if not fname.lower().endswith(".png"):
                     continue
 
-                src = os.path.join(dirpath, fname)
-                rel = os.path.relpath(src, src_base)
-                dst = os.path.join(dst_base, rel)
+                src     = os.path.join(dirpath, fname)
+                rel     = os.path.relpath(src, src_base)
+                norm    = rel.replace(os.sep, "/")
+                stem    = os.path.splitext(fname)[0]
+                rel_dir = os.path.dirname(rel)
 
-                img = Image.open(src).convert("RGBA")
-                if PROP_SCALE > 1:
-                    img = _scale_rotsprite(img, PROP_SCALE)
+                prop_key, variants = _get_scalable_rule(norm, stem)
 
-                os.makedirs(os.path.dirname(dst), exist_ok=True)
-                img.save(dst)
+                if prop_key is not None and variants is None:
+                    # Derived size still in art_source — silently skip.
+                    skipped += 1
+                    continue
 
-                w, h = img.size
-                print(f"  OK    {w}x{h}px  |  {dst_base_rel}/{rel}")
-                ok += 1
+                img     = Image.open(src).convert("RGBA")
+                dst_dir = os.path.join(dst_base, rel_dir)
+                os.makedirs(dst_dir, exist_ok=True)
 
-    print(f"\nDone.  {ok} exported.")
+                if variants is not None:
+                    # Scalable prop source → emit every derived size via rotsprite.
+                    for out_stem, scale in variants:
+                        out_img = _scale_rotsprite(img, scale) if scale > 1 else img.copy()
+                        dst = os.path.join(dst_dir, out_stem + ".png")
+                        out_img.save(dst)
+                        w, h = out_img.size
+                        print(f"  OK    {w}x{h}px  {scale}x  |  {dst_base_rel}/{rel_dir}/{out_stem}.png")
+                        files_written += 1
+                else:
+                    # Pass-through: tilemaps / anything not in SCALABLE_PROPS.
+                    if PROP_SCALE > 1:
+                        img = _scale_rotsprite(img, PROP_SCALE)
+                    dst = os.path.join(dst_dir, fname)
+                    img.save(dst)
+                    w, h = img.size
+                    print(f"  OK    {w}x{h}px      |  {dst_base_rel}/{norm}")
+                    files_written += 1
+
+    print(f"\nDone.  {files_written} files written,  {skipped} derived sizes skipped.")
 
 
 def export_all() -> None:

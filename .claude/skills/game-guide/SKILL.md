@@ -54,11 +54,19 @@ Zone 2 implementation       → after Zone 2 story
 ```
 
 ### Current Status *(update this whenever a milestone is hit)*
-- **Last completed**: Full prop system (WorldProp/DamageableProp/ObstacleProp/TerrainProp),
-  CSV map loading + streaming (75×75 window, delta-strip scan, fade in/out), mystic trees,
-  bushes, grass (all sizes), prop reaction animations (start/stop loop model), terrain
-  SHADING_MODE_UNSHADED fix, grass animation canvas padding fix.
-- **Active work**: Phase 1 Core Feel — world feels alive, now evaluating what's next.
+- **Last completed**: Three systems finished this session:
+  1. **Player attack hits props** — player punches now destroy damageable props (bushes, grass)
+     using the same range + arc as creature hits. `"damageable_props"` group added to
+     `damageable_prop.gd`; prop hit loop added to `player.gd _do_attack()`.
+  2. **export_sprite.py auto-size generation** — all props (bush, grass, tree) now auto-generated
+     from smallest source size via rotsprite. `SCALABLE_PROPS` config + `_get_scalable_rule()`
+     helper added. Only 1x1 (and 1x1_h1/h2 for trees) need to exist in art_source; 2x/3x sizes
+     generated automatically. Tilemaps remain pass-through. 88 files written, 56 derived skipped.
+  3. **Prop freeze bug fixed** — dead TerrainProp (grass) nodes never called queue_free(), so they
+     accumulated in "damageable_props" group indefinitely. Fixed by calling
+     `remove_from_group("damageable_props")` immediately in `take_hit()`. Also hardened
+     `_react_overlap` iteration in player.gd to use `.duplicate()`.
+- **Active work**: Phase 1 Core Feel — evaluating next priority.
 - **Next session target**: TBD — subclass ability design or next Phase 1 item.
 - **Blocked on**: Design questions — (1) Does pet have HP and can it die? (2) Is stealth a button
   or ability-only? (3) Level cap final decision (leaning 30). (4) Player starting stats: all 1s or
@@ -66,17 +74,18 @@ Zone 2 implementation       → after Zone 2 story
 
 ### What the map currently has (loaded from CSV via map_loader.gd)
 - Full terrain from CSV tilemap (dirt, grass layers composited into one PlaneMesh texture)
-- Mystic trees (1×1, 1×1_h1, 2×2, 2×2_h1, 2×2_h2, 3×2, 3×2_h1, 3×2_h2), streamed
-- Bushes (small/mid/large, with and without collision), streamed
+- Mystic trees (1×1, 1×1_h1 NEW, 1×1_h2, 2×2, 2×2_h1, 2×2_h2, 3×2, 3×2_h1, 3×2_h2), streamed
+- Bushes (small/mid/large, classic 5 variants + leafy + spiky, with and without collision), streamed
 - Grass (1×1, 2×1, 3×1, no collision), streamed
 - Player spawn from entities CSV
 - 4 test creatures: rat hostile+home+wander, rat hostile+home+no-wander, snake hostile+no-home+wander,
   rat neutral+no-home+no-wander
 - Test geometry in main.gd: ledge, ramp, cliff, mountain, small walls, pushable block
-- No CSV loading. No tilemap system. All world content hardcoded.
 
 ### Pending (no priority order yet)
-- ~~**Rename move → wander**~~ ✓ DONE — art_source folders, export script, game assets, creature.gd all updated.
+- ~~**Rename move → wander**~~ ✓ DONE
+- ~~**Player attack hitting props**~~ ✓ DONE — `_do_attack()` hits damageable_props group; one-hit kill via `take_hit()`.
+- ~~**export_sprite.py auto-size generation**~~ ✓ DONE — SCALABLE_PROPS config, only 1x1 source needed, all sizes auto-generated via rotsprite.
 - **LibreSprite .ase project files** (deferred): Currently working with individual frame pngs only.
   Future improvement: save one `.ase` file per animation alongside the frames folder
   (e.g. `wander_front.ase` next to `wander/front/`). Lets you reopen work with layers,

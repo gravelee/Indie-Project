@@ -36,6 +36,7 @@ var _react_count   : int    = 0    # entities currently driving the reaction ani
 func _ready() -> void:
 	super._ready()
 	add_to_group("react_props")
+	add_to_group("damageable_props")
 
 	# Passive detection zone — entity react zones detect this via area_entered.
 	# monitoring=false  → zero per-frame cost on the prop side.
@@ -190,6 +191,11 @@ func take_hit() -> void:
 	if not alive:
 		return
 	alive = false
+	# Leave "react_props" so the player's overlap can still clean up cleanly,
+	# but remove from the attack-target group immediately — dead props must never
+	# accumulate there (TerrainProp never queue_free()s, so without this the group
+	# grows without bound and every punch iterates all historical dead props).
+	remove_from_group("damageable_props")
 	died.emit()
 	# Disable blocking collision shapes (direct children of this StaticBody3D)
 	for child : Node in get_children():
