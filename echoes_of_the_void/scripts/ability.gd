@@ -23,8 +23,9 @@ var damage_mult  : float  = 1.0
 var range_       : float  = 1.5
 var cooldown     : float  = 1.0
 var hit_frame    : int    = 1    # animation frame (0-indexed) at which damage/flash/knockback fire
-var effect_name  : String = ""
-var effect_chance: float  = 0.0
+var effect_name       : String = ""
+var effect_chance     : float  = 0.0
+var effect_max_stacks : int    = 1
 
 # Resource costs
 var hp_cost     : int = 0

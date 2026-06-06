@@ -8,7 +8,7 @@ const ZOOM_MAX   : float = 15.0
 const ZOOM_STEPS : int   = 11      # discrete steps: 5,6,7,8,9,10,11,12,13,14,15
 const PITCH_MIN  : float = -40.0
 const PITCH_MAX  : float = -15.0
-const PITCH_STEP : float = 5.0
+const PITCH_STEP : float = 5.0     # discrete steps: -15,-20,-25,-30,-35,-40
 
 # ---------------------------------------------------------------------------
 # User-configurable values — edited via the settings page, saved to disk.

@@ -251,6 +251,32 @@ func _draw_panel(entity: Node, px: float, py: float, prefix: String) -> void:
 					draw_rect(Rect2(bx, cy, fw, BAR_H), color)
 				cy += BAR_H + 6.0
 
+			"effect":
+				# item: [kind, display_name, stacks, max_stacks, duration_pct, color, time_remaining]
+				var ename   : String = item[1]
+				var stacks  : int    = item[2]
+				var max_s   : int    = item[3]
+				var d_pct   : float  = item[4]
+				var ecol    : Color  = item[5]
+				var t_rem   : float  = item[6]
+				var lbl_str : String = ename + ("  %dx" % stacks if max_s > 1 else "")
+				draw_string(_font,
+					Vector2(px + PADDING, cy + float(FONT_SIZE)),
+					lbl_str, HORIZONTAL_ALIGNMENT_LEFT, iw * 0.65, FONT_SIZE, ecol)
+				draw_string(_font,
+					Vector2(px + PADDING, cy + float(FONT_SIZE)),
+					"%.1fs" % t_rem, HORIZONTAL_ALIGNMENT_RIGHT, iw, FONT_SIZE, C_LABEL)
+				cy += LINE_H - 4.0
+				var ebx : float = px + PADDING
+				var ebw : float = iw
+				draw_rect(Rect2(ebx, cy, ebw, 4.0), C_BAR_BG)
+				var efw : float = ebw * clampf(d_pct, 0.0, 1.0)
+				if efw > 0.0:
+					var bar_col : Color = ecol
+					bar_col.a = 0.75
+					draw_rect(Rect2(ebx, cy, efw, 4.0), bar_col)
+				cy += 8.0
+
 			"section":
 				var full_key : String = prefix + item[2]
 				draw_rect(Rect2(px + 1.0, cy, PANEL_W - 2.0, SECTION_H), C_SECTION_BG)
@@ -295,6 +321,17 @@ func _build_creature_lines(tgt: Node) -> Array:
 	if s.flow_max > 0:
 		var fl_pct : float = float(int(s.flow)) / float(s.flow_max)
 		lines.append(["bar", "Flow", fl_pct, C_FLOW, int(s.flow), s.flow_max])
+
+	# Active status effects
+	var c_effects : Dictionary = tgt.get("_effects") if "_effects" in tgt else {}
+	if c_effects != null and not c_effects.is_empty():
+		lines.append(["divider"])
+		for eid : String in c_effects:
+			var se : StatusEffect = c_effects[eid] as StatusEffect
+			if se != null and not se.expired:
+				lines.append(["effect",
+					se.display_name, se.stacks, se.max_stacks,
+					se.duration_pct(), se.color, se.time_remaining])
 	lines.append(["divider"])
 
 	# ── STATS ────────────────────────────────────────────────────────────────
@@ -380,6 +417,17 @@ func _build_player_lines() -> Array:
 	if s.flow_max > 0:
 		var fl_pct : float = float(int(s.flow)) / float(s.flow_max)
 		lines.append(["bar", "Flow", fl_pct, C_FLOW, int(s.flow), s.flow_max])
+
+	# Active status effects
+	var p_effects : Dictionary = _player.get("_effects") if "_effects" in _player else {}
+	if p_effects != null and not p_effects.is_empty():
+		lines.append(["divider"])
+		for eid : String in p_effects:
+			var se : StatusEffect = p_effects[eid] as StatusEffect
+			if se != null and not se.expired:
+				lines.append(["effect",
+					se.display_name, se.stacks, se.max_stacks,
+					se.duration_pct(), se.color, se.time_remaining])
 	lines.append(["divider"])
 
 	# ── STATS ────────────────────────────────────────────────────────────────
@@ -463,6 +511,7 @@ func _calc_height(lines: Array) -> float:
 			"section": h += SECTION_H
 			"row"    : h += LINE_H
 			"bar"    : h += (LINE_H - 4.0) + BAR_H + 6.0
+			"effect" : h += (LINE_H - 4.0) + 8.0
 	return h
 
 

@@ -156,12 +156,14 @@ func tick(dt: float) -> void:
 	gcd_timer = maxf(0.0, gcd_timer - dt)
 
 
-func regen(dt: float) -> void:
+func regen(dt: float, decay_focus: bool = true) -> void:
 	# Call when NOT in combat. Regens HP/Energy/Flow, decays Focus.
+	# Pass decay_focus=false when retreating — adrenaline lingers mid-flight.
 	hp     = minf(hp_max,     hp     + HP_REGEN     * dt)
 	energy = minf(energy_max, energy + ENERGY_REGEN * dt)
 	flow   = minf(flow_max,   flow   + FLOW_REGEN   * dt)
-	focus  = maxf(0.0,        focus  - FOCUS_DECAY  * dt)
+	if decay_focus:
+		focus = maxf(0.0, focus - FOCUS_DECAY * dt)
 
 
 # =============================================================================

@@ -16,6 +16,7 @@ const SPRITE_SIZE        : int    = 96
 const GRAVITY            : float  = -20.0
 const SPRITE_PATH        : String = "res://assets/spritesheets/player/"
 
+const PROP_REACT_LAYER    : int   = 4     # matches WorldProp.PROP_REACT_LAYER
 const ATTACK_ARC_DOT      : float = 0.3   # min dot product — ~±73° cone
 const SPRINT_SPEED_MULT   : float = 1.2   # sprint is 20% faster than walking
 const SPRINT_ENERGY_COST  : float = 1.0   # energy drained per second while sprinting
@@ -95,6 +96,9 @@ const KNOCKBACK_STRENGTH : float = 6.0
 const KNOCKBACK_FRICTION : float = 20.0
 var _knockback_vel : Vector3 = Vector3.ZERO
 
+# Active status effects
+var _effects : Dictionary = {}   # effect_id → StatusEffect
+
 # Sprint energy drain — accumulates run-time across Shift taps to prevent free-running exploit
 var _run_energy_accum : float = 0.0
 
@@ -108,6 +112,10 @@ var _pull_block_frames  : int              = 0             # consecutive frames 
 # Attack
 var _hit_applied : bool = false   # true once damage fires for the current swing
 
+# Prop reaction — continuous animation while moving inside, winds down on exit
+var _react_overlap  : Array = []   # props whose DetectZone we are currently inside
+var _react_driving  : Array = []   # props we have called start_reaction() on
+
 
 # =============================================================================
 # INIT
@@ -119,6 +127,7 @@ func init(p_cam: CameraSettings) -> void:
 	_build_collision()
 	_build_sprite()
 	_build_attack_range_visual()
+	_build_reaction_area()
 	_load_animations()
 	_init_abilities()
 
@@ -142,6 +151,44 @@ func _build_collision() -> void:
 	col.position.y = shp.height * 0.5
 	col.shape      = shp
 	add_child(col)
+
+
+func _build_reaction_area() -> void:
+	# Small Area3D that detects damageable props (PROP_REACT_LAYER) on contact.
+	# Replaces per-prop Area3D — ~9 total entity zones vs 763 prop zones.
+	var area := Area3D.new()
+	area.name            = "ReactZone"
+	area.collision_layer = 0
+	area.collision_mask  = PROP_REACT_LAYER
+	var col := CollisionShape3D.new()
+	var shp := CylinderShape3D.new()
+	shp.radius     = 0.65
+	shp.height     = 1.0
+	col.position.y = 0.5
+	col.shape      = shp
+	area.monitorable = false
+	area.monitoring  = true
+	area.add_child(col)
+	area.area_entered.connect(_on_react_zone_entered)
+	area.area_exited.connect(_on_react_zone_exited)
+	add_child(area)
+
+
+func _on_react_zone_entered(area: Area3D) -> void:
+	var prop : Node3D = area.get_parent() as Node3D
+	if not (is_instance_valid(prop) and prop.is_in_group("react_props")):
+		return
+	if not _react_overlap.has(prop):
+		_react_overlap.append(prop)
+
+
+func _on_react_zone_exited(area: Area3D) -> void:
+	var prop : Node3D = area.get_parent() as Node3D
+	_react_overlap.erase(prop)
+	if _react_driving.has(prop):
+		_react_driving.erase(prop)
+		if is_instance_valid(prop):
+			prop.call("stop_reaction")
 
 
 func _build_sprite() -> void:
@@ -301,6 +348,26 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity.y = 0.0
 
+	# Prop reaction — drive start/stop based on movement state
+	var _moving : bool = velocity.length_squared() > 0.01
+	if _moving:
+		for _rp : Variant in _react_overlap:
+			var _rpn : Node3D = _rp as Node3D
+			if is_instance_valid(_rpn) and not _react_driving.has(_rpn):
+				_react_driving.append(_rpn)
+				_rpn.call("start_reaction")
+	else:
+		for _rp : Variant in _react_driving.duplicate():
+			var _rpn : Node3D = _rp as Node3D
+			_react_driving.erase(_rpn)
+			if is_instance_valid(_rpn):
+				_rpn.call("stop_reaction")
+	# Purge stale refs (props unloaded by streamer while entity is inside)
+	for _rp : Variant in _react_driving.duplicate():
+		if not is_instance_valid(_rp as Node3D):
+			_react_driving.erase(_rp)
+	_react_overlap = _react_overlap.filter(func(p : Variant) -> bool: return is_instance_valid(p as Node3D))
+
 	_handle_movement(delta)
 	if state == State.RUN or state == State.PUSH or state == State.PULL:
 		_run_energy_accum += delta
@@ -325,6 +392,7 @@ func _physics_process(delta: float) -> void:
 		_drive_pulled_block(delta)
 
 	stats.tick(delta)
+	_tick_effects(delta)
 	_combat_timer = maxf(0.0, _combat_timer - delta)
 	_regen_timer  = maxf(0.0, _regen_timer  - delta)
 	if _combat_timer <= 0.0 and _regen_timer <= 0.0 \
@@ -1021,6 +1089,39 @@ func _extend_combat_timer() -> void:
 	_combat_timer = COMBAT_TIMEOUT
 
 
+func apply_status(effect_id: String, max_stacks: int) -> void:
+	if _effects.has(effect_id):
+		_effects[effect_id].reapply(max_stacks)
+	else:
+		var se : StatusEffect = Statuses.get_status(effect_id, max_stacks)
+		if se != null:
+			_effects[effect_id] = se
+
+
+func _tick_effects(dt: float) -> void:
+	if _effects.is_empty():
+		return
+	var to_remove : Array[String] = []
+	for effect_id : String in _effects:
+		var se  : StatusEffect = _effects[effect_id]
+		if se.tick(dt):
+			var dmg    : float = se.tick_dmg * float(se.stacks)
+			var actual : float = stats.take_damage(dmg, se.is_magic)
+			if actual > 0.0:
+				_start_status_flash(se.color)
+		se.update(dt)
+		if se.expired:
+			to_remove.append(effect_id)
+	for id : String in to_remove:
+		_effects.erase(id)
+
+
+func _start_status_flash(col: Color) -> void:
+	var tw := create_tween()
+	tw.tween_property(sprite, "modulate", col,         0.08)
+	tw.tween_property(sprite, "modulate", Color.WHITE, 0.15)
+
+
 func receive_hit(damage: float, knockback_dir: Vector3, attacker: Node = null) -> void:
 	var actual : float = stats.take_damage(damage)
 	stats.gain_focus_on_receive(actual)
@@ -1067,6 +1168,12 @@ func _do_attack() -> void:
 		node.call("receive_hit", dmg, diff)
 		stats.gain_focus_on_hit(dmg)
 		_combat_timer = COMBAT_TIMEOUT   # creature was struck — enter/extend combat idle
+		# Status effect proc
+		if _active_ability.effect_name != "" \
+				and randf() < _active_ability.effect_chance:
+			node.call("apply_status",
+					_active_ability.effect_name,
+					_active_ability.effect_max_stacks)
 		if diff.length_squared() < nearest_dist_sq:
 			nearest_dist_sq = diff.length_squared()
 			nearest_node    = node

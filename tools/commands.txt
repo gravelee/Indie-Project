@@ -1,7 +1,8 @@
-stop script: ctrl + c
+cd desktop/indie\ project/
 
 python3 tools/export_sprite.py
 
+stop script: ctrl + c
 ./tools/sort_folders.sh
 ./tools/sort_folders.sh "/Users/Grproth/Desktop/Indie Project/art_source"
 

@@ -54,25 +54,25 @@ Zone 2 implementation       → after Zone 2 story
 ```
 
 ### Current Status *(update this whenever a milestone is hit)*
-- **Last completed**: Full creature ability system overhaul (per-ability cooldowns, max-damage
-  selection, ability range drives engagement distance), debug panel (replaces target frame),
-  HP integer snap + is_alive() >= 1.0 fix, dead creature targeting (gray ring, persists until
-  out of range/tab/click-elsewhere), sprint gate at energy >= 1.0, fullscreen + no boot splash,
-  Focus gain for creatures (same formula as player), focus_cost on heavy abilities.
-- **Active work**: Design conversation — Weaponmaster/Spellcaster subclasses, level cap, Focus/Flow
-  lore, stat-point progression from nothing.
-- **Next session target**: Lock subclass ability lists and progression design, then implement
-  first pass of talent/stat-point UI and starting-from-nothing flow.
+- **Last completed**: Full prop system (WorldProp/DamageableProp/ObstacleProp/TerrainProp),
+  CSV map loading + streaming (75×75 window, delta-strip scan, fade in/out), mystic trees,
+  bushes, grass (all sizes), prop reaction animations (start/stop loop model), terrain
+  SHADING_MODE_UNSHADED fix, grass animation canvas padding fix.
+- **Active work**: Phase 1 Core Feel — world feels alive, now evaluating what's next.
+- **Next session target**: TBD — subclass ability design or next Phase 1 item.
 - **Blocked on**: Design questions — (1) Does pet have HP and can it die? (2) Is stealth a button
   or ability-only? (3) Level cap final decision (leaning 30). (4) Player starting stats: all 1s or
   preset minimum?
 
-### What the test map currently has (all hardcoded in main.gd `_ready()`)
-- Ground: 25×25 checkerboard PlaneMesh tiles + WorldBoundaryShape3D collision
-- Trees (Sprite3D + fade), water tiles, ledge, ramp, cliff, mountain (box obstacles)
-- Player at (12, 0, 20).
+### What the map currently has (loaded from CSV via map_loader.gd)
+- Full terrain from CSV tilemap (dirt, grass layers composited into one PlaneMesh texture)
+- Mystic trees (1×1, 1×1_h1, 2×2, 2×2_h1, 2×2_h2, 3×2, 3×2_h1, 3×2_h2), streamed
+- Bushes (small/mid/large, with and without collision), streamed
+- Grass (1×1, 2×1, 3×1, no collision), streamed
+- Player spawn from entities CSV
 - 4 test creatures: rat hostile+home+wander, rat hostile+home+no-wander, snake hostile+no-home+wander,
-  rat neutral+no-home+no-wander.
+  rat neutral+no-home+no-wander
+- Test geometry in main.gd: ledge, ramp, cliff, mountain, small walls, pushable block
 - No CSV loading. No tilemap system. All world content hardcoded.
 
 ### Pending (no priority order yet)
@@ -342,6 +342,31 @@ Applied in: `creature.gd` (`is_inspected`), `creature.gd` (`camera_angle`), `pla
 **Multi-phase Tween actions** — when a sequence requires: do A → wait → do B, use a single
 chained Tween with `tween_callback()` between property tweens. No state flags needed.
 See `creature._start_teleport()` for the reference implementation.
+
+**Idle sprite startup — never use `play()` for static frames** — `sprite.play(states[0])` in
+`_ready()` calls `set_process_internal(true)`, registering the node for per-frame processing.
+With 1000+ props this costs multiple ms per frame. Use direct assignment instead:
+```gdscript
+sprite.animation = states[0]
+sprite.frame     = 0
+```
+Only call `sprite.play()` for animations that actually advance frames (reactions, death). This
+applies to any node type that shows a static first frame on startup.
+
+**All 3D mesh materials must be SHADING_MODE_UNSHADED** — there are no lights in the scene.
+Default `StandardMaterial3D` responds to lighting; with zero ambient it renders near-black.
+```gdscript
+mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+```
+Apply to every `MeshInstance3D` material: terrain plane, collision boxes, ledges, water, walls.
+`AnimatedSprite3D` is unaffected — it renders at full brightness regardless.
+
+**Canvas-padded animation sheets** — when a prop has `_idle_blit_y >= 0` (TerrainProp/grass),
+the idle texture is canvas-padded (extra rows added so the sprite sits on the ground). Animation
+sheets (pass/death) must receive the **same padding** in `_load_anim_sheet()`, or `frame_h`
+exceeds the sheet height, the atlas samples out of bounds, and the animation shifts/wraps visually.
+The fix: if `_idle_blit_y >= 0`, blit the raw sheet into a taller image at `_idle_blit_y` offset
+before slicing frames, same as `_load_prop_tex()` does for idle.
 
 **Push / pull / grab mechanic** — `pushable_block.gd` (`CharacterBody3D`, group "pushable",
 `_driven : bool` suppresses its own physics while player controls it).
@@ -650,6 +675,30 @@ rewards. The first choice (in village) is from whatever wooden weapons are avail
   height/offset tuning pass once props are in-scene.
 - Hit flash is red tint (GL Compatibility can't do HDR Color(2,2,2) white flash). Upgrade to
   shader-based white flash when visual polish pass comes.
+
+### Map / Prop Performance System (implemented)
+- **Streaming window**: 75×75 tiles centered on player. Re-evaluated every 5 tiles of movement.
+  Props outside window fade out and free; props entering window fade in. Terrain mesh always full.
+- **Tree collision batching**: all non-destructible props (trees, 547 nodes) share ONE
+  `StaticBody3D` (`TreeCollision`). Each tree adds a `CylinderShape3D` to this shared body instead
+  of owning its own body. Drops BVH broadphase from 547 entries to 1 for trees.
+  `_tree_shapes : Dictionary` (Vector2i → CollisionShape3D) manages per-tree shape lifetime.
+  On despawn: shape is `queue_free()`'d from the shared body.
+- **Entity-side prop reaction**: each entity (player + every creature) has a small `Area3D`
+  (`ReactZone`, radius=0.65, monitoring=true, mask=`PROP_REACT_LAYER=4`). Each `DamageableProp`
+  owns a `DetectZone` Area3D (monitorable=true, layer=PROP_REACT_LAYER). Entity zones fire
+  `area_entered` / `area_exited` on contact with DetectZones.
+  Reaction is a **start/stop loop model** — not one-shot:
+  - Entity tracks `_react_overlap` (inside) and `_react_driving` (called start_reaction on).
+  - Each physics frame: if moving → call `start_reaction()` on any undriven overlap props;
+    if stopped → call `stop_reaction()` on all driven props.
+  - `area_exited` → stop_reaction + remove from both lists.
+  - Prop `_react_count` tracks how many entities are driving it. `_on_animation_finished`
+    restarts the reaction anim if `_react_count > 0`; otherwise snaps to idle (natural wind-down).
+  - No cooldown. No timer. Animation loops while entity moves inside; finishes naturally on exit.
+- **Future tree animation**: trees stay as individual visual nodes (AnimatedSprite3D) so per-tree
+  idle animations (sway, distance-based oscillation) can be added without architecture changes.
+  Collision stays batched regardless of animation.
 
 ### Creature Attack Tracking (per-type design note)
 All creatures currently track the player throughout the attack animation (facing updates every

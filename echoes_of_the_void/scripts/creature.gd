@@ -33,7 +33,8 @@ const SPRITE_SIZE        : int    = 96
 const SPRITE_PATH        : String = "res://assets/spritesheets/creatures/"
 const ANIM_SPEED         : int    = 8
 const ATTACK_ANIM_SPEED  : int    = 16
-const GRAVITY     : float  = -20.0
+const GRAVITY            : float = -20.0
+const PROP_REACT_LAYER   : int   = 4     # matches WorldProp.PROP_REACT_LAYER
 
 # ── AI distances (world units; 32 px = 1 unit) ─────────────────────────────
 
@@ -129,6 +130,7 @@ var _force_wander    : bool    = false
 # ── Combat ─────────────────────────────────────────────────────────────────
 
 var _knockback_vel      : Vector3        = Vector3.ZERO
+var _effects            : Dictionary     = {}                   # effect_id → StatusEffect
 var _attack_dist        : float          = ATTACK_DIST_DEFAULT  # max range of ability pool
 var _home_max_dist      : bool           = false   # set when leash exceeded during combat
 var _chosen_attack      : String         = ""      # locked on ATTACK state entry; stable for full swing
@@ -136,6 +138,10 @@ var _active_ability     : Ability        = null    # ability being executed in c
 var _creature_abilities : Array[Ability] = []      # per-instance ability pool with individual cooldowns
 var _hit_applied        : bool           = false   # true once hit-frame damage fires this swing
 var _pending_death      : bool           = false   # set when lethal hit received; death delayed until knockback settles
+
+# Prop reaction — continuous animation while moving inside, winds down on exit
+var _react_overlap  : Array = []   # props whose DetectZone we are currently inside
+var _react_driving  : Array = []   # props we have called start_reaction() on
 
 
 # =============================================================================
@@ -165,6 +171,7 @@ func init(p_type: String, p_stat_id: String, p_camera_rig: Node3D, p_player: Cha
 	_build_collision()
 	_build_sprite()
 	_build_target_ring()
+	_build_reaction_area()
 	_load_animations()
 	_init_creature_abilities()
 
@@ -207,6 +214,42 @@ func _build_collision() -> void:
 	col.shape      = shp
 	head_height    = shp.height
 	add_child(col)
+
+
+func _build_reaction_area() -> void:
+	var area := Area3D.new()
+	area.name            = "ReactZone"
+	area.collision_layer = 0
+	area.collision_mask  = PROP_REACT_LAYER
+	var col := CollisionShape3D.new()
+	var shp := CylinderShape3D.new()
+	shp.radius     = 0.65
+	shp.height     = 1.0
+	col.position.y = 0.5
+	col.shape      = shp
+	area.monitorable = false
+	area.monitoring  = true
+	area.add_child(col)
+	area.area_entered.connect(_on_react_zone_entered)
+	area.area_exited.connect(_on_react_zone_exited)
+	add_child(area)
+
+
+func _on_react_zone_entered(area: Area3D) -> void:
+	var prop : Node3D = area.get_parent() as Node3D
+	if not (is_instance_valid(prop) and prop.is_in_group("react_props")):
+		return
+	if not _react_overlap.has(prop):
+		_react_overlap.append(prop)
+
+
+func _on_react_zone_exited(area: Area3D) -> void:
+	var prop : Node3D = area.get_parent() as Node3D
+	_react_overlap.erase(prop)
+	if _react_driving.has(prop):
+		_react_driving.erase(prop)
+		if is_instance_valid(prop):
+			prop.call("stop_reaction")
 
 
 func _build_sprite() -> void:
@@ -349,6 +392,25 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity.y = 0.0
 
+	# Prop reaction — drive start/stop based on movement state
+	var _moving : bool = velocity.length_squared() > 0.01
+	if _moving:
+		for _rp : Variant in _react_overlap:
+			var _rpn : Node3D = _rp as Node3D
+			if is_instance_valid(_rpn) and not _react_driving.has(_rpn):
+				_react_driving.append(_rpn)
+				_rpn.call("start_reaction")
+	else:
+		for _rp : Variant in _react_driving.duplicate():
+			var _rpn : Node3D = _rp as Node3D
+			_react_driving.erase(_rpn)
+			if is_instance_valid(_rpn):
+				_rpn.call("stop_reaction")
+	for _rp : Variant in _react_driving.duplicate():
+		if not is_instance_valid(_rp as Node3D):
+			_react_driving.erase(_rp)
+	_react_overlap = _react_overlap.filter(func(p : Variant) -> bool: return is_instance_valid(p as Node3D))
+
 	_update_state(delta)
 
 	# Apply and decay knockback impulse
@@ -384,9 +446,15 @@ func _physics_process(delta: float) -> void:
 	if not is_dead:
 		for ab : Ability in _creature_abilities:
 			ab.tick(delta)
-	# Regen only when out of combat
-	if state == State.IDLE_NEUTRAL or state == State.WANDER or state == State.RETURNING:
+	# Regen only when out of combat.
+	# RETURNING: recover HP/Energy/Flow but preserve Focus — adrenaline lingers mid-flight,
+	# only settles when the creature is actually calm (IDLE_NEUTRAL / WANDER).
+	if state == State.IDLE_NEUTRAL or state == State.WANDER:
 		stats.regen(delta)
+	elif state == State.RETURNING:
+		stats.regen(delta, false)
+
+	_tick_effects(delta)
 
 
 func _on_anim_finished() -> void:
@@ -487,6 +555,10 @@ func _update_state(delta: float) -> void:
 				_home_max_dist = true
 				_set_state(State.ATTACK_TO_NEUTRAL)
 				return
+			# Energy depleted — disengage and return home to recover
+			if stats.energy < 1.0:
+				_set_state(State.ATTACK_TO_NEUTRAL)
+				return
 			# Player moved out of melee range
 			if dist_sq >= _attack_dist * _attack_dist:
 				if dist_sq < CHASE_DIST * CHASE_DIST:
@@ -502,6 +574,10 @@ func _update_state(delta: float) -> void:
 			# Leash check
 			if (has_home or temp_home) and _dist_sq_to_home() > HOME_MAX_DIST * HOME_MAX_DIST:
 				_home_max_dist = true
+				_set_state(State.ATTACK_TO_NEUTRAL)
+				return
+			# Energy depleted — disengage and return home to recover
+			if stats.energy < 1.0:
 				_set_state(State.ATTACK_TO_NEUTRAL)
 				return
 			# Player ran away
@@ -533,6 +609,12 @@ func _update_state(delta: float) -> void:
 						var dmg : float = _active_ability.calc_damage(stats)
 						player.call("receive_hit", dmg, dir, self)
 						stats.gain_focus_on_hit(dmg)
+						# Status effect proc — no knockback, flash handled in player.apply_status
+						if _active_ability.effect_name != "" \
+								and randf() < _active_ability.effect_chance:
+							player.call("apply_status",
+									_active_ability.effect_name,
+									_active_ability.effect_max_stacks)
 			# State transition waits for the full animation to finish.
 			# Per-ability cooldown already started on state entry — no global timer needed.
 			if _anim_done:
@@ -547,8 +629,8 @@ func _update_state(delta: float) -> void:
 			velocity.x = 0.0
 			velocity.z = 0.0
 			if _anim_done:
-				# Re-engage if player is still nearby and leash was not the cause
-				if not _home_max_dist and dist_sq < CHASE_DIST * CHASE_DIST:
+				# Re-engage only if leash was not the cause AND energy is recovered
+				if not _home_max_dist and stats.energy >= 1.0 and dist_sq < CHASE_DIST * CHASE_DIST:
 					_set_state(State.NEUTRAL_TO_ATTACK)
 				else:
 					_set_state(State.RETURNING)
@@ -558,10 +640,6 @@ func _update_state(delta: float) -> void:
 			if dist_home_sq <= HOME_ARRIVE_DIST * HOME_ARRIVE_DIST:
 				_snap_to_home()
 				_set_state(State.IDLE_NEUTRAL)
-				return
-			# Re-engage if player wanders close while returning (leash was not the cause)
-			if not _home_max_dist and _is_aggressive() and dist_sq < NOTICE_DIST * NOTICE_DIST:
-				_set_state(State.NEUTRAL_TO_ATTACK)
 				return
 			_move_toward_target(home_position, stats.mspd * RETURN_SPEED_MULT)
 
@@ -725,6 +803,43 @@ func _pick_best_ability() -> Ability:
 # =============================================================================
 # COMBAT
 # =============================================================================
+
+func apply_status(effect_id: String, max_stacks: int) -> void:
+	if is_dead:
+		return
+	if _effects.has(effect_id):
+		_effects[effect_id].reapply(max_stacks)
+	else:
+		var se : StatusEffect = Statuses.get_status(effect_id, max_stacks)
+		if se != null:
+			_effects[effect_id] = se
+
+
+func _tick_effects(dt: float) -> void:
+	if is_dead or _effects.is_empty():
+		return
+	var to_remove : Array[String] = []
+	for effect_id : String in _effects:
+		var se  : StatusEffect = _effects[effect_id]
+		if se.tick(dt):
+			var dmg    : float = se.tick_dmg * float(se.stacks)
+			var actual : float = stats.take_damage(dmg, se.is_magic)
+			if actual > 0.0:
+				_start_status_flash(se.color)
+			if not stats.is_alive() and not _pending_death:
+				_pending_death = true
+		se.update(dt)
+		if se.expired:
+			to_remove.append(effect_id)
+	for id : String in to_remove:
+		_effects.erase(id)
+
+
+func _start_status_flash(col: Color) -> void:
+	var tw := create_tween()
+	tw.tween_property(sprite, "modulate", col,         0.08)
+	tw.tween_property(sprite, "modulate", Color.WHITE, 0.15)
+
 
 func receive_hit(damage: float, knockback_dir: Vector3) -> void:
 	if state == State.DEAD or state == State.DEATH:

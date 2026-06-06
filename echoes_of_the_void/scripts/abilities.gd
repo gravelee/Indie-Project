@@ -38,40 +38,49 @@ const _DATA : Dictionary = {
 	# ---- Creature abilities -----------------------------------------------------
 
 	"rat_bite": {
-		"display_name": "Bite",
-		"description":  "Rat snaps at the target.",
-		"anim":         "attack_bite",
-		"is_magic":     false,
-		"damage_mult":  1.0,
-		"range_":       1.5,
-		"cooldown":     2.0,
-		"energy_cost":  1,
-		"hit_frame":    4,
+		"display_name":       "Bite",
+		"description":        "Rat snaps at the target.",
+		"anim":               "attack_bite",
+		"is_magic":           false,
+		"damage_mult":        1.0,
+		"range_":             1.5,
+		"cooldown":           2.0,
+		"energy_cost":        1,
+		"hit_frame":          4,
+		"effect_name":        "bleed",
+		"effect_chance":      0.05,
+		"effect_max_stacks":  2,
 	},
 
 	"rat_slash": {
-		"display_name": "Claw Slash",
-		"description":  "Rat rakes with its claws.",
-		"anim":         "attack_slash",
-		"is_magic":     false,
-		"damage_mult":  1.4,
-		"range_":       1.6,
-		"cooldown":     6.0,
-		"energy_cost":  1,
-		"focus_cost":   10,
-		"hit_frame":    5,
+		"display_name":       "Claw Slash",
+		"description":        "Rat rakes with its claws.",
+		"anim":               "attack_slash",
+		"is_magic":           false,
+		"damage_mult":        1.4,
+		"range_":             1.6,
+		"cooldown":           6.0,
+		"energy_cost":        1,
+		"focus_cost":         1,
+		"hit_frame":          5,
+		"effect_name":        "bleed",
+		"effect_chance":      0.05,
+		"effect_max_stacks":  2,
 	},
 
 	"snake_bite": {
-		"display_name": "Venomous Bite",
-		"description":  "Snake strikes at close range.",
-		"anim":         "attack_bite",
-		"is_magic":     false,
-		"damage_mult":  1.0,
-		"range_":       1.5,
-		"cooldown":     3.0,
-		"energy_cost":  1,
-		"hit_frame":    4,
+		"display_name":       "Venomous Bite",
+		"description":        "Snake strikes at close range.",
+		"anim":               "attack_bite",
+		"is_magic":           false,
+		"damage_mult":        1.0,
+		"range_":             1.5,
+		"cooldown":           3.0,
+		"energy_cost":        1,
+		"hit_frame":          4,
+		"effect_name":        "poison",
+		"effect_chance":      0.10,
+		"effect_max_stacks":  1,
 	},
 
 	"snake_tail_slam": {
@@ -83,7 +92,7 @@ const _DATA : Dictionary = {
 		"range_":       1.7,
 		"cooldown":     4.0,
 		"energy_cost":  1,
-		"focus_cost":   10,
+		"focus_cost":   1,
 		"hit_frame":    5,
 	},
 }
@@ -110,8 +119,9 @@ static func get_ability(p_id: String) -> Ability:
 	ab.range_        = data.get("range_",         1.5)
 	ab.cooldown      = data.get("cooldown",       1.0)
 	ab.hit_frame     = data.get("hit_frame",      1)
-	ab.effect_name   = data.get("effect_name",    "")
-	ab.effect_chance = data.get("effect_chance",  0.0)
+	ab.effect_name       = data.get("effect_name",       "")
+	ab.effect_chance     = data.get("effect_chance",     0.0)
+	ab.effect_max_stacks = data.get("effect_max_stacks", 1)
 	ab.hp_cost       = data.get("hp_cost",        0)
 	ab.energy_cost   = data.get("energy_cost",    0)
 	ab.focus_cost    = data.get("focus_cost",     0)

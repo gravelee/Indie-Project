@@ -8,20 +8,20 @@ extends Node3D
 #
 # Controls:
 #   WASD / Arrows     — move (camera-relative)
-#   RMB drag H        — orbit
-#   RMB drag V        — pitch
-#   Scroll / RMB+Scroll — zoom (analog)
+#   LMB               — Select / Deselect targets
+#   RMB drag Horizontal  — orbit
+#   RMB drag Vertical    — pitch
+#   Scroll / RMB+Scroll  — zoom (analog)
 #   - / =             — zoom out / in (discrete steps)
-#   Shift+- / =       — pitch steeper / shallower
+#   Shift + (- / =)   — pitch steeper / shallower
 #   Q / E             — orbit left / right
-#   F                 — toggle billboard
-#   ESC               — pause menu
+#   F                 — toggle billboard (remember to delete or release).
+#   TAB               — select target
+#   ESC               — game menu
 # =============================================================================
 
 const PLAYER_SPRITE_SIZE : int   = 96
 const TILE_SIZE          : float = 1.0
-const TREE_SINK          : float = 0.9
-const TREE_FADE_RADIUS   : float = 3.0
 
 const SETTINGS_SAVE_PATH : String = "user://camera_settings.tres"
 
@@ -33,14 +33,12 @@ var camera_rig : Node3D    # camera_rig.gd
 var game_ui    : Node      # game_ui.gd
 var hud        : CanvasLayer  # hud.gd
 var debug_panel : Node2D      # debug_panel.gd
+var map_loader : MapLoader    # streaming prop + creature system
 
 # Player
 var player_body   : CharacterBody3D
 var player_sprite : AnimatedSprite3D
 var billboard_on  : bool = true
-
-# Scene refs
-var tree_sprites : Array[Sprite3D] = []
 
 # Materials
 var mat_light    : StandardMaterial3D
@@ -53,39 +51,32 @@ var mat_mountain : StandardMaterial3D
 
 
 func _ready() -> void:
+	
 	_load_or_create_settings()
 	_build_materials()
-	_build_ground()
+
+	# Load terrain and props from map CSV files
+	map_loader = MapLoader.new()
+	map_loader.load_terrain(self)
+
+	# Test geometry kept for dev reference — remove when map content replaces it
 	_build_ledge()
 	_build_ramp()
 	_build_cliff()
 	_build_mountain()
 	_build_small_wall(Vector3( 6.0, 1.0,  14.0), Vector3(1.0, 2.0, 4.0))
 	_build_small_wall(Vector3(14.0, 0.75, 22.0), Vector3(5.0, 1.5, 1.0))
-	_build_tree(Vector3( 2.0, 0.0,  3.0))
-	_build_tree(Vector3( 3.0, 0.0,  7.0))
-	_build_tree(Vector3( 2.0, 0.0, 13.0))
-	_build_tree(Vector3( 1.5, 0.0, 19.0))
-	_build_tree(Vector3( 7.0, 0.0,  4.0))
-	_build_tree(Vector3( 8.0, 0.0, 11.0))
-	_build_tree(Vector3(16.0, 0.0,  4.0))
-	_build_tree(Vector3(17.0, 0.0, 12.0))
-	_build_tree(Vector3(14.0, 0.0, 17.0))
-	_build_tree(Vector3(22.0, 0.0,  3.0))
-	_build_tree(Vector3(23.0, 0.0, 13.0))
-	_build_tree(Vector3(10.0, 0.0, 19.0))
-	_build_water_tile(Vector3(17.0, 0.0, 18.0))
-	_build_water_tile(Vector3(18.0, 0.0, 18.0))
-	_build_water_tile(Vector3(17.0, 0.0, 19.0))
-	_build_player()
+
+	# Player at spawn position from entities CSV
+	var spawn_pos : Vector3 = map_loader.get_player_spawn()
+	_build_player(spawn_pos)
 	_build_camera_rig()
 	_build_hud()
 	_build_test_block()
-	# Test cases — scattered to map corners so they can be engaged one at a time
-	_build_creature("rat",   "rat_common",   Vector3( 2.0, 0.0,  2.0), "hostile", true,  true)   # NW — home + wander      lv2
-	_build_creature("rat",   "rat_scrapper", Vector3(23.0, 0.0,  2.0), "hostile", true,  false)  # NE — home + guard       lv2
-	_build_creature("snake", "snake_common", Vector3( 2.0, 0.0, 23.0), "hostile", false, true)   # SW — immigrant + wander  lv3
-	_build_creature("rat",   "rat_young",    Vector3(23.0, 0.0, 23.0), "neutral", false, false)  # SE — neutral, no home    lv1
+
+	# Spawn initial window of props and creatures; streaming handled in _process
+	map_loader.init_streaming(self, camera_rig, player_body)
+
 	_build_ui()
 
 
@@ -162,41 +153,14 @@ func _input(event: InputEvent) -> void:
 # PROCESS
 # ---------------------------------------------------------------------------
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	# Feed per-frame flags to subsystems
 	camera_rig.scroll_zoom_blocked        = game_ui.call("is_mouse_over_panel")
 	player_body.set("movement_blocked", game_ui.call("any_ui_open"))
-
 	hud.call("refresh")
-	_update_tree_fade(delta)
+	map_loader.update(player_body.global_position)
 
 
-
-
-# ---------------------------------------------------------------------------
-# TREE FADE
-# ---------------------------------------------------------------------------
-
-func _update_tree_fade(delta: float) -> void:
-	var cam_pos    : Vector3 = camera_rig.camera.global_position
-	var player_pos : Vector3 = player_body.global_position + \
-		Vector3(0.0, PLAYER_SPRITE_SIZE * player_sprite.pixel_size * 0.5, 0.0)
-	var to_player  : Vector3 = player_pos - cam_pos
-	var cam_dist   : float   = to_player.length()
-
-	for sprite : Sprite3D in tree_sprites:
-		var tree_to_player : float = sprite.global_position.distance_to(player_pos)
-		var target_alpha   : float = 1.0
-		if tree_to_player < TREE_FADE_RADIUS:
-			var to_tree  : Vector3 = sprite.global_position - cam_pos
-			var t        : float   = to_tree.dot(to_player) / (cam_dist * cam_dist)
-			if t > 0.0 and t < 1.0:
-				var closest  : Vector3 = cam_pos + to_player * t
-				var off_axis : float   = (sprite.global_position - closest).length()
-				if off_axis < 1.2:
-					var proximity : float = 1.0 - (tree_to_player / TREE_FADE_RADIUS)
-					target_alpha = 1.0 - proximity * 0.85
-		sprite.modulate.a = move_toward(sprite.modulate.a, target_alpha, delta * 4.0)
 
 
 # ---------------------------------------------------------------------------
@@ -206,44 +170,27 @@ func _update_tree_fade(delta: float) -> void:
 func _build_materials() -> void:
 	mat_light = StandardMaterial3D.new()
 	mat_light.albedo_color = Color(0.72, 0.68, 0.55)
+	mat_light.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat_dark = StandardMaterial3D.new()
 	mat_dark.albedo_color = Color(0.52, 0.50, 0.38)
+	mat_dark.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat_ledge = StandardMaterial3D.new()
 	mat_ledge.albedo_color = Color(0.45, 0.40, 0.35)
+	mat_ledge.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat_ramp = StandardMaterial3D.new()
 	mat_ramp.albedo_color = Color(0.58, 0.50, 0.40)
+	mat_ramp.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat_water = StandardMaterial3D.new()
 	mat_water.albedo_color = Color(0.2, 0.5, 0.9, 0.7)
 	mat_water.flags_transparent = true
+	mat_water.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat_cliff = StandardMaterial3D.new()
 	mat_cliff.albedo_color = Color(0.38, 0.35, 0.32)
+	mat_cliff.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat_mountain = StandardMaterial3D.new()
 	mat_mountain.albedo_color = Color(0.50, 0.46, 0.40)
+	mat_mountain.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 
-
-# ---------------------------------------------------------------------------
-# GROUND — 25×25 tiles
-# ---------------------------------------------------------------------------
-
-func _build_ground() -> void:
-	var root := Node3D.new()
-	root.name = "GroundVisual"
-	add_child(root)
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(TILE_SIZE, TILE_SIZE)
-	for row : int in range(25):
-		for col : int in range(25):
-			var tile := MeshInstance3D.new()
-			tile.mesh = plane
-			tile.material_override = mat_light if (row + col) % 2 == 0 else mat_dark
-			tile.position = Vector3((col + 0.5) * TILE_SIZE, 0.0, (row + 0.5) * TILE_SIZE)
-			root.add_child(tile)
-	var body := StaticBody3D.new()
-	body.name = "Ground"
-	var col := CollisionShape3D.new()
-	col.shape = WorldBoundaryShape3D.new()
-	body.add_child(col)
-	add_child(body)
 
 
 # ---------------------------------------------------------------------------
@@ -315,32 +262,6 @@ func _build_small_wall(center: Vector3, size: Vector3) -> void:
 	_build_box_obstacle(center, size, mat_cliff)
 
 
-# ---------------------------------------------------------------------------
-# TREES
-# ---------------------------------------------------------------------------
-
-func _build_tree(world_pos: Vector3) -> void:
-	var sprite := Sprite3D.new()
-	sprite.name = "Tree"
-	sprite.texture = _get_tree_texture()
-	sprite.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
-	sprite.pixel_size = TILE_SIZE / 32.0
-	sprite.alpha_cut      = SpriteBase3D.ALPHA_CUT_DISABLED
-	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	var wh : float = sprite.texture.get_height() * sprite.pixel_size
-	sprite.position = Vector3(world_pos.x, wh * 0.5 - TREE_SINK, world_pos.z)
-	add_child(sprite)
-	tree_sprites.append(sprite)
-	var body := StaticBody3D.new()
-	body.position = Vector3(world_pos.x, 0.5, world_pos.z)
-	var col := CollisionShape3D.new()
-	var shp := CylinderShape3D.new()
-	shp.radius = 0.4
-	shp.height = 1.0
-	col.shape = shp
-	body.add_child(col)
-	add_child(body)
-
 
 # ---------------------------------------------------------------------------
 # WATER
@@ -360,10 +281,10 @@ func _build_water_tile(pos: Vector3) -> void:
 # PLAYER
 # ---------------------------------------------------------------------------
 
-func _build_player() -> void:
+func _build_player(spawn_pos: Vector3 = Vector3(12.0, 0.0, 20.0)) -> void:
 	player_body = CharacterBody3D.new()
 	player_body.name = "Player"
-	player_body.position = Vector3(12.0, 0.0, 20.0)
+	player_body.position = spawn_pos
 	player_body.set_script(load("res://scripts/player.gd"))
 	add_child(player_body)
 	player_body.call("init", cam)
@@ -403,38 +324,3 @@ func _build_creature(type: String, stat_id: String, world_pos: Vector3,
 	add_child(body)
 	# home_position is recorded inside init() from body.global_position — set AFTER add_child
 	body.call("init", type, stat_id, camera_rig, player_body, aggression, has_home, can_wander)
-
-
-
-# ---------------------------------------------------------------------------
-# DEBUG LABEL
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# TEXTURES
-# ---------------------------------------------------------------------------
-
-func _get_tree_texture() -> Texture2D:
-	var path : String = "res://assets/sprites/tree/mystic/3x2_h1.png"
-	var tex  : Texture2D = AssetLoader.load_texture(path)
-	if tex:
-		return tex
-	return _make_placeholder_tree()
-
-
-func _make_placeholder_tree() -> Texture2D:
-	var img    := Image.create(32, 64, false, Image.FORMAT_RGBA8)
-	var trunk  := Color(0.38, 0.24, 0.10, 1.0)
-	var dark   := Color(0.10, 0.42, 0.12, 1.0)
-	var light  := Color(0.18, 0.60, 0.20, 1.0)
-	var center := Vector2(16.0, 22.0)
-	var radius : float = 13.0
-	for y : int in range(48, 64):
-		for x : int in range(13, 19):
-			img.set_pixel(x, y, trunk)
-	for y : int in range(0, 48):
-		for x : int in range(0, 32):
-			var t : float = Vector2(x, y).distance_to(center) / radius
-			if t <= 1.0:
-				img.set_pixel(x, y, dark.lerp(light, 1.0 - t))
-	return ImageTexture.create_from_image(img)
