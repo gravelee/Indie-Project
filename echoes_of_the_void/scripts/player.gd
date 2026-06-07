@@ -94,8 +94,9 @@ var _tab_buffer : Array[Node]  = []     # creatures visited this tab session
 var _tab_tier   : int          = 0      # 0 = unset, 1 = on-screen, 2 = off-screen fallback
 
 # Knockback
-const KNOCKBACK_STRENGTH : float = 6.0
-const KNOCKBACK_FRICTION : float = 20.0
+const KNOCKBACK_STRENGTH  : float = 6.0
+const KNOCKBACK_FRICTION  : float = 20.0
+const KNOCKBACK_AIR_SCALE : float = 0.25   # airborne knockback is weaker — no ground friction to counter it
 var _knockback_vel : Vector3 = Vector3.ZERO
 
 # Active status effects
@@ -456,8 +457,9 @@ func _physics_process(delta: float) -> void:
 	_handle_attack(delta)
 
 	if _knockback_vel.length_squared() > 0.01:
-		velocity.x += _knockback_vel.x
-		velocity.z += _knockback_vel.z
+		var kb_scale : float = KNOCKBACK_AIR_SCALE if state == State.JUMP else 1.0
+		velocity.x += _knockback_vel.x * kb_scale
+		velocity.z += _knockback_vel.z * kb_scale
 		_knockback_vel = _knockback_vel.move_toward(Vector3.ZERO, KNOCKBACK_FRICTION * delta)
 	else:
 		_knockback_vel = Vector3.ZERO
