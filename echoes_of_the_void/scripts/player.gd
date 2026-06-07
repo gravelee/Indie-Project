@@ -28,7 +28,7 @@ const PULL_SPEED          : float = 1.3
 const GRAB_REACH          : float = 0.7   # max distance to latch onto a pushable block
 const PLAYER_CAPSULE_RADIUS : float = 0.40  # must match _build_collision shp.radius
 
-enum State  { IDLE, WALK, RUN, ATTACK, PUSH, GRAB, PULL, SPAWN, DEAD }
+enum State  { IDLE, WALK, RUN, ATTACK, JUMP, PUSH, GRAB, PULL, SPAWN, DEAD }
 enum Facing { SOUTH, NORTH, EAST, WEST }
 
 const FACING_STR : Dictionary = {
@@ -289,6 +289,8 @@ func _load_animations() -> void:
 		_add_strip(frames, "pull_" + dir,         8.0)
 	for dir : String in ["south", "north", "east", "west"]:
 		_add_strip(frames, "grab_" + dir, 4.0)
+	for dir : String in ["south", "north", "east", "west"]:
+		_add_strip(frames, "jump_" + dir, 12.0)
 	_add_strip(frames, "spawn",     12.0)
 	_add_strip(frames, "death",     12.0)
 	AssetLoader.store_frames(SPRITE_PATH, frames)
@@ -356,7 +358,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_8:     _slot_requested = 7
 		KEY_9:     _slot_requested = 8
 		KEY_0:     _slot_requested = 9
-		KEY_SPACE: _slot_requested = 0
+		KEY_SPACE:
+			if state == State.IDLE or state == State.WALK or state == State.RUN:
+				_set_state(State.JUMP)
 		KEY_TAB:   _try_tab_target()
 		KEY_SHIFT:
 			# Grab only from IDLE or WALK — not while already sprinting.
@@ -666,6 +670,13 @@ func _handle_movement(delta: float) -> void:
 
 	if state == State.PULL:
 		_do_pull_movement(delta)
+		return
+
+	if state == State.JUMP:
+		velocity.x = 0.0
+		velocity.z = 0.0
+		if not sprite.is_playing():
+			_set_state(State.IDLE)
 		return
 
 	var raw : Vector2 = _read_raw_input()
@@ -1095,6 +1106,7 @@ func _rebuild_anim_key() -> void:
 		State.ATTACK:
 			var style : String = weapon_main if weapon_main != "" else "unarmed"
 			_anim_key = "attack_" + style + "_" + FACING_STR[facing]
+		State.JUMP:   _anim_key = "jump_"         + FACING_STR[facing]
 		State.PUSH:   _anim_key = "push_"         + FACING_STR[facing]
 		State.GRAB:   _anim_key = "grab_" + FACING_STR[facing]
 		State.PULL:   _anim_key = "pull_"         + FACING_STR[facing]
@@ -1123,7 +1135,7 @@ func _sync_anim() -> void:
 	if state == State.IDLE:
 		_rebuild_anim_key()
 	if sprite.animation != _anim_key:
-		var loop : bool = state != State.ATTACK
+		var loop : bool = state != State.ATTACK and state != State.JUMP
 		sprite.sprite_frames.set_animation_loop(_anim_key, loop)
 		sprite.play(_anim_key)
 	# GRAB: freeze pull anim at frame 0 (visual latch indicator)

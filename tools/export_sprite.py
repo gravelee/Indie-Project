@@ -151,6 +151,11 @@ EXPORTS = [
     (f"{_P}/east/grab",           f"{_PO}/grab_east.png"),
     (f"{_P}/west/grab",           f"{_PO}/grab_west.png"),
 
+    (f"{_P}/south/jump",          f"{_PO}/jump_south.png"),
+    (f"{_P}/north/jump",          f"{_PO}/jump_north.png"),
+    (f"{_P}/east/jump",           f"{_PO}/jump_east.png"),
+    (f"{_P}/west/jump",           f"{_PO}/jump_west.png"),
+
     (f"{_P}/spawn",               f"{_PO}/spawn.png"),
     (f"{_P}/death",               f"{_PO}/death.png"),
 
