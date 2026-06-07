@@ -476,7 +476,7 @@ func _update_state(delta: float) -> void:
 			velocity.x = 0.0
 			velocity.z = 0.0
 			# Within notice-direction range: face the player, suppress wander
-			if _is_aggressive() and dist_sq < NOTICE_DIR_DIST * NOTICE_DIR_DIST:
+			if _is_aggressive() and not player.get("is_dead") and dist_sq < NOTICE_DIR_DIST * NOTICE_DIR_DIST:
 				_update_facing_toward(player.global_position)
 				# Close enough to actually notice — enter NOTICE state
 				if dist_sq < NOTICE_DIST * NOTICE_DIST:
@@ -499,7 +499,7 @@ func _update_state(delta: float) -> void:
 
 		State.WANDER:
 			# Notice check takes priority over wander
-			if _is_aggressive() and dist_sq < NOTICE_DIST * NOTICE_DIST:
+			if _is_aggressive() and not player.get("is_dead") and dist_sq < NOTICE_DIST * NOTICE_DIST:
 				_set_state(State.NOTICE)
 				return
 			# Wandered too far from home
@@ -862,6 +862,21 @@ func receive_hit(damage: float, knockback_dir: Vector3) -> void:
 
 	if not stats.is_alive():
 		_pending_death = true
+
+
+func on_player_died() -> void:
+	# Player died — disengage and return home (or idle if homeless).
+	var combat_states : Array = [
+		State.NOTICE, State.NEUTRAL_TO_ATTACK,
+		State.IDLE_ATTACK, State.CHASE, State.ATTACK, State.ATTACK_TO_NEUTRAL
+	]
+	if not (state in combat_states):
+		return
+	_home_max_dist = false
+	if has_home or temp_home:
+		_set_state(State.RETURNING)
+	else:
+		_set_state(State.IDLE_NEUTRAL)
 
 
 func _start_hit_flash() -> void:

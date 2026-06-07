@@ -129,7 +129,9 @@ var _last_player_tile : Vector2i    = Vector2i(-9999, -9999)
 var _initial_load     : bool        = false   # true during first _spawn_window_contents call
 
 # Deferred spawn queue — processed at MAX_SPAWNS_PER_FRAME per update() call
-var _spawn_queue : Array = []   # Array of {is_prop: bool, key: Vector2i}
+var _spawn_queue   : Array = []   # Array of {is_prop: bool, key: Vector2i}
+# Deferred despawn queue — same throttle, prevents hundreds of Tween creations in one frame
+var _despawn_queue : Array = []   # Array of {is_prop: bool, key: Vector2i}
 
 var _scanned : bool = false
 
@@ -363,13 +365,19 @@ func _spawn_window_contents(win: Dictionary) -> void:
 
 # Called when player crosses STREAM_TRIGGER_TILES boundary.
 func _update_window(new_win: Dictionary) -> void:
-	# Despawn props/creatures that left the new window
+	# Queue despawns for props/creatures that left the new window.
+	# Erase from _loaded_* immediately (so re-entry doesn't double-queue),
+	# but store the node reference in the entry so _process_queues can fade it.
 	for key : Vector2i in _loaded_props.keys():
 		if not _in_window(key, new_win):
-			_start_despawn_prop(key)
+			var raw : Variant = _loaded_props[key]
+			_loaded_props.erase(key)
+			_despawn_queue.append({is_prop=true, key=key, node=raw})
 	for key : Vector2i in _loaded_creatures.keys():
 		if not _in_window(key, new_win):
-			_start_despawn_creature(key)
+			var raw : Variant = _loaded_creatures[key]
+			_loaded_creatures.erase(key)
+			_despawn_queue.append({is_prop=false, key=key, node=raw})
 
 	# Queue spawns for tiles newly inside the window.
 	# Only iterate the edge strips that are new — NOT the full 75×75 grid.
@@ -414,6 +422,15 @@ func _queue_tile_range(c0: int, c1: int, r0: int, r1: int) -> void:
 
 func _process_queues() -> void:
 	var count : int = 0
+	# Despawns first — free slots before filling them.
+	while not _despawn_queue.is_empty() and count < MAX_SPAWNS_PER_FRAME:
+		var entry : Dictionary = _despawn_queue.pop_front()
+		if entry.is_prop:
+			_execute_despawn_prop(entry.key, entry.node)
+		else:
+			_execute_despawn_creature(entry.key, entry.node)
+		count += 1
+	# Spawns fill remaining budget.
 	while not _spawn_queue.is_empty() and count < MAX_SPAWNS_PER_FRAME:
 		var entry : Dictionary = _spawn_queue.pop_front()
 		var key   : Vector2i   = entry.key
@@ -526,16 +543,11 @@ func _do_spawn_creature(key: Vector2i, cd: Array) -> void:
 	_loaded_creatures[key] = body
 
 
-func _start_despawn_prop(key: Vector2i) -> void:
-	var raw : Variant = _loaded_props.get(key, null)
+func _execute_despawn_prop(key: Vector2i, raw: Variant) -> void:
 	if raw == null or not is_instance_valid(raw):
-		_loaded_props.erase(key)
 		return
 	var prop : Node = raw as Node
-	# Move to fading dict immediately so the slot is free for re-spawning
-	_loaded_props.erase(key)
 	_fading_props[key] = prop
-
 	var prop_sprite : AnimatedSprite3D = prop.get("sprite") as AnimatedSprite3D
 	var tw := prop.create_tween()
 	if prop_sprite != null:
@@ -547,17 +559,13 @@ func _start_despawn_prop(key: Vector2i) -> void:
 			_tree_shapes.erase(key)
 		if is_instance_valid(prop):
 			prop.queue_free()
-	)# discrete steps: 5,6,7,8,9,10,11,12,13,14,15
+	)
 
 
-func _start_despawn_creature(key: Vector2i) -> void:
-	var raw : Variant = _loaded_creatures.get(key, null)
+func _execute_despawn_creature(key: Vector2i, raw: Variant) -> void:
 	if raw == null or not is_instance_valid(raw):
-		_loaded_creatures.erase(key)
 		return
 	var body : Node = raw as Node
-	_loaded_creatures.erase(key)
-
 	var cr_sprite : AnimatedSprite3D = body.get("sprite") as AnimatedSprite3D
 	var tw := body.create_tween()
 	if cr_sprite != null:

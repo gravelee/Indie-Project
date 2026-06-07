@@ -147,6 +147,9 @@ EXPORTS = [
     (f"{_P}/east/pull",           f"{_PO}/pull_east.png"),
     (f"{_P}/west/pull",           f"{_PO}/pull_west.png"),
 
+    (f"{_P}/spawn",               f"{_PO}/spawn.png"),
+    (f"{_P}/death",               f"{_PO}/death.png"),
+
     # ── RAT (source faces right — no flip needed) ─────────────────────────────
     (f"{_R}/idle_neutral/front",    f"{_RO}/idle_neutral_front.png"),
     (f"{_R}/idle_neutral/back",     f"{_RO}/idle_neutral_back.png"),

@@ -20,6 +20,7 @@ const PROP_REACT_LAYER    : int   = 4     # matches WorldProp.PROP_REACT_LAYER
 const ATTACK_ARC_DOT      : float = 0.3   # min dot product — ~±73° cone
 const SPRINT_SPEED_MULT   : float = 1.2   # sprint is 20% faster than walking
 const SPRINT_ENERGY_COST  : float = 1.0   # energy drained per second while sprinting
+const RESPAWN_DELAY       : float = 3.0   # seconds after death before respawn
 
 # Push / pull
 const PUSH_SPEED          : float = 1.8
@@ -27,7 +28,7 @@ const PULL_SPEED          : float = 1.3
 const GRAB_REACH          : float = 0.7   # max distance to latch onto a pushable block
 const PLAYER_CAPSULE_RADIUS : float = 0.40  # must match _build_collision shp.radius
 
-enum State  { IDLE, WALK, RUN, ATTACK, PUSH, GRAB, PULL }
+enum State  { IDLE, WALK, RUN, ATTACK, PUSH, GRAB, PULL, SPAWN, DEAD }
 enum Facing { SOUTH, NORTH, EAST, WEST }
 
 const FACING_STR : Dictionary = {
@@ -109,6 +110,16 @@ var _grab_approach_dir  : Vector3          = Vector3.ZERO   # cardinal player→
 var _pull_blocked       : bool             = false          # true when block stuck for 2+ frames
 var _pull_block_frames  : int              = 0             # consecutive frames block didn't move
 
+# Spawn / death
+var is_dead          : bool             = false   # true during DEAD + SPAWN — creatures ignore player
+var _collision_shape : CollisionShape3D = null   # stored to disable on death
+var _spawn_position  : Vector3          = Vector3.ZERO   # recorded in init(); respawn target
+var _initial_hp      : float            = 0.0    # resource snapshot at first spawn
+var _initial_energy  : float            = 0.0
+var _initial_flow    : float            = 0.0
+var _initial_focus   : float            = 0.0
+var _dead_timer      : float            = 0.0
+
 # Attack
 var _hit_applied : bool = false   # true once damage fires for the current swing
 
@@ -130,6 +141,13 @@ func init(p_cam: CameraSettings) -> void:
 	_build_reaction_area()
 	_load_animations()
 	_init_abilities()
+	# Record spawn position and initial resources for respawn stub
+	_spawn_position = global_position
+	_initial_hp     = stats.hp
+	_initial_energy = stats.energy
+	_initial_flow   = stats.flow
+	_initial_focus  = stats.focus
+	_set_state(State.SPAWN)
 
 
 func _load_stats(p_id: String) -> Stats:
@@ -151,6 +169,7 @@ func _build_collision() -> void:
 	col.position.y = shp.height * 0.5
 	col.shape      = shp
 	add_child(col)
+	_collision_shape = col
 
 
 func _build_reaction_area() -> void:
@@ -266,6 +285,8 @@ func _load_animations() -> void:
 		_add_strip(frames, "push_" + dir,         8.0)
 		_add_strip(frames, "pull_" + dir,         8.0)
 	_add_strip(frames, "grab_north", 4.0)
+	_add_strip(frames, "spawn",     12.0)
+	_add_strip(frames, "death",     12.0)
 	AssetLoader.store_frames(SPRITE_PATH, frames)
 	sprite.sprite_frames = frames
 	sprite.play("idle_neutral_south")
@@ -301,6 +322,8 @@ func _add_strip(frames: SpriteFrames, anim: String, fps: float,
 # =============================================================================
 
 func _unhandled_input(event: InputEvent) -> void:
+	if state == State.DEAD or state == State.SPAWN:
+		return
 	# Left click — target creature or clear target
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		_handle_click(event.position)
@@ -343,6 +366,22 @@ func _unhandled_input(event: InputEvent) -> void:
 # =============================================================================
 
 func _physics_process(delta: float) -> void:
+	# Dead — tick timer, respawn when ready; no other processing.
+	if state == State.DEAD:
+		_dead_timer += delta
+		if _dead_timer >= RESPAWN_DELAY:
+			_do_respawn()
+		return
+	# Spawn — gravity + collision only; no input or attack.
+	if state == State.SPAWN:
+		if not is_on_floor():
+			velocity.y += GRAVITY * delta
+		else:
+			velocity.y = 0.0
+		move_and_slide()
+		_sync_anim()
+		return
+
 	# Gravity
 	if not is_on_floor():
 		velocity.y += GRAVITY * delta
@@ -1024,9 +1063,26 @@ func _rebuild_anim_key() -> void:
 		State.PUSH:   _anim_key = "push_"         + FACING_STR[facing]
 		State.GRAB:   _anim_key = "grab_north" if facing == Facing.NORTH else "pull_" + FACING_STR[facing]
 		State.PULL:   _anim_key = "pull_"         + FACING_STR[facing]
+		State.SPAWN:  _anim_key = "spawn"
+		State.DEAD:   _anim_key = "death"
 
 
 func _sync_anim() -> void:
+	# SPAWN: start once, then transition to IDLE when finished.
+	if state == State.SPAWN:
+		if sprite.animation != "spawn":
+			sprite.sprite_frames.set_animation_loop("spawn", false)
+			sprite.play("spawn")
+		elif not sprite.is_playing():
+			is_dead = false
+			_set_state(State.IDLE)
+		return
+	# DEAD: start death animation once; _dead_timer in _physics_process drives respawn.
+	if state == State.DEAD:
+		if sprite.animation != "death":
+			sprite.sprite_frames.set_animation_loop("death", false)
+			sprite.play("death")
+		return
 	# IDLE anim depends on combat state which changes over time (timer / creature states),
 	# not just on state/facing transitions — rebuild every frame so it stays current.
 	if state == State.IDLE:
@@ -1091,6 +1147,8 @@ func _extend_combat_timer() -> void:
 
 
 func apply_status(effect_id: String, max_stacks: int) -> void:
+	if is_dead:
+		return
 	if _effects.has(effect_id):
 		_effects[effect_id].reapply(max_stacks)
 	else:
@@ -1124,6 +1182,8 @@ func _start_status_flash(col: Color) -> void:
 
 
 func receive_hit(damage: float, knockback_dir: Vector3, attacker: Node = null) -> void:
+	if state == State.DEAD or state == State.SPAWN:
+		return
 	var actual : float = stats.take_damage(damage)
 	stats.gain_focus_on_receive(actual)
 	_combat_timer = COMBAT_TIMEOUT
@@ -1135,6 +1195,43 @@ func receive_hit(damage: float, knockback_dir: Vector3, attacker: Node = null) -
 	if state == State.GRAB or state == State.PULL or state == State.PUSH:
 		_release_grab()
 	_apply_knockback(knockback_dir)
+	if not stats.is_alive():
+		_enter_dead()
+
+
+func _enter_dead() -> void:
+	_clear_target()
+	if _grabbed_obj != null:
+		_release_grab()
+	velocity       = Vector3.ZERO
+	_knockback_vel = Vector3.ZERO
+	_combat_timer  = 0.0
+	_dead_timer    = 0.0
+	is_dead        = true
+	_effects.clear()
+	for c : Node in get_tree().get_nodes_in_group("creatures"):
+		if is_instance_valid(c) and c.has_method("on_player_died"):
+			c.call("on_player_died")
+	if _collision_shape != null:
+		_collision_shape.set_deferred("disabled", true)
+	_set_state(State.DEAD)
+
+
+func _do_respawn() -> void:
+	# Restore resources to values recorded at first spawn
+	stats.hp     = _initial_hp
+	stats.energy = _initial_energy
+	stats.flow   = _initial_flow
+	stats.focus  = _initial_focus
+	# Re-enable collision and teleport
+	if _collision_shape != null:
+		_collision_shape.set_deferred("disabled", false)
+	global_position = _spawn_position
+	velocity        = Vector3.ZERO
+	_knockback_vel  = Vector3.ZERO
+	_dead_timer     = 0.0
+	_set_facing(Facing.SOUTH)
+	_set_state(State.SPAWN)
 
 
 func _start_hit_flash() -> void:
