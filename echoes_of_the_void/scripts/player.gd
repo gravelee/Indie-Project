@@ -407,7 +407,7 @@ func _physics_process(delta: float) -> void:
 	# Prop reaction — drive start/stop based on movement OR camera rotation.
 	# Rotating in place brushes past nearby props just like walking through them.
 	const ROTATE_THRESHOLD : float = 0.008   # ~0.5° per frame — filters float noise
-	var _moving : bool = velocity.length_squared() > 0.01 or _h_angle_delta > ROTATE_THRESHOLD
+	var _moving : bool = velocity.length_squared() > 0.01 or _h_angle_delta > ROTATE_THRESHOLD or state == State.JUMP
 	if _moving:
 		for _rp : Variant in _react_overlap.duplicate():
 			var _rpn : Node3D = _rp as Node3D
