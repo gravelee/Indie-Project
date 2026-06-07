@@ -527,10 +527,11 @@ func _do_spawn_creature(key: Vector2i, cd: Array) -> void:
 
 
 func _start_despawn_prop(key: Vector2i) -> void:
-	var prop : Node = _loaded_props.get(key, null)
-	if prop == null or not is_instance_valid(prop):
+	var raw : Variant = _loaded_props.get(key, null)
+	if raw == null or not is_instance_valid(raw):
 		_loaded_props.erase(key)
 		return
+	var prop : Node = raw as Node
 	# Move to fading dict immediately so the slot is free for re-spawning
 	_loaded_props.erase(key)
 	_fading_props[key] = prop
@@ -550,10 +551,11 @@ func _start_despawn_prop(key: Vector2i) -> void:
 
 
 func _start_despawn_creature(key: Vector2i) -> void:
-	var body : Node = _loaded_creatures.get(key, null)
-	if body == null or not is_instance_valid(body):
+	var raw : Variant = _loaded_creatures.get(key, null)
+	if raw == null or not is_instance_valid(raw):
 		_loaded_creatures.erase(key)
 		return
+	var body : Node = raw as Node
 	_loaded_creatures.erase(key)
 
 	var cr_sprite : AnimatedSprite3D = body.get("sprite") as AnimatedSprite3D

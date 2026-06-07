@@ -54,18 +54,15 @@ Zone 2 implementation       → after Zone 2 story
 ```
 
 ### Current Status *(update this whenever a milestone is hit)*
-- **Last completed**: Three systems finished this session:
-  1. **Player attack hits props** — player punches now destroy damageable props (bushes, grass)
-     using the same range + arc as creature hits. `"damageable_props"` group added to
-     `damageable_prop.gd`; prop hit loop added to `player.gd _do_attack()`.
-  2. **export_sprite.py auto-size generation** — all props (bush, grass, tree) now auto-generated
-     from smallest source size via rotsprite. `SCALABLE_PROPS` config + `_get_scalable_rule()`
-     helper added. Only 1x1 (and 1x1_h1/h2 for trees) need to exist in art_source; 2x/3x sizes
-     generated automatically. Tilemaps remain pass-through. 88 files written, 56 derived skipped.
-  3. **Prop freeze bug fixed** — dead TerrainProp (grass) nodes never called queue_free(), so they
-     accumulated in "damageable_props" group indefinitely. Fixed by calling
-     `remove_from_group("damageable_props")` immediately in `take_hit()`. Also hardened
-     `_react_overlap` iteration in player.gd to use `.duplicate()`.
+- **Last completed**: Two fixes + music this session:
+  1. **Startup music** — `caketown_loop.ogg` wired into `main.gd _start_music()`.
+     WAV processed (trim silence, bake 2.5s fade-in, bake 3.5s crossfade loop), converted to OGG
+     via ffmpeg native vorbis (~137 kbps, 2.7 MB). `AudioStreamOggVorbis`, `loop=true`,
+     `loop_offset=2.5` to skip intro fade on repeat. WAV deleted.
+  2. **Despawn use-after-free crash** — `map_loader.gd _start_despawn_prop/creature()`: assigning
+     a freed node to a typed `Node` variable crashes before `is_instance_valid()` runs. Fixed by
+     using `Variant` for the dict get, validating, then casting. Both prop and creature despawn patched.
+  3. *(Previous session)* Player attack hits props, export_sprite auto-size, prop freeze bug fixed.
 - **Active work**: Phase 1 Core Feel — evaluating next priority.
 - **Next session target**: TBD — subclass ability design or next Phase 1 item.
 - **Blocked on**: Design questions — (1) Does pet have HP and can it die? (2) Is stealth a button
@@ -86,6 +83,7 @@ Zone 2 implementation       → after Zone 2 story
 - ~~**Rename move → wander**~~ ✓ DONE
 - ~~**Player attack hitting props**~~ ✓ DONE — `_do_attack()` hits damageable_props group; one-hit kill via `take_hit()`.
 - ~~**export_sprite.py auto-size generation**~~ ✓ DONE — SCALABLE_PROPS config, only 1x1 source needed, all sizes auto-generated via rotsprite.
+- ~~**Startup music**~~ ✓ DONE — `caketown_loop.ogg` playing with crossfade loop and fade-in baked in.
 - **LibreSprite .ase project files** (deferred): Currently working with individual frame pngs only.
   Future improvement: save one `.ase` file per animation alongside the frames folder
   (e.g. `wander_front.ase` next to `wander/front/`). Lets you reopen work with layers,

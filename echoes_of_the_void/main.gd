@@ -78,6 +78,7 @@ func _ready() -> void:
 	map_loader.init_streaming(self, camera_rig, player_body)
 
 	_build_ui()
+	_start_music()
 
 
 # ---------------------------------------------------------------------------
@@ -324,3 +325,34 @@ func _build_creature(type: String, stat_id: String, world_pos: Vector3,
 	add_child(body)
 	# home_position is recorded inside init() from body.global_position — set AFTER add_child
 	body.call("init", type, stat_id, camera_rig, player_body, aggression, has_home, can_wander)
+
+
+# ---------------------------------------------------------------------------
+# MUSIC
+# ---------------------------------------------------------------------------
+
+func _start_music() -> void:
+	const MUSIC_PATH : String = "res://assets/music/caketown_loop.ogg"
+
+	if not ResourceLoader.exists(MUSIC_PATH):
+		push_warning("main.gd: music file not found — " + MUSIC_PATH)
+		return
+
+	var stream : AudioStreamOggVorbis = load(MUSIC_PATH) as AudioStreamOggVorbis
+	if stream == null:
+		push_warning("main.gd: failed to load music as AudioStreamOggVorbis")
+		return
+
+	# loop_begin_beat/end_beat unused — Godot's OGG looping uses the full file.
+	# Crossfade and fade-in are baked into the audio; loop_begin set past the
+	# 2.5s one-time fade-in so repeat loops resume at full volume.
+	stream.loop         = true
+	stream.loop_offset  = 2.5   # seconds — skip the intro fade-in on loop
+
+	var player := AudioStreamPlayer.new()
+	player.name      = "MusicPlayer"
+	player.stream    = stream
+	player.volume_db = 0.0
+	player.bus       = "Master"
+	add_child(player)
+	player.play()
