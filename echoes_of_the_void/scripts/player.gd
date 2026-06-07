@@ -359,7 +359,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_9:     _slot_requested = 8
 		KEY_0:     _slot_requested = 9
 		KEY_SPACE:
-			if state == State.IDLE or state == State.WALK or state == State.RUN:
+			if (state == State.IDLE or state == State.WALK or state == State.RUN) \
+					and stats.energy >= 1.0:
+				stats.energy  = maxf(0.0, stats.energy - 1.0)
+				_regen_timer  = REGEN_PAUSE
 				_set_state(State.JUMP)
 		KEY_TAB:   _try_tab_target()
 		KEY_SHIFT:
@@ -673,8 +676,7 @@ func _handle_movement(delta: float) -> void:
 		return
 
 	if state == State.JUMP:
-		velocity.x = 0.0
-		velocity.z = 0.0
+		# Carry momentum — no steering allowed but velocity from jump entry is preserved
 		if not sprite.is_playing():
 			_set_state(State.IDLE)
 		return
