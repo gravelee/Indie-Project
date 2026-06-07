@@ -396,7 +396,7 @@ func _physics_process(delta: float) -> void:
 	# Prop reaction — drive start/stop based on movement state
 	var _moving : bool = velocity.length_squared() > 0.01
 	if _moving:
-		for _rp : Variant in _react_overlap:
+		for _rp : Variant in _react_overlap.duplicate():
 			var _rpn : Node3D = _rp as Node3D
 			if is_instance_valid(_rpn) and not _react_driving.has(_rpn):
 				_react_driving.append(_rpn)
@@ -408,9 +408,11 @@ func _physics_process(delta: float) -> void:
 			if is_instance_valid(_rpn):
 				_rpn.call("stop_reaction")
 	for _rp : Variant in _react_driving.duplicate():
-		if not is_instance_valid(_rp as Node3D):
+		if not is_instance_valid(_rp):
 			_react_driving.erase(_rp)
-	_react_overlap = _react_overlap.filter(func(p : Variant) -> bool: return is_instance_valid(p as Node3D))
+	for _rp : Variant in _react_overlap.duplicate():
+		if not is_instance_valid(_rp):
+			_react_overlap.erase(_rp)
 
 	_update_state(delta)
 

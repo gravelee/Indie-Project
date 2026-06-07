@@ -287,7 +287,8 @@ func _load_animations() -> void:
 		_add_strip(frames, "attack_unarmed_" + dir, 12.0)
 		_add_strip(frames, "push_" + dir,         8.0)
 		_add_strip(frames, "pull_" + dir,         8.0)
-	_add_strip(frames, "grab_north", 4.0)
+	for dir : String in ["south", "north", "east", "west"]:
+		_add_strip(frames, "grab_" + dir, 4.0)
 	_add_strip(frames, "spawn",     12.0)
 	_add_strip(frames, "death",     12.0)
 	AssetLoader.store_frames(SPRITE_PATH, frames)
@@ -415,11 +416,17 @@ func _physics_process(delta: float) -> void:
 			_react_driving.erase(_rpn)
 			if is_instance_valid(_rpn):
 				_rpn.call("stop_reaction")
-	# Purge stale refs (props unloaded by streamer while entity is inside)
+	# Purge stale refs (props unloaded by streamer while entity is inside).
+	# Use explicit duplicate() loops — filter() iterates the live array and can
+	# be corrupted if area_exited fires mid-iteration (same root cause as the
+	# creature _react_overlap freeze). Check is_instance_valid() BEFORE casting
+	# to avoid the freed-node-to-typed-variable crash documented in memory.
 	for _rp : Variant in _react_driving.duplicate():
-		if not is_instance_valid(_rp as Node3D):
+		if not is_instance_valid(_rp):
 			_react_driving.erase(_rp)
-	_react_overlap = _react_overlap.filter(func(p : Variant) -> bool: return is_instance_valid(p as Node3D))
+	for _rp : Variant in _react_overlap.duplicate():
+		if not is_instance_valid(_rp):
+			_react_overlap.erase(_rp)
 
 	_handle_movement(delta)
 	if state == State.RUN or state == State.PUSH or state == State.PULL:
@@ -440,8 +447,9 @@ func _physics_process(delta: float) -> void:
 	_sync_anim()
 	move_and_slide()   # player moves first
 
-	# PULL: block follows AFTER player has cleared the path — avoids player-as-obstacle collision
-	if state == State.PULL:
+	# PULL: block follows AFTER player has cleared the path — avoids player-as-obstacle collision.
+	# Skipped when out of energy — player and block both freeze in place.
+	if state == State.PULL and stats.energy >= 1.0:
 		_drive_pulled_block(delta)
 
 	stats.tick(delta)
@@ -885,6 +893,12 @@ func _do_push_movement(delta: float) -> void:
 			_set_state(State.GRAB)
 		return
 
+	# No energy — hold the PUSH animation but nothing moves
+	if stats.energy < 1.0:
+		velocity.x = 0.0
+		velocity.z = 0.0
+		return
+
 	# Drive block first so it clears the path for the player
 	_grabbed_obj.set("_driven", true)
 	if not _grabbed_obj.is_on_floor():
@@ -992,6 +1006,14 @@ func _do_pull_movement(delta: float) -> void:
 			_set_state(State.GRAB)
 		return
 
+	# No energy — hold the PULL animation but nothing moves.
+	# Keep _driven=true so the block doesn't drift under its own physics.
+	if stats.energy < 1.0:
+		velocity.x = 0.0
+		velocity.z = 0.0
+		_grabbed_obj.set("_driven", true)
+		return
+
 	# Mark block as driven — suppresses its own physics while player controls it.
 	# Actual block movement happens in _drive_pulled_block(), called AFTER
 	# player.move_and_slide() so the player clears the path first.
@@ -1074,7 +1096,7 @@ func _rebuild_anim_key() -> void:
 			var style : String = weapon_main if weapon_main != "" else "unarmed"
 			_anim_key = "attack_" + style + "_" + FACING_STR[facing]
 		State.PUSH:   _anim_key = "push_"         + FACING_STR[facing]
-		State.GRAB:   _anim_key = "grab_north" if facing == Facing.NORTH else "pull_" + FACING_STR[facing]
+		State.GRAB:   _anim_key = "grab_" + FACING_STR[facing]
 		State.PULL:   _anim_key = "pull_"         + FACING_STR[facing]
 		State.SPAWN:  _anim_key = "spawn"
 		State.DEAD:   _anim_key = "death"
