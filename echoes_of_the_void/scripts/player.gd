@@ -28,8 +28,9 @@ const PULL_SPEED          : float = 1.3
 const GRAB_REACH          : float = 0.7   # max distance to latch onto a pushable block
 const PLAYER_CAPSULE_RADIUS : float = 0.40  # must match _build_collision shp.radius
 
-enum State  { IDLE, WALK, RUN, ATTACK, JUMP, PUSH, GRAB, PULL, SPAWN, DEAD }
-enum Facing { SOUTH, NORTH, EAST, WEST }
+enum State     { IDLE, WALK, RUN, ATTACK, JUMP, PUSH, GRAB, PULL, SPAWN, DEAD }
+enum Facing    { SOUTH, NORTH, EAST, WEST }
+enum JumpPhase { WINDUP, RISE, FALL, LAND1, LAND2 }
 
 const FACING_STR : Dictionary = {
 	Facing.SOUTH: "south",
@@ -126,15 +127,13 @@ var _dead_timer      : float            = 0.0
 # Attack
 var _hit_applied : bool = false   # true once damage fires for the current swing
 
-# Jump physics — body rises via real velocity; sprite moves with it (no offset.y arc needed)
-# JUMP_PEAK_PX: peak height in pixels = half sprite height (48px = 1.5 world units)
-# JUMP_VEL: initial upward kick; derived from v = sqrt(2 * |GRAVITY| * peak_world_h)
-#   peak_world_h = SPRITE_SIZE/2 / 32 = 1.5 → sqrt(2 * 20 * 1.5) = sqrt(60) ≈ 7.75
-const JUMP_PEAK_PX   : float = SPRITE_SIZE / 2.0
-const JUMP_VEL       : float = 7.75
-var _jump_timer      : float = 0.0
-var _jump_duration   : float = 0.0
-var _jump_base_y     : float = 0.0   # sprite.offset.y snapshot; restored on land
+# Jump — real Y velocity; frames driven per JumpPhase, not by AnimationPlayer
+# JUMP_VEL = sqrt(2 * |GRAVITY| * peak_h), peak_h = SPRITE_SIZE/2/32 = 1.5 units → ≈7.75
+const JUMP_VEL        : float = 7.75
+var _jump_phase       : JumpPhase = JumpPhase.WINDUP
+var _jump_frame_dur   : float     = 0.0   # 1/fps of jump anim — one frame in seconds, set on entry
+var _jump_frame_timer : float     = 0.0   # countdown used in WINDUP, LAND1, LAND2 phases
+var _jump_base_y      : float     = 0.0   # sprite.offset.y on entry; restored after full landing
 
 # Prop reaction — continuous animation while moving inside, winds down on exit
 var _react_overlap  : Array = []   # props whose DetectZone we are currently inside
@@ -411,8 +410,10 @@ func _physics_process(delta: float) -> void:
 		_sync_anim()
 		return
 
-	# Gravity — skip floor-zero during JUMP so the launch kick isn't cancelled on frame 0
-	if not is_on_floor() or state == State.JUMP:
+	# Gravity — treat as grounded during LAND phases (player is on floor and just landed).
+	# All other JUMP phases and airborne states accumulate gravity normally.
+	var _is_grounded : bool = is_on_floor() and (state != State.JUMP or _jump_phase == JumpPhase.LAND1 or _jump_phase == JumpPhase.LAND2)
+	if not _is_grounded:
 		velocity.y += GRAVITY * delta
 	else:
 		velocity.y = 0.0
@@ -686,14 +687,37 @@ func _handle_movement(delta: float) -> void:
 		return
 
 	if state == State.JUMP:
-		# Carry momentum — no steering; body rises/falls via real physics (velocity.y + gravity)
-		_jump_timer += delta
-		# End jump when: animation done, OR player has landed (after the initial liftoff window)
-		var anim_done   : bool = not sprite.is_playing()
-		var has_landed  : bool = is_on_floor() and _jump_timer > 0.12
-		if anim_done or has_landed:
-			sprite.offset.y = _jump_base_y
-			_set_state(State.IDLE)
+		# No steering — x/z velocity carries from jump entry unchanged.
+		# Gravity and move_and_slide() drive the arc; we only control which frame shows.
+		match _jump_phase:
+			JumpPhase.WINDUP:
+				sprite.frame       = 0
+				velocity.y         = 0.0           # hold on ground during crouch frame
+				_jump_frame_timer -= delta
+				if _jump_frame_timer <= 0.0:
+					velocity.y  = JUMP_VEL         # launch at end of crouch
+					_jump_phase = JumpPhase.RISE
+			JumpPhase.RISE:
+				sprite.frame = 1                   # held the whole time body is rising
+				if velocity.y <= 0.0:
+					_jump_phase = JumpPhase.FALL
+			JumpPhase.FALL:
+				sprite.frame = 2                   # held (loops naturally) until touchdown
+				if is_on_floor():
+					_jump_phase       = JumpPhase.LAND1
+					_jump_frame_timer = _jump_frame_dur
+			JumpPhase.LAND1:
+				sprite.frame       = 3
+				_jump_frame_timer -= delta
+				if _jump_frame_timer <= 0.0:
+					_jump_phase       = JumpPhase.LAND2
+					_jump_frame_timer = _jump_frame_dur
+			JumpPhase.LAND2:
+				sprite.frame       = 4
+				_jump_frame_timer -= delta
+				if _jump_frame_timer <= 0.0:
+					sprite.offset.y = _jump_base_y
+					_set_state(State.IDLE)
 		return
 
 	var raw : Vector2 = _read_raw_input()
@@ -1102,12 +1126,12 @@ func _set_state(new_state: State) -> void:
 	_rebuild_anim_key()
 	# Entry side effects
 	if new_state == State.JUMP:
-		var fc : int    = sprite.sprite_frames.get_frame_count(_anim_key)
-		var fps : float = sprite.sprite_frames.get_animation_speed(_anim_key)
-		_jump_duration = float(fc) / fps
-		_jump_timer    = 0.0
-		_jump_base_y   = sprite.offset.y
-		velocity.y     = JUMP_VEL   # launch upward; gravity takes over from here
+		var fps : float   = sprite.sprite_frames.get_animation_speed(_anim_key)
+		_jump_frame_dur   = 1.0 / fps          # one frame duration in seconds
+		_jump_frame_timer = _jump_frame_dur    # WINDUP counts this down before kicking
+		_jump_phase       = JumpPhase.WINDUP
+		_jump_base_y      = sprite.offset.y
+		# velocity.y kick fires at end of WINDUP so frame 0 (crouch) plays at ground level
 	_sync_anim()
 
 
@@ -1160,9 +1184,12 @@ func _sync_anim() -> void:
 	if state == State.IDLE:
 		_rebuild_anim_key()
 	if sprite.animation != _anim_key:
-		var loop : bool = state != State.ATTACK and state != State.JUMP
-		sprite.sprite_frames.set_animation_loop(_anim_key, loop)
-		sprite.play(_anim_key)
+		if state == State.JUMP:
+			sprite.animation = _anim_key   # set sheet without playing — JUMP handler drives frames
+		else:
+			var loop : bool = state != State.ATTACK
+			sprite.sprite_frames.set_animation_loop(_anim_key, loop)
+			sprite.play(_anim_key)
 	# GRAB: freeze pull anim at frame 0 (visual latch indicator)
 	if state == State.GRAB:
 		if sprite.is_playing():
