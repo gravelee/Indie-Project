@@ -257,9 +257,10 @@ func _build_sprite() -> void:
 	sprite.name       = "Sprite"
 	sprite.billboard  = BaseMaterial3D.BILLBOARD_FIXED_Y
 	sprite.pixel_size = 1.0 / 32.0
-	sprite.alpha_cut      = SpriteBase3D.ALPHA_CUT_DISABLED
-	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	sprite.position.y     = float(SPRITE_SIZE) * sprite.pixel_size * 0.5
+	sprite.alpha_cut               = SpriteBase3D.ALPHA_CUT_DISABLED
+	sprite.texture_filter          = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	sprite.sorting_use_aabb_center = false
+	sprite.offset.y                = float(SPRITE_SIZE) * 0.5
 	add_child(sprite)
 
 
@@ -379,7 +380,7 @@ func _compute_sprite_offset() -> void:
 	img.convert(Image.FORMAT_RGBA8)
 	var first_frame  := img.get_region(Rect2i(0, 0, SPRITE_SIZE, SPRITE_SIZE))
 	var empty_bottom : int = SPRITE_SIZE - first_frame.get_used_rect().end.y
-	sprite.position.y = (float(SPRITE_SIZE) / 2.0 - float(empty_bottom)) * sprite.pixel_size
+	sprite.offset.y = float(SPRITE_SIZE) / 2.0 - float(empty_bottom)
 
 
 # =============================================================================

@@ -67,8 +67,9 @@ func _ready() -> void:
 	sprite = AnimatedSprite3D.new()
 	sprite.billboard      = BaseMaterial3D.BILLBOARD_FIXED_Y
 	sprite.pixel_size     = PIXEL_SIZE
-	sprite.alpha_cut      = SpriteBase3D.ALPHA_CUT_DISABLED
-	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	sprite.alpha_cut               = SpriteBase3D.ALPHA_CUT_DISABLED
+	sprite.texture_filter          = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	sprite.sorting_use_aabb_center = false
 	add_child(sprite)
 
 	_load_animations()
@@ -161,5 +162,8 @@ func _apply_sprite_position(tex: Texture2D) -> void:
 		var img : Image = tex.get_image()
 		img.convert(Image.FORMAT_RGBA8)
 		empty_bottom = tex.get_height() - img.get_used_rect().end.y
-	# Center the sprite so its visible content bottom sits at y = 0 (ground level).
-	sprite.position.y = (float(tex.get_height()) * 0.5 - float(empty_bottom)) * PIXEL_SIZE
+	# Use pixel offset instead of position.y so the sprite node stays at y = 0.
+	# With a pitched camera, position.y contributes to depth-sort, causing tall
+	# sprites (player) to sort in front of short sprites (small bushes) prematurely.
+	# Keeping all sprites at y = 0 makes Z-sort purely Z-based — correct for top-down.
+	sprite.offset.y = float(tex.get_height()) * 0.5 - float(empty_bottom)

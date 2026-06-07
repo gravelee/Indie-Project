@@ -54,7 +54,7 @@ Zone 2 implementation       → after Zone 2 story
 ```
 
 ### Current Status *(update this whenever a milestone is hit)*
-- **Last completed**: Two fixes + music this session:
+- **Last completed**: Three fixes + music this session:
   1. **Startup music** — `caketown_loop.ogg` wired into `main.gd _start_music()`.
      WAV processed (trim silence, bake 2.5s fade-in, bake 3.5s crossfade loop), converted to OGG
      via ffmpeg native vorbis (~137 kbps, 2.7 MB). `AudioStreamOggVorbis`, `loop=true`,
@@ -62,7 +62,13 @@ Zone 2 implementation       → after Zone 2 story
   2. **Despawn use-after-free crash** — `map_loader.gd _start_despawn_prop/creature()`: assigning
      a freed node to a typed `Node` variable crashes before `is_instance_valid()` runs. Fixed by
      using `Variant` for the dict get, validating, then casting. Both prop and creature despawn patched.
-  3. *(Previous session)* Player attack hits props, export_sprite auto-size, prop freeze bug fixed.
+  3. **Z-sort early crossover fix** — player appeared in front of small bushes too early due to
+     camera pitch causing sprite.position.y to contribute to sort depth. Taller player sprite
+     (y_center≈1.5) sorted closer to camera than short bush (y_center≈0.5) at same Z.
+     Fix: `sprite.offset.y` for visual positioning (keeps node at y=0), +
+     `sprite.sorting_use_aabb_center = false` (sort by node origin, not AABB center) on all
+     sprites — player.gd, creature.gd, world_prop.gd. Sort is now purely Z-based.
+  4. *(Previous session)* Player attack hits props, export_sprite auto-size, prop freeze bug fixed.
 - **Active work**: Phase 1 Core Feel — evaluating next priority.
 - **Next session target**: TBD — subclass ability design or next Phase 1 item.
 - **Blocked on**: Design questions — (1) Does pet have HP and can it die? (2) Is stealth a button
