@@ -103,6 +103,9 @@ var _effects : Dictionary = {}   # effect_id → StatusEffect
 # Sprint energy drain — accumulates run-time across Shift taps to prevent free-running exploit
 var _run_energy_accum : float = 0.0
 
+# Camera rotation tracking — rotation counts as movement for prop reactions
+var _prev_h_angle : float = 0.0
+
 # Push / pull state
 var _grabbed_obj        : CharacterBody3D  = null
 var _locked_move_dir    : Vector3          = Vector3.ZERO   # cardinal locked on PUSH/PULL entry
@@ -366,6 +369,14 @@ func _unhandled_input(event: InputEvent) -> void:
 # =============================================================================
 
 func _physics_process(delta: float) -> void:
+	# Track camera rotation every frame so there is no angle spike on state transitions.
+	var _h_angle_delta : float = 0.0
+	if camera_rig != null:
+		_h_angle_delta = absf(camera_rig.h_angle - _prev_h_angle)
+		if _h_angle_delta > PI:
+			_h_angle_delta = TAU - _h_angle_delta   # wrap-around (e.g. 6.27 → 0.01)
+		_prev_h_angle = camera_rig.h_angle
+
 	# Dead — tick timer, respawn when ready; no other processing.
 	if state == State.DEAD:
 		_dead_timer += delta
@@ -388,8 +399,10 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity.y = 0.0
 
-	# Prop reaction — drive start/stop based on movement state
-	var _moving : bool = velocity.length_squared() > 0.01
+	# Prop reaction — drive start/stop based on movement OR camera rotation.
+	# Rotating in place brushes past nearby props just like walking through them.
+	const ROTATE_THRESHOLD : float = 0.008   # ~0.5° per frame — filters float noise
+	var _moving : bool = velocity.length_squared() > 0.01 or _h_angle_delta > ROTATE_THRESHOLD
 	if _moving:
 		for _rp : Variant in _react_overlap.duplicate():
 			var _rpn : Node3D = _rp as Node3D
