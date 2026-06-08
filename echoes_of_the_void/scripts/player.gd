@@ -96,7 +96,7 @@ var _tab_tier   : int          = 0      # 0 = unset, 1 = on-screen, 2 = off-scre
 # Knockback
 const KNOCKBACK_STRENGTH  : float = 6.0
 const KNOCKBACK_FRICTION  : float = 20.0
-const KNOCKBACK_AIR_SCALE : float = 0.25   # airborne knockback is weaker — no ground friction to counter it
+const KNOCKBACK_AIR_SCALE : float = 0.10   # airborne knockback is weaker — no ground friction to counter it
 var _knockback_vel : Vector3 = Vector3.ZERO
 
 # Active status effects

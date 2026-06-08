@@ -26,6 +26,7 @@ var alive          : bool   = true
 var _reaction_anim : String = ""   # "bump" for obstacles, "pass" for terrain
 var _area_radius   : float  = 0.0  # set in subclass _ready() before super._ready()
 var _react_shape   : CollisionShape3D = null   # detection shape; disabled on death
+var _detect_zone   : Area3D = null             # DetectZone Area3D; monitorable=false on death
 var _react_count   : int    = 0    # entities currently driving the reaction animation
 
 
@@ -58,6 +59,7 @@ func _ready() -> void:
 	_react_shape.shape  = shp
 	detect_area.add_child(_react_shape)
 	add_child(detect_area)
+	_detect_zone = detect_area
 
 
 # =============================================================================
@@ -201,7 +203,12 @@ func take_hit() -> void:
 	for child : Node in get_children():
 		if child is CollisionShape3D:
 			child.set_deferred("disabled", true)
-	# Disable detection shape (inside child DetectZone Area3D)
+	# Disable detection zone — set monitorable=false on the Area3D itself (not just the
+	# child shape) so Godot reliably fires area_exited on every entity currently inside.
+	# Disabling only the child CollisionShape3D does NOT guarantee area_exited fires,
+	# which would leave dead props in _react_overlap forever → O(n²) freeze.
+	if _detect_zone != null:
+		_detect_zone.set_deferred("monitorable", false)
 	if _react_shape != null:
 		_react_shape.set_deferred("disabled", true)
 	if sprite.sprite_frames != null and sprite.sprite_frames.has_animation(ANIM_DEATH):
