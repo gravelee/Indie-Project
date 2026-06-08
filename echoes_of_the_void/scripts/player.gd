@@ -436,17 +436,19 @@ func _physics_process(delta: float) -> void:
 			_react_driving.erase(_rpn)
 			if is_instance_valid(_rpn):
 				_rpn.call("stop_reaction")
-	# Purge stale refs (props unloaded by streamer while entity is inside).
-	# Use explicit duplicate() loops — filter() iterates the live array and can
-	# be corrupted if area_exited fires mid-iteration (same root cause as the
-	# creature _react_overlap freeze). Check is_instance_valid() BEFORE casting
-	# to avoid the freed-node-to-typed-variable crash documented in memory.
+	# Purge stale refs — freed nodes (streamer unload) AND dead-but-valid props (grass
+	# never queue_free()s, so is_instance_valid stays true forever after death).
+	# Checking alive == false is the backstop when area_exited doesn't fire reliably.
 	for _rp : Variant in _react_driving.duplicate():
-		if not is_instance_valid(_rp):
-			_react_driving.erase(_rp)
+		var _rpn : Node3D = _rp as Node3D
+		if not is_instance_valid(_rpn) or _rpn.get("alive") == false:
+			_react_driving.erase(_rpn)
+			if is_instance_valid(_rpn):
+				_rpn.call("stop_reaction")
 	for _rp : Variant in _react_overlap.duplicate():
-		if not is_instance_valid(_rp):
-			_react_overlap.erase(_rp)
+		var _rpn : Node3D = _rp as Node3D
+		if not is_instance_valid(_rpn) or _rpn.get("alive") == false:
+			_react_overlap.erase(_rpn)
 
 	_handle_movement(delta)
 	if state == State.RUN or state == State.PUSH or state == State.PULL:
@@ -1314,6 +1316,14 @@ func _enter_dead() -> void:
 	_clear_target()
 	if _grabbed_obj != null:
 		_release_grab()
+	# Stop all driven prop reactions immediately. The DEAD state has an early return
+	# in _physics_process so the purge loops never run during the 3-second respawn
+	# window — without this, dead grass stays in _react_overlap for the full wait.
+	for _rp : Variant in _react_driving.duplicate():
+		if is_instance_valid(_rp):
+			(_rp as Node3D).call("stop_reaction")
+	_react_driving.clear()
+	_react_overlap.clear()
 	_combat_timer  = 0.0
 	_dead_timer    = 0.0
 	is_dead        = true

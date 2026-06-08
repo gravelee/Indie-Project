@@ -408,11 +408,15 @@ func _physics_process(delta: float) -> void:
 			if is_instance_valid(_rpn):
 				_rpn.call("stop_reaction")
 	for _rp : Variant in _react_driving.duplicate():
-		if not is_instance_valid(_rp):
-			_react_driving.erase(_rp)
+		var _rpn : Node3D = _rp as Node3D
+		if not is_instance_valid(_rpn) or _rpn.get("alive") == false:
+			_react_driving.erase(_rpn)
+			if is_instance_valid(_rpn):
+				_rpn.call("stop_reaction")
 	for _rp : Variant in _react_overlap.duplicate():
-		if not is_instance_valid(_rp):
-			_react_overlap.erase(_rp)
+		var _rpn : Node3D = _rp as Node3D
+		if not is_instance_valid(_rpn) or _rpn.get("alive") == false:
+			_react_overlap.erase(_rpn)
 
 	_update_state(delta)
 
