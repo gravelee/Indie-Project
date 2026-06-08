@@ -723,6 +723,8 @@ func _handle_movement(delta: float) -> void:
 					if _pending_death:
 						_pending_death = false
 						velocity       = Vector3.ZERO
+						if _collision_shape != null:
+							_collision_shape.set_deferred("disabled", true)
 						_set_state(State.DEAD)
 					else:
 						_set_state(State.IDLE)
@@ -1320,12 +1322,13 @@ func _enter_dead() -> void:
 	for c : Node in get_tree().get_nodes_in_group("creatures"):
 		if is_instance_valid(c) and c.has_method("on_player_died"):
 			c.call("on_player_died")
-	if _collision_shape != null:
-		_collision_shape.set_deferred("disabled", true)
-	# Mid-air death — let gravity finish the arc; DEAD is entered after landing.
+	# Mid-air death — keep collision enabled so gravity lands the player on the floor.
+	# DEAD state (and collision disable) is deferred until after the landing frames.
 	if state == State.JUMP:
 		_pending_death = true
 		return
+	if _collision_shape != null:
+		_collision_shape.set_deferred("disabled", true)
 	velocity = Vector3.ZERO
 	_set_state(State.DEAD)
 
