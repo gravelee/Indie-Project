@@ -135,7 +135,6 @@ const JUMP_VEL        : float = 7.75
 var _jump_phase       : JumpPhase = JumpPhase.WINDUP
 var _jump_frame_dur   : float     = 0.0   # 1/fps of jump anim — one frame in seconds, set on entry
 var _jump_frame_timer : float     = 0.0   # countdown used in WINDUP, LAND1, LAND2 phases
-var _jump_base_y      : float     = 0.0   # sprite.offset.y on entry; restored after full landing
 
 # Prop reaction — continuous animation while moving inside, winds down on exit
 var _react_overlap  : Array = []   # props whose DetectZone we are currently inside
@@ -395,6 +394,15 @@ func _physics_process(delta: float) -> void:
 		if _h_angle_delta > PI:
 			_h_angle_delta = TAU - _h_angle_delta   # wrap-around (e.g. 6.27 → 0.01)
 		_prev_h_angle = camera_rig.h_angle
+
+	# Z-sort compensation: anchor sprite node at world Y=0 every frame so the sort
+	# key is always at ground level, regardless of how high the player is elevated
+	# (platform, jump arc). Without this, the camera pitch makes elevated sprites
+	# project closer to the camera than ground-anchored tall sprites (trees) and
+	# pop in front of them. offset.y is compensated by the same elevation in pixel
+	# space so the visual stays at the player's actual world height.
+	sprite.position.y = -global_position.y
+	sprite.offset.y   = float(SPRITE_SIZE) * 0.5 + global_position.y / sprite.pixel_size
 
 	# Dead — tick timer, respawn when ready; no other processing.
 	if state == State.DEAD:
@@ -721,7 +729,6 @@ func _handle_movement(delta: float) -> void:
 				sprite.frame       = 4
 				_jump_frame_timer -= delta
 				if _jump_frame_timer <= 0.0:
-					sprite.offset.y = _jump_base_y
 					if _pending_death:
 						_pending_death = false
 						velocity       = Vector3.ZERO
@@ -1142,7 +1149,6 @@ func _set_state(new_state: State) -> void:
 		_jump_frame_dur   = 1.0 / fps          # one frame duration in seconds
 		_jump_frame_timer = _jump_frame_dur    # WINDUP counts this down before kicking
 		_jump_phase       = JumpPhase.WINDUP
-		_jump_base_y      = sprite.offset.y
 		# velocity.y kick fires at end of WINDUP so frame 0 (crouch) plays at ground level
 	_sync_anim()
 
