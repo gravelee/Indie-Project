@@ -117,6 +117,7 @@ var _pull_block_frames  : int              = 0             # consecutive frames 
 
 # Spawn / death
 var is_dead          : bool             = false   # true during DEAD + SPAWN — creatures ignore player
+var _pending_death   : bool             = false   # true when killed mid-air; DEAD deferred until landing
 var _collision_shape : CollisionShape3D = null   # stored to disable on death
 var _spawn_position  : Vector3          = Vector3.ZERO   # recorded in init(); respawn target
 var _initial_hp      : float            = 0.0    # resource snapshot at first spawn
@@ -338,7 +339,7 @@ func _add_strip(frames: SpriteFrames, anim: String, fps: float,
 # =============================================================================
 
 func _unhandled_input(event: InputEvent) -> void:
-	if state == State.DEAD or state == State.SPAWN:
+	if is_dead or state == State.SPAWN:
 		return
 	# Left click — target creature or clear target
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
@@ -719,7 +720,12 @@ func _handle_movement(delta: float) -> void:
 				_jump_frame_timer -= delta
 				if _jump_frame_timer <= 0.0:
 					sprite.offset.y = _jump_base_y
-					_set_state(State.IDLE)
+					if _pending_death:
+						_pending_death = false
+						velocity       = Vector3.ZERO
+						_set_state(State.DEAD)
+					else:
+						_set_state(State.IDLE)
 		return
 
 	var raw : Vector2 = _read_raw_input()
@@ -1301,10 +1307,11 @@ func receive_hit(damage: float, knockback_dir: Vector3, attacker: Node = null) -
 
 
 func _enter_dead() -> void:
+	if is_dead:
+		return
 	_clear_target()
 	if _grabbed_obj != null:
 		_release_grab()
-	velocity       = Vector3.ZERO
 	_knockback_vel = Vector3.ZERO
 	_combat_timer  = 0.0
 	_dead_timer    = 0.0
@@ -1315,6 +1322,11 @@ func _enter_dead() -> void:
 			c.call("on_player_died")
 	if _collision_shape != null:
 		_collision_shape.set_deferred("disabled", true)
+	# Mid-air death — let gravity finish the arc; DEAD is entered after landing.
+	if state == State.JUMP:
+		_pending_death = true
+		return
+	velocity = Vector3.ZERO
 	_set_state(State.DEAD)
 
 
@@ -1330,6 +1342,7 @@ func _do_respawn() -> void:
 	global_position = _spawn_position
 	velocity        = Vector3.ZERO
 	_knockback_vel  = Vector3.ZERO
+	_pending_death  = false
 	_dead_timer     = 0.0
 	_set_facing(Facing.SOUTH)
 	_set_state(State.SPAWN)
