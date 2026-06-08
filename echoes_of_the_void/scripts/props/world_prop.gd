@@ -56,12 +56,23 @@ func _ready() -> void:
 		variant_count = 2
 
 	if has_collision:
-		var col := CollisionShape3D.new()
-		var shp := CylinderShape3D.new()
-		shp.radius = 11.0 * float(mini(cols, rows)) * PIXEL_SIZE
-		shp.height = 1.0
-		col.position.y = 0.5
-		col.shape = shp
+		var col    := CollisionShape3D.new()
+		var shp    := CylinderShape3D.new()
+		var base_r : float = 11.0 * float(mini(cols, rows)) * PIXEL_SIZE
+		shp.radius = base_r
+
+		# Trees: extend collision to full visual height so the player can't enter the
+		# canopy. Minimum 2.0 ensures even a 1×1 tree blocks the 1.5-unit jump peak.
+		# Note: map_loader routes non-destructible tree collision to _tree_col_body
+		# (with pixel-measured height), so this branch is for any tree spawned
+		# standalone. Bushes: 1-unit cylinder is sufficient.
+		var coll_h : float = 1.0
+		if sprite_type == "tree":
+			coll_h = maxf(float(rows) + float(height_ext), 2.0)
+
+		shp.height     = coll_h
+		col.position.y = coll_h * 0.5
+		col.shape      = shp
 		add_child(col)
 
 	sprite = AnimatedSprite3D.new()

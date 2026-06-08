@@ -133,7 +133,8 @@ var _spawn_queue   : Array = []   # Array of {is_prop: bool, key: Vector2i}
 # Deferred despawn queue — same throttle, prevents hundreds of Tween creations in one frame
 var _despawn_queue : Array = []   # Array of {is_prop: bool, key: Vector2i}
 
-var _scanned : bool = false
+var _scanned            : bool       = false
+var _tree_height_cache  : Dictionary = {}   # sprite path → float (world-unit height)
 
 
 # =============================================================================
@@ -449,6 +450,37 @@ func _process_queues() -> void:
 # SPAWN / DESPAWN
 # =============================================================================
 
+# Returns the world-unit height from ground to the topmost content pixel
+# of a prop sprite. Used to size tree collision cylinders accurately.
+# Loads the original (unpadded) sprite and scans with get_used_rect() so
+# variants with different canopy heights (1x1, 1x1_h1, 1x1_h2) each get
+# the exact cylinder they need. Results are cached to avoid redundant loads.
+func _measure_sprite_height(p_cols: int, p_rows: int, stype: String, sname: String, h_ext: int) -> float:
+	var size_str : String = "%dx%d" % [p_cols, p_rows]
+	var h_part   : String = ("_h%d" % h_ext) if h_ext > 0 else ""
+	var path     : String = "res://assets/sprites/%s/%s/idle_alive/%s%s.png" % [stype, sname, size_str, h_part]
+	if _tree_height_cache.has(path):
+		return _tree_height_cache[path]
+	# Fallback if asset is missing: estimate from tile rows + height extension.
+	var fallback : float = maxf(float(p_rows) + float(h_ext), 2.0)
+	if not ResourceLoader.exists(path):
+		_tree_height_cache[path] = fallback
+		return fallback
+	var tex : Texture2D = load(path) as Texture2D
+	if tex == null:
+		_tree_height_cache[path] = fallback
+		return fallback
+	var img  : Image   = tex.get_image()
+	img.convert(Image.FORMAT_RGBA8)
+	var used : Rect2i  = img.get_used_rect()
+	# used.size.y = pixel distance from topmost to bottommost non-transparent row.
+	# The sprite is drawn so its bottom content row aligns with the ground,
+	# so this distance equals the tree's world height exactly.
+	var h    : float   = maxf(float(used.size.y) * PIXEL_SIZE, 2.0)
+	_tree_height_cache[path] = h
+	return h
+
+
 func _do_spawn_prop(key: Vector2i, pd: Array) -> void:
 	if _loaded_props.has(key) or _fading_props.has(key):
 		return
@@ -506,12 +538,13 @@ func _do_spawn_prop(key: Vector2i, pd: Array) -> void:
 	# Trees: add a CylinderShape3D to the shared body instead of per-prop collision.
 	# One BVH entry covers all tree shapes — broadphase cost drops from 547 to 1.
 	if not destructible and has_coll and _tree_col_body != null:
-		var col := CollisionShape3D.new()
-		var shp := CylinderShape3D.new()
-		shp.radius    = 11.0 * float(mini(prop_cols, prop_rows)) * PIXEL_SIZE
-		shp.height    = 1.0
-		col.position  = Vector3(world_x, 0.5, world_z)
-		col.shape     = shp
+		var coll_h  : float = _measure_sprite_height(prop_cols, prop_rows, sprite_type, sprite_name, height_ext)
+		var col     := CollisionShape3D.new()
+		var shp     := CylinderShape3D.new()
+		shp.radius   = 11.0 * float(mini(prop_cols, prop_rows)) * PIXEL_SIZE
+		shp.height   = coll_h
+		col.position = Vector3(world_x, coll_h * 0.5, world_z)
+		col.shape    = shp
 		_tree_col_body.add_child(col)
 		_tree_shapes[key] = col
 
