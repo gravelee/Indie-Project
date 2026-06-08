@@ -1314,7 +1314,6 @@ func _enter_dead() -> void:
 	_clear_target()
 	if _grabbed_obj != null:
 		_release_grab()
-	_knockback_vel = Vector3.ZERO
 	_combat_timer  = 0.0
 	_dead_timer    = 0.0
 	is_dead        = true
@@ -1322,14 +1321,15 @@ func _enter_dead() -> void:
 	for c : Node in get_tree().get_nodes_in_group("creatures"):
 		if is_instance_valid(c) and c.has_method("on_player_died"):
 			c.call("on_player_died")
-	# Mid-air death — keep collision enabled so gravity lands the player on the floor.
-	# DEAD state (and collision disable) is deferred until after the landing frames.
+	# Mid-air death — keep collision + knockback so the hit sends the player flying,
+	# gravity lands them on the floor, landing frames play, then DEAD is entered.
 	if state == State.JUMP:
 		_pending_death = true
 		return
+	_knockback_vel = Vector3.ZERO
+	velocity       = Vector3.ZERO
 	if _collision_shape != null:
 		_collision_shape.set_deferred("disabled", true)
-	velocity = Vector3.ZERO
 	_set_state(State.DEAD)
 
 
