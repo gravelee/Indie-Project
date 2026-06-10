@@ -19,7 +19,7 @@ PROP exports (PROP_DIRS + SCALABLE_PROPS)
       bush  → frames directly in the animation folder (bump/0.png, bump/1.png …)
               generates 1x1 (1×), 2x2 (2×), 3x3 (3×)
       grass → same — generates 1x1 (1×), 2x1 (2×), 3x1 (3×)
-      tree  → flat PNG files (1x1.png, 1x1_h1.png …) — generates 2x2/2x2_h*, 3x2/3x2_h*
+      tree  → flat PNG files (1x1.png, 1x1_h1.png …) — generates 2x2/2x2_h*, 3x3/3x3_h*
     bush/grass: numbered frames (0.png, 1.png …) sit directly in the animation folder.
     The script detects them automatically — no size subfolder needed.
     tree: still flat PNG files (single-frame sprites, not animations).
@@ -93,9 +93,9 @@ SCALABLE_PROPS = {
 
     # File-based props: dict keyed by source stem
     "/tree/":  {
-        "h0": [("1x1_h0", 1), ("2x2_h0", 2), ("3x2_h0", 3)],
-        "h1": [("1x1_h1", 1), ("2x2_h1", 2), ("3x2_h1", 3)],
-        "h2": [("1x1_h2", 1), ("2x2_h2", 2), ("3x2_h2", 3)],
+        "h0": [("1x1_h0", 1), ("2x2_h0", 2), ("3x3_h0", 3)],
+        "h1": [("1x1_h1", 1), ("2x2_h1", 2), ("3x3_h1", 3)],
+        "h2": [("1x1_h2", 1), ("2x2_h2", 2), ("3x3_h2", 3)],
     },
 }
 

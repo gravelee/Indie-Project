@@ -26,18 +26,19 @@ TMX_PATH = "/Users/Grproth/Desktop/Indie Project/tools/tiled/level_01/map.tmx"
 TILESET  = "entities.tsx"   # source name as it appears in the TMX
 
 MAPPING  = {
-    # Old 1x1_h1 (now 1x1_h2) and everything after shifts +1.
-    # New ID 126 (new 1x1_h1) is freshly placed — no old tiles to remap to it.
-    135: 136,   # grass 3x1
-    134: 135,   # grass 2x1
-    133: 134,   # grass 1x1
-    132: 133,   # 3x2_h2
-    131: 132,   # 3x2_h1
-    130: 131,   # 3x2
-    129: 130,   # 2x2_h2
-    128: 129,   # 2x2_h1
-    127: 128,   # 2x2
-    126: 127,   # old 1x1_h1 → now 1x1_h2
+    # Grassy bush added at IDs 125-142; trees+grass shifted +18.
+    125: 143,   # tree 1x1_h0
+    126: 144,   # tree 1x1_h1
+    127: 145,   # tree 1x1_h2
+    128: 146,   # tree 2x2_h0
+    129: 147,   # tree 2x2_h1
+    130: 148,   # tree 2x2_h2
+    131: 149,   # tree 3x3_h0
+    132: 150,   # tree 3x3_h1
+    133: 151,   # tree 3x3_h2
+    134: 152,   # grass 1x1
+    135: 153,   # grass 2x2
+    136: 154,   # grass 3x3
 }
 
 # ── Do not edit below this line ───────────────────────────────────────────────

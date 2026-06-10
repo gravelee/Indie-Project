@@ -84,18 +84,40 @@ const PROP_TABLE : Dictionary = {
 	122: [1, 1, "bush", "spiky",   -1,  1, false, true ],
 	123: [2, 2, "bush", "spiky",   -1,  1, true,  true ],
 	124: [3, 3, "bush", "spiky",   -1,  1, true,  true ],
-	125: [1, 1, "tree", "mystic",   0,  1, true,  false],  # h0
-	126: [1, 1, "tree", "mystic",   1,  1, true,  false],  # h1
-	127: [1, 1, "tree", "mystic",   2,  1, true,  false],  # h2
-	128: [2, 2, "tree", "mystic",   0,  1, true,  false],  # h0
-	129: [2, 2, "tree", "mystic",   1,  1, true,  false],  # h1
-	130: [2, 2, "tree", "mystic",   2,  1, true,  false],  # h2
-	131: [3, 2, "tree", "mystic",   0,  1, true,  false],  # h0
-	132: [3, 2, "tree", "mystic",   1,  1, true,  false],  # h1
-	133: [3, 2, "tree", "mystic",   2,  1, true,  false],  # h2
-	134: [1, 1, "grass", "classic", -1, 1, false, true ],  # 1x1
-	135: [2, 2, "grass", "classic", -1, 1, false, true ],  # 2x2
-	136: [3, 3, "grass", "classic", -1, 1, false, true ],  # 3x3
+	# bush/grassy — random
+	125: [1, 1, "bush", "grassy",   -1,  5, false, true ],
+	126: [2, 2, "bush", "grassy",   -1,  5, true,  true ],
+	127: [3, 3, "bush", "grassy",   -1,  5, true,  true ],
+	# bush/grassy — fixed variants 1-5
+	128: [1, 1, "bush", "grassy",   -1, -1, false, true ],
+	129: [2, 2, "bush", "grassy",   -1, -1, true,  true ],
+	130: [3, 3, "bush", "grassy",   -1, -1, true,  true ],
+	131: [1, 1, "bush", "grassy",   -1, -2, false, true ],
+	132: [2, 2, "bush", "grassy",   -1, -2, true,  true ],
+	133: [3, 3, "bush", "grassy",   -1, -2, true,  true ],
+	134: [1, 1, "bush", "grassy",   -1, -3, false, true ],
+	135: [2, 2, "bush", "grassy",   -1, -3, true,  true ],
+	136: [3, 3, "bush", "grassy",   -1, -3, true,  true ],
+	137: [1, 1, "bush", "grassy",   -1, -4, false, true ],
+	138: [2, 2, "bush", "grassy",   -1, -4, true,  true ],
+	139: [3, 3, "bush", "grassy",   -1, -4, true,  true ],
+	140: [1, 1, "bush", "grassy",   -1, -5, false, true ],
+	141: [2, 2, "bush", "grassy",   -1, -5, true,  true ],
+	142: [3, 3, "bush", "grassy",   -1, -5, true,  true ],
+	# tree/mystic
+	143: [1, 1, "tree", "mystic",    0,  1, true,  false],  # h0
+	144: [1, 1, "tree", "mystic",    1,  1, true,  false],  # h1
+	145: [1, 1, "tree", "mystic",    2,  1, true,  false],  # h2
+	146: [2, 2, "tree", "mystic",    0,  1, true,  false],  # h0
+	147: [2, 2, "tree", "mystic",    1,  1, true,  false],  # h1
+	148: [2, 2, "tree", "mystic",    2,  1, true,  false],  # h2
+	149: [3, 3, "tree", "mystic",    0,  1, true,  false],  # h0
+	150: [3, 3, "tree", "mystic",    1,  1, true,  false],  # h1
+	151: [3, 3, "tree", "mystic",    2,  1, true,  false],  # h2
+	# grass/classic
+	152: [1, 1, "grass", "classic", -1,  1, false, true ],  # 1x1
+	153: [2, 2, "grass", "classic", -1,  1, false, true ],  # 2x2
+	154: [3, 3, "grass", "classic", -1,  1, false, true ],  # 3x3
 }
 
 # Creature defaults: tile_id → [type, stat_id, aggression, has_home, can_wander]
