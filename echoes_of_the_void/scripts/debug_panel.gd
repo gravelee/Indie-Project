@@ -53,6 +53,17 @@ const C_FOCUS   : Color = Color(0.87, 0.53, 0.13, 1.00)
 const C_FLOW    : Color = Color(0.13, 0.40, 0.87, 1.00)
 const C_BAR_BG  : Color = Color(0.12, 0.12, 0.16, 1.00)
 
+# ── Helper overlay (3D wireframe) ─────────────────────────────────────────────
+const HELPER_RANGE_SQ   : float = 100.0   # 10u radius²
+const HELPER_CIRCLE_SEGS : int  = 20
+const C_HELPER_PLAYER   : Color = Color(0.30, 0.55, 1.00, 0.90)
+const C_HELPER_HOSTILE  : Color = Color(1.00, 0.22, 0.22, 0.90)
+const C_HELPER_NEUTRAL  : Color = Color(1.00, 0.88, 0.15, 0.90)
+const C_HELPER_COL_PROP : Color = Color(0.22, 0.90, 0.38, 0.90)
+const C_HELPER_BUMP     : Color = Color(1.00, 0.50, 0.10, 0.85)
+const C_HELPER_PASS     : Color = Color(1.00, 0.90, 0.12, 0.75)
+const C_HELPER_TREE     : Color = Color(0.15, 0.80, 0.80, 0.90)
+
 # ── State ─────────────────────────────────────────────────────────────────────
 var _player      : CharacterBody3D = null
 var _player_open : bool            = false
@@ -62,12 +73,20 @@ var _font        : Font            = null
 var _collapsed     : Dictionary = {}
 # Click rects for section headers — rebuilt each _draw().
 var _section_rects : Dictionary = {}
+# Click rects for option rows (helper toggles) — rebuilt each _draw().
+var _option_rects  : Dictionary = {}
 # Script → enum dict cache so get_script_constant_map() isn't called every frame.
 var _enum_cache    : Dictionary = {}
 # Rect of the creature panel (updated each draw) — used for click-outside detection.
 var _creature_panel_rect : Rect2 = Rect2()
 # Tracks whether a target existed last frame — ensures one final redraw on clear.
 var _had_target : bool = false
+
+# ── Helper overlay ─────────────────────────────────────────────────────────────
+var _helper_col  : bool             = false   # show collision shapes
+var _helper_int  : bool             = false   # show interact/detect areas
+var _helper_tree : bool             = false   # show tree collision cylinders
+var _helper_mesh : MeshInstance3D   = null
 
 
 # =============================================================================
@@ -78,6 +97,22 @@ func init(p_player: CharacterBody3D) -> void:
 	_player      = p_player
 	_font        = ThemeDB.fallback_font
 	process_mode = Node.PROCESS_MODE_ALWAYS   # P key works while paused
+
+	# 3D wireframe overlay for helper modes — added as sibling of player.
+	# ImmediateMesh is created once here and reused each physics frame via
+	# clear_surfaces() to avoid per-frame GPU buffer allocation churn.
+	_helper_mesh = MeshInstance3D.new()
+	_helper_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var im := ImmediateMesh.new()
+	_helper_mesh.mesh = im
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode               = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency               = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.no_depth_test              = true
+	mat.vertex_color_use_as_albedo = true
+	_helper_mesh.material_override = mat
+	if _player != null and _player.get_parent() != null:
+		_player.get_parent().add_child(_helper_mesh)
 
 
 # =============================================================================
@@ -110,6 +145,19 @@ func _input(event: InputEvent) -> void:
 		for key : String in _section_rects:
 			if _section_rects[key].has_point(click):
 				_collapsed[key] = not _collapsed.get(key, false)
+				queue_redraw()
+				return
+
+		# Helper option row toggles
+		for key : String in _option_rects:
+			if _option_rects[key].has_point(click):
+				match key:
+					"p_h_col":  _helper_col  = not _helper_col
+					"p_h_int":  _helper_int  = not _helper_int
+					"p_h_tree": _helper_tree = not _helper_tree
+				# Surfaces are cleared by _physics_process when all helpers are off.
+				# Never null the mesh — _update_helper_mesh() casts it to ImmediateMesh
+				# and returns early if null, making helpers impossible to re-enable.
 				queue_redraw()
 				return
 
@@ -158,18 +206,41 @@ func _input(event: InputEvent) -> void:
 # =============================================================================
 
 func _process(_delta: float) -> void:
-	var tgt        : Node = _player.get("_target") if _player != null else null
+	var tgt        : Node = _get_target()
 	var has_target : bool = tgt != null
 	if has_target or _player_open or has_target != _had_target:
 		queue_redraw()
 	_had_target = has_target
 
 
+# Helper mesh updates at physics rate (fixed 60 hz) to avoid GPU buffer churn
+# from rebuilding ImmediateMesh every display frame.
+func _physics_process(_delta: float) -> void:
+	if _helper_col or _helper_int or _helper_tree:
+		_update_helper_mesh()
+	elif _helper_mesh != null and is_instance_valid(_helper_mesh):
+		var im : ImmediateMesh = _helper_mesh.mesh as ImmediateMesh
+		if im != null:
+			im.clear_surfaces()
+
+
+func _get_target() -> Node:
+	if _player == null:
+		return null
+	var raw : Variant = _player.get("_target")
+	if raw == null or not is_instance_valid(raw):
+		if raw != null:
+			_player.call("_clear_target")
+		return null
+	return raw as Node
+
+
 func _draw() -> void:
 	_section_rects.clear()
+	_option_rects.clear()
 	_creature_panel_rect = Rect2()
 
-	var tgt : Node = _player.get("_target") if _player != null else null
+	var tgt : Node = _get_target()
 	if tgt != null and is_instance_valid(tgt):
 		var lines : Array = _build_lines(tgt, "c_")
 		var h     : float = _calc_height(lines)
@@ -285,6 +356,24 @@ func _draw_panel(entity: Node, px: float, py: float, prefix: String) -> void:
 					item[1], HORIZONTAL_ALIGNMENT_LEFT, iw, FONT_SIZE, C_TITLE)
 				_section_rects[full_key] = Rect2(px, cy, PANEL_W, SECTION_H)
 				cy += SECTION_H
+
+			"option":
+				# item: ["option", display_label, option_key, active_bool]
+				var opt_lbl    : String = item[1]
+				var opt_key    : String = item[2]
+				var opt_active : bool   = item[3]
+				var opt_bg     : Color  = Color(0.18, 0.52, 0.18, 0.30) if opt_active else Color(0.0, 0.0, 0.0, 0.0)
+				draw_rect(Rect2(px + PADDING - 2.0, cy, iw + 4.0, LINE_H - 2.0), opt_bg)
+				draw_string(_font,
+					Vector2(px + PADDING, cy + float(FONT_SIZE)),
+					opt_lbl, HORIZONTAL_ALIGNMENT_LEFT, iw * 0.75, FONT_SIZE, C_VALUE)
+				draw_string(_font,
+					Vector2(px + PADDING, cy + float(FONT_SIZE)),
+					"ON" if opt_active else "OFF",
+					HORIZONTAL_ALIGNMENT_RIGHT, iw, FONT_SIZE,
+					C_STATE if opt_active else C_LABEL)
+				_option_rects[opt_key] = Rect2(px + PADDING - 2.0, cy, iw + 4.0, LINE_H - 2.0)
+				cy += LINE_H
 
 
 # =============================================================================
@@ -495,6 +584,15 @@ func _build_player_lines() -> Array:
 					C_STATE if ab.is_ready else C_LABEL])
 		lines.append(["divider"])
 
+	# ── HELPERS ───────────────────────────────────────────────────────────────
+	var hc : bool = _collapsed.get("p_helpers", false)
+	lines.append(["section", ("▶" if hc else "▼") + " HELPERS", "helpers"])
+	if not hc:
+		lines.append(["option", "Collisions (10u)",     "p_h_col",  _helper_col])
+		lines.append(["option", "Interact Areas (10u)", "p_h_int",  _helper_int])
+		lines.append(["option", "Trees (10u)",          "p_h_tree", _helper_tree])
+		lines.append(["divider"])
+
 	return lines
 
 
@@ -510,6 +608,7 @@ func _calc_height(lines: Array) -> float:
 			"divider": h += SEC_GAP
 			"section": h += SECTION_H
 			"row"    : h += LINE_H
+			"option" : h += LINE_H
 			"bar"    : h += (LINE_H - 4.0) + BAR_H + 6.0
 			"effect" : h += (LINE_H - 4.0) + 8.0
 	return h
@@ -533,3 +632,228 @@ func _get_enum_name(entity: Node, enum_name: String, value: int) -> String:
 	var enum_dict : Dictionary = consts.get(enum_name, {}) as Dictionary
 	var key : Variant = enum_dict.find_key(value)
 	return str(key) if key != null else str(value)
+
+
+# =============================================================================
+# HELPER OVERLAY — 3D wireframe circles
+# =============================================================================
+
+func _update_helper_mesh() -> void:
+	if _helper_mesh == null or not is_instance_valid(_helper_mesh) or _player == null:
+		return
+	var im : ImmediateMesh = _helper_mesh.mesh as ImmediateMesh
+	if im == null:
+		return
+	im.clear_surfaces()
+	var p_pos : Vector3 = _player.global_position
+	im.surface_begin(Mesh.PRIMITIVE_LINES)
+
+	if _helper_col:
+		# Player — blue cylinder wireframe
+		var p_r   : float = _get_entity_radius(_player)
+		var p_top : float = p_pos.y + _get_entity_col_top(_player)
+		_add_cylinder_wire(im, p_pos.x, p_pos.y, p_pos.z, p_r, p_top, C_HELPER_PLAYER)
+
+		# Creatures — red (hostile) or yellow (neutral/other) cylinder wireframes
+		for node : Node in get_tree().get_nodes_in_group("creatures"):
+			if not is_instance_valid(node):
+				continue
+			var body : Node3D = node as Node3D
+			if body == null:
+				continue
+			var diff : Vector3 = body.global_position - p_pos
+			diff.y = 0.0
+			if diff.length_squared() > HELPER_RANGE_SQ:
+				continue
+			var aggr_raw : Variant = node.get("aggression_type")
+			var aggr_str : String  = str(aggr_raw).to_lower()
+			var ent_col  : Color   = C_HELPER_HOSTILE if aggr_str.contains("hostile") else C_HELPER_NEUTRAL
+			var c_r      : float   = _get_entity_radius(body)
+			var c_top    : float   = body.global_position.y + _get_entity_col_top(body)
+			_add_cylinder_wire(im, body.global_position.x, body.global_position.y,
+				body.global_position.z, c_r, c_top, ent_col)
+
+		# Collidable props — full-height cylinder + cone cap.
+		# Mirrors obstacle_prop.gd: cylinder base-to-col_h (normal.y=0 sides),
+		# cone cap apex at col_h, base at col_h - base_r * 1.3.
+		for node : Node in get_tree().get_nodes_in_group("damageable_props"):
+			if not is_instance_valid(node):
+				continue
+			if not node.get("has_collision"):
+				continue
+			var prop3d : Node3D = node as Node3D
+			if prop3d == null:
+				continue
+			var diff2 : Vector3 = prop3d.global_position - p_pos
+			diff2.y = 0.0
+			if diff2.length_squared() > HELPER_RANGE_SQ:
+				continue
+			# base_r: _area_radius - 0.05 (detect zone is 0.05 wider than collision)
+			var base_r   : float = maxf(float(node.get("_area_radius")) - 0.05, 0.1)
+			var col_h    : float = float(node.get("_coll_height"))
+			var base_y   : float = prop3d.global_position.y
+			# Mirrors obstacle_prop.gd: cone_h = col_h * 0.9, base sits at col_h * 0.1.
+			# Full-height cylinder
+			_add_cylinder_wire(im, prop3d.global_position.x, base_y,
+				prop3d.global_position.z, base_r, base_y + col_h, C_HELPER_COL_PROP)
+			# Cone cap: base at col_h * 0.1, apex at col_h
+			_add_cone_wire(im, prop3d.global_position.x, base_y + col_h * 0.1,
+				prop3d.global_position.z, base_r, base_y + col_h, C_HELPER_COL_PROP)
+
+	if _helper_int:
+		# Non-collision damageable props — DetectZone sphere wireframe.
+		# Sphere radius = area_radius * 0.8, center at y = radius above prop base.
+		# "wobble" on obstacle props → orange; on terrain props → yellow.
+		for node : Node in get_tree().get_nodes_in_group("damageable_props"):
+			if not is_instance_valid(node):
+				continue
+			if node.get("has_collision"):
+				continue
+			var prop3d : Node3D = node as Node3D
+			if prop3d == null:
+				continue
+			var diff3 : Vector3 = prop3d.global_position - p_pos
+			diff3.y = 0.0
+			if diff3.length_squared() > HELPER_RANGE_SQ:
+				continue
+			var detect_r : float  = float(node.get("_area_radius")) * 0.8
+			var is_obstacle : bool = node is ObstacleProp
+			var icol        : Color = C_HELPER_BUMP if is_obstacle else C_HELPER_PASS
+			_add_sphere_wire(im, prop3d.global_position.x,
+				prop3d.global_position.y + detect_r, prop3d.global_position.z,
+				detect_r, icol)
+
+	if _helper_tree:
+		# Tree collision shapes — shared StaticBody3D ("TreeCollision" group).
+		# Each tree contributes a CylinderShape3D + ConvexPolygonShape3D cone cap.
+		# Cylinders drawn in teal; cone caps read their base_r from the hull points.
+		var tree_body_arr : Array = get_tree().get_nodes_in_group("tree_collision_body")
+		if not tree_body_arr.is_empty():
+			var tree_body : Node3D = tree_body_arr[0] as Node3D
+			if tree_body != null:
+				for child : Node in tree_body.get_children():
+					var cs : CollisionShape3D = child as CollisionShape3D
+					if cs == null:
+						continue
+					var diff_t : Vector3 = cs.global_position - p_pos
+					diff_t.y = 0.0
+					if diff_t.length_squared() > HELPER_RANGE_SQ:
+						continue
+					var shape : Shape3D = cs.shape
+					if shape is CylinderShape3D:
+						var cyl    : CylinderShape3D = shape as CylinderShape3D
+						var base_y : float = cs.global_position.y - cyl.height * 0.5
+						var top_y  : float = cs.global_position.y + cyl.height * 0.5
+						_add_cylinder_wire(im, cs.global_position.x, base_y,
+							cs.global_position.z, cyl.radius, top_y, C_HELPER_TREE)
+					elif shape is ConvexPolygonShape3D:
+						# Cone cap — derive base_r and apex height from hull points.
+						var cpoly  : ConvexPolygonShape3D = shape as ConvexPolygonShape3D
+						var max_r  : float = 0.0
+						var max_h  : float = 0.0
+						for pt : Vector3 in cpoly.points:
+							var pr : float = sqrt(pt.x * pt.x + pt.z * pt.z)
+							if pr > max_r: max_r = pr
+							if pt.y > max_h: max_h = pt.y
+						var cap_base_y : float = cs.global_position.y
+						_add_cone_wire(im, cs.global_position.x, cap_base_y,
+							cs.global_position.z, max_r, cap_base_y + max_h, C_HELPER_TREE)
+
+	im.surface_end()
+
+
+# Full cylinder wireframe: bottom circle + top circle + 4 vertical struts.
+func _add_cylinder_wire(im: ImmediateMesh, cx: float, y_bot: float, cz: float,
+		r: float, y_top: float, col: Color) -> void:
+	_add_circle_xz(im, cx, y_bot + 0.02, cz, r, col)
+	_add_circle_xz(im, cx, y_top,        cz, r, col)
+	# 4 cardinal vertical struts
+	for i : int in range(4):
+		var a  : float = float(i) * (PI * 0.5)
+		var vx : float = cx + cos(a) * r
+		var vz : float = cz + sin(a) * r
+		im.surface_set_color(col)
+		im.surface_add_vertex(Vector3(vx, y_bot + 0.02, vz))
+		im.surface_set_color(col)
+		im.surface_add_vertex(Vector3(vx, y_top, vz))
+
+
+# Cone wireframe: base circle at y_base + 8 struts running up to the apex.
+func _add_cone_wire(im: ImmediateMesh, cx: float, y_base: float, cz: float,
+		r: float, y_apex: float, col: Color) -> void:
+	_add_circle_xz(im, cx, y_base + 0.02, cz, r, col)
+	for i : int in range(8):
+		var a  : float = float(i) * (PI * 0.25)
+		var vx : float = cx + cos(a) * r
+		var vz : float = cz + sin(a) * r
+		im.surface_set_color(col)
+		im.surface_add_vertex(Vector3(vx, y_base + 0.02, vz))
+		im.surface_set_color(col)
+		im.surface_add_vertex(Vector3(cx, y_apex, cz))
+
+
+# Sphere wireframe: horizontal equator + two vertical circles (XY and ZY planes).
+func _add_sphere_wire(im: ImmediateMesh, cx: float, cy: float, cz: float,
+		r: float, col: Color) -> void:
+	var step : float = TAU / float(HELPER_CIRCLE_SEGS)
+	for i : int in range(HELPER_CIRCLE_SEGS):
+		var a0 : float = float(i) * step
+		var a1 : float = float(i + 1) * step
+		# Horizontal equator (XZ plane)
+		im.surface_set_color(col)
+		im.surface_add_vertex(Vector3(cx + cos(a0) * r, cy, cz + sin(a0) * r))
+		im.surface_set_color(col)
+		im.surface_add_vertex(Vector3(cx + cos(a1) * r, cy, cz + sin(a1) * r))
+		# Vertical circle in XY plane
+		im.surface_set_color(col)
+		im.surface_add_vertex(Vector3(cx + cos(a0) * r, cy + sin(a0) * r, cz))
+		im.surface_set_color(col)
+		im.surface_add_vertex(Vector3(cx + cos(a1) * r, cy + sin(a1) * r, cz))
+		# Vertical circle in ZY plane
+		im.surface_set_color(col)
+		im.surface_add_vertex(Vector3(cx, cy + sin(a0) * r, cz + cos(a0) * r))
+		im.surface_set_color(col)
+		im.surface_add_vertex(Vector3(cx, cy + sin(a1) * r, cz + cos(a1) * r))
+
+
+func _add_circle_xz(im: ImmediateMesh, cx: float, y: float, cz: float,
+		r: float, col: Color) -> void:
+	var step : float = TAU / float(HELPER_CIRCLE_SEGS)
+	for i : int in range(HELPER_CIRCLE_SEGS):
+		var a0 : float = float(i) * step
+		var a1 : float = float(i + 1) * step
+		im.surface_set_color(col)
+		im.surface_add_vertex(Vector3(cx + cos(a0) * r, y, cz + sin(a0) * r))
+		im.surface_set_color(col)
+		im.surface_add_vertex(Vector3(cx + cos(a1) * r, y, cz + sin(a1) * r))
+
+
+func _get_entity_radius(entity: Node3D) -> float:
+	for child : Node in entity.get_children():
+		if child is CollisionShape3D:
+			var shape : Shape3D = (child as CollisionShape3D).shape
+			if shape is CapsuleShape3D:
+				return (shape as CapsuleShape3D).radius
+			if shape is CylinderShape3D:
+				return (shape as CylinderShape3D).radius
+			if shape is SphereShape3D:
+				return (shape as SphereShape3D).radius
+			if shape is BoxShape3D:
+				var bs : BoxShape3D = shape as BoxShape3D
+				return maxf(bs.size.x, bs.size.z) * 0.5
+	return 0.35
+
+
+# Returns the world-space Y offset of the collision top above entity.global_position.y.
+func _get_entity_col_top(entity: Node3D) -> float:
+	for child : Node in entity.get_children():
+		if child is CollisionShape3D:
+			var cs    : CollisionShape3D = child as CollisionShape3D
+			var shape : Shape3D          = cs.shape
+			if shape is CapsuleShape3D:
+				return cs.position.y + (shape as CapsuleShape3D).height * 0.5
+			if shape is CylinderShape3D:
+				return cs.position.y + (shape as CylinderShape3D).height * 0.5
+			if shape is SphereShape3D:
+				return cs.position.y + (shape as SphereShape3D).radius
+	return 1.5

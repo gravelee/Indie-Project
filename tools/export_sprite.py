@@ -16,11 +16,13 @@ PROP exports (PROP_DIRS + SCALABLE_PROPS)
   Scalable props (bush, grass, tree):
     Only the smallest source size(s) need to exist in art_source.
     All larger sizes are generated automatically via rotsprite:
-      bush  → 1x1 (source), 2x2 (2×), 3x3 (3×)
-      grass → 1x1 (source), 2x1 (2×), 3x1 (3×)
-      tree  → 1x1 / 1x1_h1 / 1x1_h2 (source), 2x2/2x2_h* (2×), 3x2/3x2_h* (3×)
-    Works identically for sprites (idle) and spritesheets (bump/pass/death strips) —
-    the whole horizontal frame strip is scaled uniformly, so every frame scales with it.
+      bush  → frames directly in the animation folder (bump/0.png, bump/1.png …)
+              generates 1x1 (1×), 2x2 (2×), 3x3 (3×)
+      grass → same — generates 1x1 (1×), 2x1 (2×), 3x1 (3×)
+      tree  → flat PNG files (1x1.png, 1x1_h1.png …) — generates 2x2/2x2_h*, 3x2/3x2_h*
+    bush/grass: numbered frames (0.png, 1.png …) sit directly in the animation folder.
+    The script detects them automatically — no size subfolder needed.
+    tree: still flat PNG files (single-frame sprites, not animations).
     Any old derived-size files (2x2, 3x3 …) still in art_source are silently ignored.
     To add a new scalable prop type: add an entry to SCALABLE_PROPS below.
 
@@ -52,43 +54,48 @@ METHOD = "rotsprite"  # "nearest"   — nearest-neighbor (sharp, no edge smoothi
 PROP_SCALE = 1
 
 # ── Prop/Tilemap auto-discovery ───────────────────────────────────────────────
-# Every .png under the art_source dir is exported to the matching path under
-# the game assets dir. No manual listing needed — add a file to art_source and
-# re-run the script; it appears in assets automatically.
-PROP_DIRS = [
-    # (art_source dir,                    game assets output dir)
-    ("art_source/props/sprites",          "echoes_of_the_void/assets/sprites"),
-    ("art_source/props/spritesheets",     "echoes_of_the_void/assets/spritesheets/props"),
-    ("art_source/tilemaps",              "echoes_of_the_void/assets/tilemaps"),
+# art_source/props/ is the single source for all props (bush, grass, tree).
+# Output is routed automatically by frame count — both go to assets/gfx/props/:
+#   1 frame  → echoes_of_the_void/assets/gfx/props/  (idle stills)
+#   2+ frames → echoes_of_the_void/assets/gfx/props/  (animations)
+# Tilemaps are a separate pass-through source — always copied as-is.
+PROP_SRC         = "art_source/props"
+DST_PROPS        = "echoes_of_the_void/assets/gfx/props"
+
+TILEMAP_DIRS = [
+    ("art_source/tilemaps", "echoes_of_the_void/assets/gfx/tilemaps"),
 ]
 
 # ── Scalable prop rules ───────────────────────────────────────────────────────
-# Maps a path segment to {source_stem: [(output_stem, scale), ...]}.
+# Two rule formats:
 #
-# Rules:
-#   • A file whose stem is a key here is a SOURCE → all listed variants are
-#     generated from it via rotsprite.
-#   • A file whose stem is NOT a key (e.g. "2x2", "3x3" still in art_source)
-#     is a DERIVED SIZE → silently skipped.
-#   • A file whose path matches no key at all (tilemaps) is a PASS-THROUGH →
-#     copied as-is (at PROP_SCALE, default 1).
+#   Frame-folder props (bush, grass) — rule is a flat list [(out_stem, scale)]:
+#     Numbered PNGs (0.png, 1.png …) sit directly in the animation folder.
+#     The script assembles them into a strip and emits all listed output sizes.
+#     Any plain .png files inside a frame-folder path (numbered frames) are
+#     silently skipped in the flat-file loop — they are handled as a batch.
 #
-# Scaling is uniform: the whole image (or spritesheet strip) is scaled, so
-# every animation frame scales identically.
+#   File-based props (tree) — rule is a dict {source_stem: [(out_stem, scale)]}:
+#     Source files are flat PNGs (1x1.png, 1x1_h1.png …). Stem lookup picks
+#     the right output list. Unlisted stems are derived sizes → silently skipped.
+#
+#   Pass-through (tilemaps / anything not matched): copied as-is at PROP_SCALE.
+#
+# Scaling is uniform: the whole image (or assembled strip) is scaled, so every
+# animation frame scales identically.
 #
 # To add a new scalable prop type: add an entry here.
 
 SCALABLE_PROPS = {
-    "/bush/":  {
-        "1x1":    [("1x1", 1), ("2x2", 2), ("3x3", 3)],
-    },
-    "/grass/": {
-        "1x1":    [("1x1", 1), ("2x1", 2), ("3x1", 3)],
-    },
+    # Frame-folder props: flat list of (out_stem, scale)
+    "/bush/":  [("1x1", 1), ("2x2", 2), ("3x3", 3)],
+    "/grass/": [("1x1", 1), ("2x2", 2), ("3x3", 3)],
+
+    # File-based props: dict keyed by source stem
     "/tree/":  {
-        "1x1":    [("1x1", 1),    ("2x2", 2),    ("3x2", 3)   ],
-        "1x1_h1": [("1x1_h1", 1), ("2x2_h1", 2), ("3x2_h1", 3)],
-        "1x1_h2": [("1x1_h2", 1), ("2x2_h2", 2), ("3x2_h2", 3)],
+        "h0": [("1x1_h0", 1), ("2x2_h0", 2), ("3x2_h0", 3)],
+        "h1": [("1x1_h1", 1), ("2x2_h1", 2), ("3x2_h1", 3)],
+        "h2": [("1x1_h2", 1), ("2x2_h2", 2), ("3x2_h2", 3)],
     },
 }
 
@@ -100,14 +107,14 @@ SCALABLE_PROPS = {
 # Both paths are relative to the project root.
 # Add or comment out entries as needed.
 
-_R = "art_source/creatures/rat/frames"
-_RO = "echoes_of_the_void/assets/spritesheets/creatures/rat"
+_R = "art_source/entities/creatures/rat/frames"
+_RO = "echoes_of_the_void/assets/gfx/entities/creatures/rat"
 
-_S = "art_source/creatures/snake/frames"
-_SO = "echoes_of_the_void/assets/spritesheets/creatures/snake"
+_S = "art_source/entities/creatures/snake/frames"
+_SO = "echoes_of_the_void/assets/gfx/entities/creatures/snake"
 
-_P = "art_source/player/ares/frames"
-_PO = "echoes_of_the_void/assets/spritesheets/player"
+_P = "art_source/entities/player/ares/frames"
+_PO = "echoes_of_the_void/assets/gfx/entities/player/ares"
 
 EXPORTS = [
     # ── PLAYER (4-direction, no front/back) ───────────────────────────────────
@@ -325,23 +332,44 @@ def _scale_image(img: Image.Image, scale: int, method: str) -> Image.Image:
     return img.resize((img.width * scale, img.height * scale), resample)
 
 
-def _get_scalable_rule(norm_path: str, stem: str):
+def _get_frame_folder_variants(norm_dir: str):
     """
-    Look up a prop file in SCALABLE_PROPS.
+    For frame-folder props (bush, grass): return the output variant list if
+    norm_dir lives inside a frame-folder prop path, otherwise None.
+    Used when numbered PNGs are detected directly in the current directory.
+    """
+    check = "/" + norm_dir
+    for prop_key, rule in SCALABLE_PROPS.items():
+        if prop_key in check and isinstance(rule, list):
+            return rule
+    return None
+
+
+_SKIP = object()   # sentinel: "skip this file silently"
+
+
+def _get_file_variants(norm_path: str, stem: str):
+    """
+    For flat PNG files (sprites, tilemaps).
 
     Returns:
-      (prop_key, variants)  — prop_key str, variants list[(out_stem, scale)]
-                              → this is a source file; emit all variants
-      (prop_key, None)      — prop_key str, no entry for this stem
-                              → this is a derived size; silently skip
-      (None, None)          — path matches no scalable prop type
-                              → pass-through (tilemap / unknown)
+      list[(out_stem, scale)]  — source file; emit all listed variants
+      _SKIP                    — skip silently (numbered frame or derived size)
+      None                     — pass-through (tilemap / not in SCALABLE_PROPS)
     """
-    check = "/" + norm_path   # ensure leading slash so "bush/..." matches "/bush/"
-    for prop_key, stems in SCALABLE_PROPS.items():
+    check = "/" + norm_path
+    for prop_key, rule in SCALABLE_PROPS.items():
         if prop_key in check:
-            return prop_key, stems.get(stem)
-    return None, None
+            if isinstance(rule, list):
+                # Frame-folder prop (bush, grass) — all source frames are now
+                # numbered PNGs handled as a batch in the frame-folder branch.
+                # Any remaining .png with a digit stem here is already handled;
+                # anything else in this path is unexpected — skip silently.
+                return _SKIP
+            # File-based prop (tree): look up by stem.
+            variants = rule.get(stem)
+            return variants if variants is not None else _SKIP  # None → derived size
+    return None   # pass-through (tilemaps / unknown)
 
 
 def export_props() -> None:
@@ -349,56 +377,102 @@ def export_props() -> None:
     print(f"Props/Tilemaps — Method: rotsprite\n")
     files_written = skipped = 0
 
-    for src_base_rel, dst_base_rel in PROP_DIRS:
-        src_base = os.path.join(ROOT, src_base_rel)
-        dst_base = os.path.join(ROOT, dst_base_rel)
+    # ── Props: single source, output routed by frame count ───────────────────
+    src_base = os.path.join(ROOT, PROP_SRC)
+    if not os.path.isdir(src_base):
+        print(f"  SKIP  (folder missing)  {PROP_SRC}/")
+    else:
+        for dirpath, subdirs, filenames in os.walk(src_base):
+            rel_dir  = os.path.relpath(dirpath, src_base)
+            norm_dir = rel_dir.replace(os.sep, "/") if rel_dir != "." else ""
 
-        if not os.path.isdir(src_base):
-            print(f"  SKIP  (folder missing)  {src_base_rel}/")
-            continue
+            # ── Frame-folder sources: numbered PNGs directly in this dir ──────
+            # All props (idle stills and animations) go to assets/gfx/props/.
+            frame_files = sorted(
+                [f for f in filenames
+                 if f.endswith(".png") and os.path.splitext(f)[0].isdigit()],
+                key=lambda f: int(os.path.splitext(f)[0])
+            )
+            if frame_files:
+                variants = _get_frame_folder_variants(norm_dir)
+                if variants is not None:
+                    images = [Image.open(os.path.join(dirpath, ff)).convert("RGBA")
+                              for ff in frame_files]
+                    fw, fh  = images[0].size
+                    strip   = Image.new("RGBA", (fw * len(images), fh), (0, 0, 0, 0))
+                    for i, img in enumerate(images):
+                        strip.paste(img, (i * fw, 0))
+                    dst_dir  = os.path.join(ROOT, DST_PROPS, rel_dir)
+                    os.makedirs(dst_dir, exist_ok=True)
+                    for out_stem, scale in variants:
+                        out_img = _scale_rotsprite(strip, scale) if scale > 1 else strip.copy()
+                        dst     = os.path.join(dst_dir, out_stem + ".png")
+                        out_img.save(dst)
+                        w, h    = out_img.size
+                        tag     = f"{DST_PROPS}/{norm_dir}/{out_stem}.png".replace("//", "/")
+                        n_tag   = f"{len(frame_files)} frame{'s' if len(frame_files) > 1 else ''}"
+                        print(f"  OK    {n_tag}  {fw}x{fh}px → {w}x{h}px  {scale}x  |  {tag}")
+                        files_written += 1
+                    continue   # entire dir handled — skip per-file loop below
 
-        for dirpath, _, filenames in os.walk(src_base):
+            # ── Flat PNG sources: tree sprites (named stems) ──────────────────
             for fname in sorted(filenames):
                 if not fname.lower().endswith(".png"):
                     continue
 
-                src     = os.path.join(dirpath, fname)
-                rel     = os.path.relpath(src, src_base)
-                norm    = rel.replace(os.sep, "/")
-                stem    = os.path.splitext(fname)[0]
-                rel_dir = os.path.dirname(rel)
+                src       = os.path.join(dirpath, fname)
+                rel       = os.path.relpath(src, src_base)
+                norm      = rel.replace(os.sep, "/")
+                stem      = os.path.splitext(fname)[0]
+                rel_dir_f = os.path.dirname(rel)
 
-                prop_key, variants = _get_scalable_rule(norm, stem)
+                variants = _get_file_variants(norm, stem)
 
-                if prop_key is not None and variants is None:
-                    # Derived size still in art_source — silently skip.
+                if variants is _SKIP:
                     skipped += 1
                     continue
+                if variants is None:
+                    skipped += 1   # unknown file in props/ — ignore
+                    continue
 
+                # File-based scalable prop (tree): routes to assets/gfx/props/.
                 img     = Image.open(src).convert("RGBA")
-                dst_dir = os.path.join(dst_base, rel_dir)
+                dst_dir = os.path.join(ROOT, DST_PROPS, rel_dir_f)
                 os.makedirs(dst_dir, exist_ok=True)
-
-                if variants is not None:
-                    # Scalable prop source → emit every derived size via rotsprite.
-                    for out_stem, scale in variants:
-                        out_img = _scale_rotsprite(img, scale) if scale > 1 else img.copy()
-                        dst = os.path.join(dst_dir, out_stem + ".png")
-                        out_img.save(dst)
-                        w, h = out_img.size
-                        print(f"  OK    {w}x{h}px  {scale}x  |  {dst_base_rel}/{rel_dir}/{out_stem}.png")
-                        files_written += 1
-                else:
-                    # Pass-through: tilemaps / anything not in SCALABLE_PROPS.
-                    if PROP_SCALE > 1:
-                        img = _scale_rotsprite(img, PROP_SCALE)
-                    dst = os.path.join(dst_dir, fname)
-                    img.save(dst)
-                    w, h = img.size
-                    print(f"  OK    {w}x{h}px      |  {dst_base_rel}/{norm}")
+                for out_stem, scale in variants:
+                    out_img = _scale_rotsprite(img, scale) if scale > 1 else img.copy()
+                    dst     = os.path.join(dst_dir, out_stem + ".png")
+                    out_img.save(dst)
+                    w, h    = out_img.size
+                    print(f"  OK    {w}x{h}px  {scale}x  |  {DST_PROPS}/{rel_dir_f}/{out_stem}.png")
                     files_written += 1
 
-    print(f"\nDone.  {files_written} files written,  {skipped} derived sizes skipped.")
+    # ── Tilemaps: pass-through ────────────────────────────────────────────────
+    for src_base_rel, dst_base_rel in TILEMAP_DIRS:
+        src_base = os.path.join(ROOT, src_base_rel)
+        dst_base = os.path.join(ROOT, dst_base_rel)
+        if not os.path.isdir(src_base):
+            print(f"  SKIP  (folder missing)  {src_base_rel}/")
+            continue
+        for dirpath, subdirs, filenames in os.walk(src_base):
+            rel_dir_f = os.path.relpath(dirpath, src_base)
+            for fname in sorted(filenames):
+                if not fname.lower().endswith(".png"):
+                    continue
+                src = os.path.join(dirpath, fname)
+                rel = os.path.relpath(src, src_base).replace(os.sep, "/")
+                img = Image.open(src).convert("RGBA")
+                if PROP_SCALE > 1:
+                    img = _scale_rotsprite(img, PROP_SCALE)
+                dst_dir = os.path.join(dst_base, rel_dir_f)
+                os.makedirs(dst_dir, exist_ok=True)
+                dst = os.path.join(dst_dir, fname)
+                img.save(dst)
+                w, h = img.size
+                print(f"  OK    {w}x{h}px      |  {dst_base_rel}/{rel}")
+                files_written += 1
+
+    print(f"\nDone.  {files_written} files written,  {skipped} skipped.")
 
 
 def export_all() -> None:
@@ -440,9 +514,6 @@ def export_all() -> None:
         strip = Image.new("RGBA", (fw * len(images), fh), (0, 0, 0, 0))
         for i, img in enumerate(images):
             strip.paste(img, (i * fw, 0))
-
-        # Save source-size sheet back into the frames folder
-        strip.save(os.path.join(src, "0-sheet.png"))
 
         # Scale up
         scaled = _scale_image(strip, SCALE, METHOD)

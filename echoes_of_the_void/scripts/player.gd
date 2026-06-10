@@ -14,13 +14,17 @@ extends CharacterBody3D
 
 const SPRITE_SIZE        : int    = 96
 const GRAVITY            : float  = -20.0
-const SPRITE_PATH        : String = "res://assets/spritesheets/player/"
+const SPRITE_PATH        : String = "res://assets/gfx/entities/player/ares/"
 
 const PROP_REACT_LAYER    : int   = 4     # matches WorldProp.PROP_REACT_LAYER
 const ATTACK_ARC_DOT      : float = 0.3   # min dot product — ~±73° cone
+const ATTACK_MAX_HEIGHT   : float = 1.5   # max vertical reach for attacks (prevents hitting across ledges)
 const SPRINT_SPEED_MULT   : float = 1.2   # sprint is 20% faster than walking
 const SPRINT_ENERGY_COST  : float = 1.0   # energy drained per second while sprinting
 const RESPAWN_DELAY       : float = 3.0   # seconds after death before respawn
+const STUCK_AIR_TIMEOUT   : float = 1.5   # seconds in FALL without landing → escape
+const STUCK_ESCAPE_RADIUS : float = 3.0   # XZ search radius for emergency bush escape
+const BUSH_SLIDE_SPEED    : float = 3.0   # lateral push when landing on a bush cone apex
 
 # Push / pull
 const PUSH_SPEED          : float = 1.8
@@ -113,7 +117,9 @@ var _grabbed_obj        : CharacterBody3D  = null
 var _locked_move_dir    : Vector3          = Vector3.ZERO   # cardinal locked on PUSH/PULL entry
 var _grab_approach_dir  : Vector3          = Vector3.ZERO   # cardinal player→block at GRAB entry
 var _pull_blocked       : bool             = false          # true when block stuck for 2+ frames
-var _pull_block_frames  : int              = 0             # consecutive frames block didn't move
+var _pull_block_frames  : int              = 0              # consecutive frames block didn't move while pulling
+var _push_blocked       : bool             = false          # true when block stuck pushing for 2+ frames
+var _push_block_frames  : int              = 0              # consecutive frames block didn't move while pushing
 
 # Spawn / death
 var is_dead          : bool             = false   # true during DEAD + SPAWN — creatures ignore player
@@ -135,6 +141,9 @@ const JUMP_VEL        : float = 7.75
 var _jump_phase       : JumpPhase = JumpPhase.WINDUP
 var _jump_frame_dur   : float     = 0.0   # 1/fps of jump anim — one frame in seconds, set on entry
 var _jump_frame_timer : float     = 0.0   # countdown used in WINDUP, LAND1, LAND2 phases
+var _stuck_air_timer  : float     = 0.0   # seconds spent in FALL without landing
+var _landing_bush      : Node      = null           # collidable prop currently under player (wobble)
+var _landing_bush_push : Vector3   = Vector3.ZERO   # cached push direction — fixed per landing
 
 # Prop reaction — continuous animation while moving inside, winds down on exit
 var _react_overlap  : Array = []   # props whose DetectZone we are currently inside
@@ -441,6 +450,13 @@ func _physics_process(delta: float) -> void:
 	else:
 		for _rp : Variant in _react_driving.duplicate():
 			var _rpn : Node3D = _rp as Node3D
+			# Collidable props (bushes) are managed by the slide collision block below.
+			# Skipping them here prevents a false stop_reaction() caused by the stale
+			# velocity problem: after move_and_slide() deflects velocity to near-zero,
+			# the next frame sees _moving=false even though the player is still pressing
+			# into the bush. The slide block uses state (input-driven) instead.
+			if is_instance_valid(_rpn) and _rpn.get("has_collision"):
+				continue
 			_react_driving.erase(_rpn)
 			if is_instance_valid(_rpn):
 				_rpn.call("stop_reaction")
@@ -477,6 +493,84 @@ func _physics_process(delta: float) -> void:
 
 	_sync_anim()
 	move_and_slide()   # player moves first
+
+	# Collidable prop collision — two responsibilities handled here via slide collisions:
+	#
+	# 1. REACTION: wobble starts the moment the player physically touches a bush, even
+	#    mid-air. Non-collidable props (grass, pass-through bushes) use the ReactZone
+	#    Area3D path above; their DetectZone spheres are too low to overlap the player's
+	#    ReactZone when jumping onto a collidable bush from above.
+	#
+	# 2. PUSH OFF: if the contact normal has a significant upward component (normal.y > 0.5),
+	#    the player is on top of the bush (flat cylinder cap or shallow rim edge) rather than
+	#    against its side. Apply a lateral push away from the bush center so the player slides
+	#    off. This fires in any state — IDLE/WALK/RUN/JUMP — covering both jump landings and
+	#    walk-onto-apex cases without needing a separate raycast or state transition.
+	#    A cached push direction (_landing_bush / _landing_bush_push) prevents random
+	#    re-rolls at the exact center apex where XZ offset ≈ 0 each frame.
+	var _cur_col_props : Array = []
+	var _on_bush_top   : bool  = false
+	for _ci : int in range(get_slide_collision_count()):
+		var _kcol  : KinematicCollision3D = get_slide_collision(_ci)
+		var _cbody : Node                  = _kcol.get_collider() as Node
+		if _cbody == null or not _cbody.is_in_group("damageable_props") \
+				or not _cbody.get("has_collision"):
+			continue
+		_cur_col_props.append(_cbody)
+		# Reaction — use state (set by input this frame) not _moving (stale last-frame
+		# velocity). When the player presses into the bush wall, move_and_slide deflects
+		# velocity to ~0, so _moving=false next frame even though keys are held.
+		# state=WALK/RUN reflects actual intent and is updated before this block runs.
+		var _col_moving : bool = state == State.WALK or state == State.RUN or state == State.JUMP
+		if _col_moving and not _react_driving.has(_cbody):
+			_react_driving.append(_cbody)
+			_cbody.call("start_reaction")
+		# Push off if on top
+		var _cnormal : Vector3 = _kcol.get_normal()
+		if _cnormal.y > 0.5:
+			_on_bush_top = true
+			_stuck_air_timer += delta
+			if _stuck_air_timer >= STUCK_AIR_TIMEOUT:
+				_stuck_air_timer = 0.0
+				_emergency_escape_bush()
+			else:
+				var _bush3d : Node3D  = _cbody as Node3D
+				var _away   : Vector3 = global_position - _bush3d.global_position
+				_away.y = 0.0
+				var _push_dir : Vector3
+				if _cbody == _landing_bush and _landing_bush_push != Vector3.ZERO:
+					_push_dir = _landing_bush_push   # reuse cached — stable across frames
+				elif _away.length_squared() < 0.001:
+					var _ang : float = randf() * TAU  # exact apex — random once then cached
+					_push_dir          = Vector3(cos(_ang), 0.0, sin(_ang))
+					_landing_bush      = _cbody
+					_landing_bush_push = _push_dir
+				else:
+					_push_dir          = _away.normalized()
+					_landing_bush      = _cbody
+					_landing_bush_push = _push_dir
+				velocity.x = _push_dir.x * BUSH_SLIDE_SPEED
+				velocity.z = _push_dir.z * BUSH_SLIDE_SPEED
+	# Reset bush-top state when no longer on top
+	if not _on_bush_top:
+		_stuck_air_timer = 0.0
+		if _landing_bush != null and not _cur_col_props.has(_landing_bush):
+			_landing_bush      = null
+			_landing_bush_push = Vector3.ZERO
+	# Stop reaction for collidable props.
+	# Two conditions stop the wobble: player walked away (not in _cur_col_props),
+	# OR player released input and went IDLE (state no longer WALK/RUN/JUMP).
+	# The second condition is required because _cur_col_props can still contain
+	# the bush (player is physically touching it) while the player stands idle —
+	# without this check the wobble loops forever once started while in contact.
+	var _col_moving_stop : bool = state == State.WALK or state == State.RUN or state == State.JUMP
+	for _rp : Variant in _react_driving.duplicate():
+		var _rpn : Node = _rp as Node
+		if not is_instance_valid(_rpn) or not _rpn.get("has_collision"):
+			continue
+		if not _cur_col_props.has(_rpn) or not _col_moving_stop:
+			_react_driving.erase(_rpn)
+			_rpn.call("stop_reaction")
 
 	# PULL: block follows AFTER player has cleared the path — avoids player-as-obstacle collision.
 	# Skipped when out of energy — player and block both freeze in place.
@@ -699,6 +793,15 @@ func _handle_movement(delta: float) -> void:
 		_do_pull_movement(delta)
 		return
 
+	# Ledge fall — player walked off an edge without pressing jump.
+	# If airborne (not on floor) and not already in a controlled state, enter the
+	# FALL phase of JUMP directly. _set_state() sets the animation sheet and
+	# _jump_frame_dur for LAND timing; _jump_phase override skips WINDUP/RISE so
+	# no crouch frame plays and velocity.y carries from gravity uninterrupted.
+	if not is_on_floor() and (state == State.IDLE or state == State.WALK or state == State.RUN):
+		_set_state(State.JUMP)
+		_jump_phase = JumpPhase.FALL
+
 	if state == State.JUMP:
 		# No steering — x/z velocity carries from jump entry unchanged.
 		# Gravity and move_and_slide() drive the arc; we only control which frame shows.
@@ -717,26 +820,46 @@ func _handle_movement(delta: float) -> void:
 			JumpPhase.FALL:
 				sprite.frame = 2                   # held (loops naturally) until touchdown
 				if is_on_floor():
-					_jump_phase       = JumpPhase.LAND1
-					_jump_frame_timer = _jump_frame_dur
-			JumpPhase.LAND1:
-				sprite.frame       = 3
-				_jump_frame_timer -= delta
-				if _jump_frame_timer <= 0.0:
-					_jump_phase       = JumpPhase.LAND2
-					_jump_frame_timer = _jump_frame_dur
-			JumpPhase.LAND2:
-				sprite.frame       = 4
-				_jump_frame_timer -= delta
-				if _jump_frame_timer <= 0.0:
-					if _pending_death:
-						_pending_death = false
-						velocity       = Vector3.ZERO
-						if _collision_shape != null:
-							_collision_shape.set_deferred("disabled", true)
-						_set_state(State.DEAD)
+					# _landing_bush is set by the slide collision block when the player is on
+					# top of a collidable bush (normal.y > 0.5). The block runs AFTER
+					# move_and_slide() — so this frame we see last frame's value. On the very
+					# first frame of bush contact _landing_bush is still null, so we briefly
+					# enter LAND1. LAND1/LAND2 both re-enter FALL if the player becomes
+					# airborne (pushed off rim), so the slide block always gets to finish.
+					if _landing_bush != null:
+						pass   # on top of a collidable bush — slide block drives the push
 					else:
-						_set_state(State.IDLE)
+						_jump_phase       = JumpPhase.LAND1
+						_jump_frame_timer = _jump_frame_dur
+				else:
+					_stuck_air_timer += delta
+					if _stuck_air_timer >= STUCK_AIR_TIMEOUT:
+						_stuck_air_timer = 0.0
+						_emergency_escape_bush()
+			JumpPhase.LAND1:
+				sprite.frame = 3
+				if not is_on_floor():
+					_jump_phase = JumpPhase.FALL   # slid off bush rim during landing frames
+				else:
+					_jump_frame_timer -= delta
+					if _jump_frame_timer <= 0.0:
+						_jump_phase       = JumpPhase.LAND2
+						_jump_frame_timer = _jump_frame_dur
+			JumpPhase.LAND2:
+				sprite.frame = 4
+				if not is_on_floor():
+					_jump_phase = JumpPhase.FALL   # slid off bush rim during landing frames
+				else:
+					_jump_frame_timer -= delta
+					if _jump_frame_timer <= 0.0:
+						if _pending_death:
+							_pending_death = false
+							velocity       = Vector3.ZERO
+							if _collision_shape != null:
+								_collision_shape.set_deferred("disabled", true)
+							_set_state(State.DEAD)
+						else:
+							_set_state(State.IDLE)
 		return
 
 	var raw : Vector2 = _read_raw_input()
@@ -943,22 +1066,21 @@ func _do_push_movement(delta: float) -> void:
 	var h_p     : float   = camera_rig.h_angle
 	var fwd_p   : Vector3 = Vector3(-sin(h_p), 0.0, -cos(h_p))
 	var right_p : Vector3 = Vector3( cos(h_p), 0.0, -sin(h_p))
-	# Camera-space snap with Y-tiebreaker — matches _set_facing_from_input exactly,
-	# so the direction validity check fires at the same camera angle as the animation change.
-	var cam_lock_p  : Vector2 = Vector2(_locked_move_dir.dot(right_p), -_locked_move_dir.dot(fwd_p))
-	var snap_lock_p : Vector2 = _snap_cam(cam_lock_p)
-	var snap_in_p   : Vector2 = _snap_cam(raw_p)
-	if snap_in_p != snap_lock_p:
+	# Use raw world-space dot product — same fix as _do_grab_idle():
+	# snap equality flickered with diagonal input near 45° camera angles.
+	var move_p : Vector3 = (fwd_p * (-raw_p.y) + right_p * raw_p.x).normalized()
+	var dot_p  : float   = move_p.dot(_locked_move_dir)
+	if dot_p <= 0.3:
 		velocity.x = 0.0
 		velocity.z = 0.0
 		# Opposite key = pull direction — skip GRAB, transition directly.
-		if snap_in_p == -snap_lock_p:
-			_pull_blocked    = false
+		if dot_p < -0.3:
+			_pull_blocked      = false
 			_pull_block_frames = 0
-			_locked_move_dir = -_grab_approach_dir
+			_locked_move_dir   = -_grab_approach_dir
 			_grabbed_obj.set("_driven", true)
-			velocity.x       = _locked_move_dir.x * PULL_SPEED
-			velocity.z       = _locked_move_dir.z * PULL_SPEED
+			velocity.x         = _locked_move_dir.x * PULL_SPEED
+			velocity.z         = _locked_move_dir.z * PULL_SPEED
 			_set_state(State.PULL)
 		else:
 			_set_state(State.GRAB)
@@ -978,10 +1100,24 @@ func _do_push_movement(delta: float) -> void:
 		_grabbed_obj.velocity.y = 0.0
 	_grabbed_obj.velocity.x = _locked_move_dir.x * PUSH_SPEED
 	_grabbed_obj.velocity.z = _locked_move_dir.z * PUSH_SPEED
+	var pre_pos_p : Vector3 = _grabbed_obj.global_position
 	_grabbed_obj.move_and_slide()
 
-	velocity.x = _locked_move_dir.x * PUSH_SPEED
-	velocity.z = _locked_move_dir.z * PUSH_SPEED
+	# Detect if block is stuck against a wall — same pattern as _drive_pulled_block.
+	var moved_p     : Vector3 = _grabbed_obj.global_position - pre_pos_p
+	var moved_along : float   = moved_p.dot(Vector3(_locked_move_dir.x, 0.0, _locked_move_dir.z))
+	if moved_along < PUSH_SPEED * delta * 0.3:
+		_push_block_frames += 1
+	else:
+		_push_block_frames = 0
+	_push_blocked = _push_block_frames >= 2
+
+	if _push_blocked:
+		velocity.x = 0.0
+		velocity.z = 0.0
+	else:
+		velocity.x = _locked_move_dir.x * PUSH_SPEED
+		velocity.z = _locked_move_dir.z * PUSH_SPEED
 	_set_facing_from_world_dir(_locked_move_dir)
 
 
@@ -994,6 +1130,9 @@ func _do_grab_idle() -> void:
 	if not Input.is_key_pressed(KEY_SHIFT):
 		_release_grab()
 		return
+	# Not actively pushing or pulling — suppress block's own physics but do not drive it.
+	# Clears _driven set by a prior PUSH/PULL so the block's wobble logic stops.
+	_grabbed_obj.set("_driven", false)
 	# Keep facing toward the block as camera rotates
 	_set_facing_from_world_dir(_grab_approach_dir)
 
@@ -1001,31 +1140,36 @@ func _do_grab_idle() -> void:
 	if raw.length_squared() == 0.0:
 		return   # no input — stay in GRAB (frozen frame 0)
 
-	# Convert camera-relative input to world cardinal
-	var h       : float   = camera_rig.h_angle
-	var fwd     : Vector3 = Vector3(-sin(h), 0.0, -cos(h))
-	var right   : Vector3 = Vector3( cos(h), 0.0, -sin(h))
-	var move    : Vector3 = (fwd * (-raw.y) + right * raw.x).normalized()
-	var snapped : Vector3 = _snap_to_cardinal(move)
-	var dot     : float   = snapped.dot(_grab_approach_dir)
+	# Use raw world-space dot product against the approach direction.
+	# Snap-based equality caused flickering when two keys were held: the diagonal
+	# input snapped to alternating cardinals each frame near a 45° boundary,
+	# causing GRAB ↔ PUSH ping-pong every frame. Dot product handles diagonals
+	# correctly — any input with ≥ 0.3 component toward the block means push.
+	var h    : float   = camera_rig.h_angle
+	var fwd  : Vector3 = Vector3(-sin(h), 0.0, -cos(h))
+	var rgt  : Vector3 = Vector3( cos(h), 0.0, -sin(h))
+	var move : Vector3 = (fwd * (-raw.y) + rgt * raw.x).normalized()
+	var dot  : float   = move.dot(_grab_approach_dir)
 
-	if dot > 0.5:
-		# Key points toward block → PUSH
-		_locked_move_dir = _grab_approach_dir
+	if dot > 0.3:
+		# Input has push component → PUSH
+		_locked_move_dir   = _grab_approach_dir
+		_push_blocked      = false
+		_push_block_frames = 0
 		_set_state(State.PUSH)
-	elif dot < -0.5:
-		# Key points away from block → PULL.
+	elif dot < -0.3:
+		# Input has pull component → PULL.
 		# Set velocity NOW so the player moves this same frame before _drive_pulled_block
 		# runs.  Without this, the player stays stationary on the transition frame and
 		# the block immediately collides with the player capsule, setting _pull_blocked.
-		_pull_blocked    = false
+		_pull_blocked      = false
 		_pull_block_frames = 0
-		_locked_move_dir = -_grab_approach_dir
-		_grabbed_obj.set("_driven", true)          # suppress block's own physics at once
-		velocity.x       = _locked_move_dir.x * PULL_SPEED
-		velocity.z       = _locked_move_dir.z * PULL_SPEED
+		_locked_move_dir   = -_grab_approach_dir
+		_grabbed_obj.set("_driven", true)   # suppress block's own physics at once
+		velocity.x         = _locked_move_dir.x * PULL_SPEED
+		velocity.z         = _locked_move_dir.z * PULL_SPEED
 		_set_state(State.PULL)
-	# Perpendicular key → silently ignored, player stays in GRAB
+	# |dot| ≤ 0.3 → perpendicular key — silently ignored, player stays in GRAB
 
 
 func _do_pull_movement(delta: float) -> void:
@@ -1059,19 +1203,20 @@ func _do_pull_movement(delta: float) -> void:
 	var h_l     : float   = camera_rig.h_angle
 	var fwd_l   : Vector3 = Vector3(-sin(h_l), 0.0, -cos(h_l))
 	var right_l : Vector3 = Vector3( cos(h_l), 0.0, -sin(h_l))
-	# Camera-space snap with Y-tiebreaker — matches _set_facing_from_input exactly,
-	# so the direction validity check fires at the same camera angle as the animation change.
-	var cam_lock_l  : Vector2 = Vector2(_locked_move_dir.dot(right_l), -_locked_move_dir.dot(fwd_l))
-	var snap_lock_l : Vector2 = _snap_cam(cam_lock_l)
-	var snap_in_l   : Vector2 = _snap_cam(raw_l)
-	if snap_in_l != snap_lock_l:
+	# Use raw world-space dot product — same fix as _do_grab_idle():
+	# snap equality flickered with diagonal input near 45° camera angles.
+	var move_l : Vector3 = (fwd_l * (-raw_l.y) + right_l * raw_l.x).normalized()
+	var dot_l  : float   = move_l.dot(_locked_move_dir)
+	if dot_l <= 0.3:
 		velocity.x = 0.0
 		velocity.z = 0.0
-		_pull_blocked = false
+		_pull_blocked      = false
 		_pull_block_frames = 0
 		# Opposite key = push direction — skip GRAB, transition directly.
-		if snap_in_l == -snap_lock_l:
-			_locked_move_dir = _grab_approach_dir
+		if dot_l < -0.3:
+			_push_blocked      = false
+			_push_block_frames = 0
+			_locked_move_dir   = _grab_approach_dir
 			_set_state(State.PUSH)
 		else:
 			_set_state(State.GRAB)
@@ -1244,7 +1389,8 @@ func _handle_attack(delta: float) -> void:
 	var slot : int = _slot_requested
 	_slot_requested = -1
 
-	if movement_blocked or state == State.ATTACK:
+	if movement_blocked or state == State.ATTACK \
+			or state == State.PUSH or state == State.GRAB or state == State.PULL:
 		return
 	var ab : Ability = ability_bar[slot] if slot < ability_bar.size() else null
 	if ab == null or not ab.can_use(stats):
@@ -1389,6 +1535,8 @@ func _do_attack() -> void:
 	var nearest_node    : Node    = null
 	for node : Node in get_tree().get_nodes_in_group("creatures"):
 		var c_pos : Vector3 = node.global_position
+		if absf(c_pos.y - atk_pos.y) > ATTACK_MAX_HEIGHT:
+			continue
 		var diff  : Vector3 = c_pos - atk_pos
 		diff.y = 0.0
 		if diff.length_squared() > range_sq:
@@ -1417,6 +1565,8 @@ func _do_attack() -> void:
 		if not prop.get("alive"):
 			continue
 		var p_pos : Vector3 = prop.global_position
+		if absf(p_pos.y - atk_pos.y) > ATTACK_MAX_HEIGHT:
+			continue
 		var diff  : Vector3 = p_pos - atk_pos
 		diff.y = 0.0
 		if diff.length_squared() > range_sq:
@@ -1424,6 +1574,33 @@ func _do_attack() -> void:
 		if diff.length_squared() > 0.001 and diff.normalized().dot(atk_dir) < ATTACK_ARC_DOT:
 			continue
 		prop.call("take_hit")
+
+
+
+
+# Called when the player has been falling for STUCK_AIR_TIMEOUT seconds without
+# landing — means they are trapped above a tight cluster of collidable bushes whose
+# cone caps are blocking descent from every side. Destroy the nearest one so the
+# player always has a safe landing path.
+func _emergency_escape_bush() -> void:
+	if _landing_bush != null:
+		if is_instance_valid(_landing_bush):
+			_landing_bush.call("stop_reaction")
+		_landing_bush      = null
+		_landing_bush_push = Vector3.ZERO
+	var best_node : Node  = null
+	var best_sq   : float = STUCK_ESCAPE_RADIUS * STUCK_ESCAPE_RADIUS
+	for node : Node in get_tree().get_nodes_in_group("damageable_props"):
+		if not node.get("alive") or not node.get("has_collision"):
+			continue
+		var diff : Vector3 = node.global_position - global_position
+		diff.y = 0.0
+		var d_sq : float = diff.length_squared()
+		if d_sq < best_sq:
+			best_sq   = d_sq
+			best_node = node
+	if best_node != null:
+		best_node.call("take_hit")
 
 
 func _facing_to_world_dir() -> Vector3:

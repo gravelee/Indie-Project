@@ -3,14 +3,14 @@ extends DamageableProp
 
 # =============================================================================
 # TERRAIN PROP — grass and other walkable terrain overlays.
-# No static collision. Pass animation when player walks through. Cut state on hit.
+# No static collision. Wobble animation when player walks through. Cut state on hit.
 # Canvas padding: thin PNGs need bottom rows added so the sprite sits on the ground.
 # =============================================================================
 
 
 func _ready() -> void:
 	states         = ["idle_alive", "idle_dead"]
-	_reaction_anim = "pass"
+	_reaction_anim = "wobble"
 	_area_radius   = float(cols) * TILE_SIZE * 0.5 * PIXEL_SIZE
 	# Thin-prop canvas padding (matches old project formula):
 	#   blit_y = TILE_SIZE/4 − (cols−1)  →  8, 7, 6 for 1×1, 2×1, 3×1

@@ -4,10 +4,10 @@ class_name AssetLoader
 # ASSET LOADER — static caches for shared assets.
 # Prevents loading the same resource more than once per session.
 #
-# SpriteFrames cache: keyed by folder path (e.g. "res://assets/spritesheets/player/")
+# SpriteFrames cache: keyed by folder path (e.g. "res://assets/gfx/entities/player/ares/")
 #   — shared across all instances of the same entity type.
 #
-# Texture cache: keyed by full file path (e.g. "res://assets/sprites/tree/mystic/3x2_h1.png")
+# Texture cache: keyed by full file path (e.g. "res://assets/gfx/props/tree/mystic/3x2_h1.png")
 #   — shared across all scene objects using the same static image.
 #
 # Call AssetLoader.clear() on scene unload to release all cached resources.

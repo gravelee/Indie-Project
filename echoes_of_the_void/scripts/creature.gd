@@ -15,6 +15,9 @@ extends CharacterBody3D
 #   IDLE_ATTACK → ATTACK → IDLE_ATTACK           (melee strike)
 #   any combat → ATTACK_TO_NEUTRAL → RETURNING   (player fled / leash hit)
 #   RETURNING → IDLE_NEUTRAL                     (arrived home)
+#   IDLE_NEUTRAL [notice cooldown] + receive_hit → FLEE  (exhausted creature ran home; player attacked)
+#   FLEE → IDLE_NEUTRAL                          (escaped beyond CHASE_DIST; sets new home there)
+#   FLEE + receive_hit → NEUTRAL_TO_ATTACK       (player kept attacking while fleeing)
 #   any → DEATH → DEAD                           (HP = 0)
 #
 # Aggression types: "hostile" | "neutral" | "passive"
@@ -30,7 +33,7 @@ extends CharacterBody3D
 # =============================================================================
 
 const SPRITE_SIZE        : int    = 96
-const SPRITE_PATH        : String = "res://assets/spritesheets/creatures/"
+const SPRITE_PATH        : String = "res://assets/gfx/entities/creatures/"
 const ANIM_SPEED         : int    = 8
 const ATTACK_ANIM_SPEED  : int    = 16
 const GRAVITY            : float = -20.0
@@ -42,6 +45,7 @@ const NOTICE_DIR_DIST  : float = 10.0   # creature faces player, still won't wan
 const NOTICE_DIST      : float = 8.0    # triggers NOTICE state
 const CHASE_DIST       : float = 18.0   # leash — beyond this exits combat
 const ATTACK_DIST_DEFAULT : float = 1.6  # fallback when no abilities loaded yet
+const ATTACK_MAX_HEIGHT   : float = 1.5  # max vertical reach for attacks (prevents hitting across ledges)
 const HOME_MAX_DIST    : float = 25.0   # forced return: applies in ALL states
 const HOME_ARRIVE_DIST : float = 0.5    # snap-to-home arrival threshold
 
@@ -62,6 +66,11 @@ const RETURN_SPEED_MULT  : float = 2.0   # return is faster than chase
 const KNOCKBACK_STRENGTH : float = 8.0
 const KNOCKBACK_FRICTION : float = 25.0
 
+# ── Flee / notice cooldown ──────────────────────────────────────────────────
+
+const FLEE_NOTICE_COOLDOWN     : float = 3.0   # notice grace period after energy-exhaustion return
+const FLEE_DIR_CHANGE_INTERVAL : float = 0.8   # seconds between flee direction re-rolls
+
 # ── State ──────────────────────────────────────────────────────────────────
 
 enum State {
@@ -69,6 +78,7 @@ enum State {
 	NOTICE, NEUTRAL_TO_ATTACK,
 	IDLE_ATTACK, CHASE, ATTACK,
 	ATTACK_TO_NEUTRAL, RETURNING,
+	FLEE,           # energy-exhausted return → player attacked → run away randomly
 	DEATH, DEAD
 }
 
@@ -126,6 +136,13 @@ var _wander_elapsed  : float   = 0.0
 var _wander_duration : float   = 1.0
 var _wander_dir      : Vector3 = Vector3.ZERO
 var _force_wander    : bool    = false
+
+# ── Flee ───────────────────────────────────────────────────────────────────
+
+var _energy_exhausted : bool    = false   # creature left combat because energy < 1.0
+var _notice_cooldown  : float   = 0.0    # > 0 suppresses notice after exhaustion return
+var _flee_dir         : Vector3 = Vector3.ZERO
+var _flee_dir_timer   : float   = 0.0
 
 # ── Combat ─────────────────────────────────────────────────────────────────
 
@@ -278,7 +295,7 @@ func _update_ring_color() -> void:
 	match state:
 		State.IDLE_ATTACK, State.CHASE, State.ATTACK:
 			_target_ring_mat.albedo_color = Color(1.0, 0.15, 0.15, 0.80)   # red — in combat
-		State.NOTICE, State.NEUTRAL_TO_ATTACK, State.ATTACK_TO_NEUTRAL:
+		State.NOTICE, State.NEUTRAL_TO_ATTACK, State.ATTACK_TO_NEUTRAL, State.FLEE:
 			_target_ring_mat.albedo_color = Color(1.0, 0.50, 0.00, 0.80)   # orange — transitioning
 		_:
 			_target_ring_mat.albedo_color = Color(1.0, 0.85, 0.00, 0.75)   # gold — neutral
@@ -434,11 +451,17 @@ func _physics_process(delta: float) -> void:
 	_sync_anim()
 	move_and_slide()
 
-	# Wander collision recovery — pick new direction on wall/obstacle hit
+	# Collision recovery — pick new direction on wall/obstacle hit
 	if state == State.WANDER:
 		for i : int in get_slide_collision_count():
 			if get_slide_collision(i).get_normal().y < 0.5:
 				_force_wander = true
+				break
+	elif state == State.FLEE:
+		for i : int in get_slide_collision_count():
+			if get_slide_collision(i).get_normal().y < 0.5:
+				_flee_dir       = _pick_flee_dir()
+				_flee_dir_timer = FLEE_DIR_CHANGE_INTERVAL
 				break
 
 	# Notify player to stay in combat while this creature is actively hostile
@@ -458,8 +481,8 @@ func _physics_process(delta: float) -> void:
 	# only settles when the creature is actually calm (IDLE_NEUTRAL / WANDER).
 	if state == State.IDLE_NEUTRAL or state == State.WANDER:
 		stats.regen(delta)
-	elif state == State.RETURNING:
-		stats.regen(delta, false)
+	elif state == State.RETURNING or state == State.FLEE:
+		stats.regen(delta, false)   # partial regen — no focus while still on the move
 
 	_tick_effects(delta)
 
@@ -481,8 +504,11 @@ func _update_state(delta: float) -> void:
 		State.IDLE_NEUTRAL:
 			velocity.x = 0.0
 			velocity.z = 0.0
+			# Notice cooldown — creature returned exhausted; suppress all notice and wander.
+			if _notice_cooldown > 0.0:
+				_notice_cooldown -= delta
 			# Within notice-direction range: face the player, suppress wander
-			if _is_aggressive() and not player.get("is_dead") and dist_sq < NOTICE_DIR_DIST * NOTICE_DIR_DIST:
+			elif _is_aggressive() and not player.get("is_dead") and dist_sq < NOTICE_DIR_DIST * NOTICE_DIR_DIST:
 				_update_facing_toward(player.global_position)
 				# Close enough to actually notice — enter NOTICE state
 				if dist_sq < NOTICE_DIST * NOTICE_DIST:
@@ -504,8 +530,9 @@ func _update_state(delta: float) -> void:
 				_set_state(State.RETURNING)
 
 		State.WANDER:
-			# Notice check takes priority over wander
-			if _is_aggressive() and not player.get("is_dead") and dist_sq < NOTICE_DIST * NOTICE_DIST:
+			# Notice check takes priority over wander (suppressed during notice cooldown)
+			if _notice_cooldown <= 0.0 and _is_aggressive() and not player.get("is_dead") \
+					and dist_sq < NOTICE_DIST * NOTICE_DIST:
 				_set_state(State.NOTICE)
 				return
 			# Wandered too far from home
@@ -564,6 +591,7 @@ func _update_state(delta: float) -> void:
 				return
 			# Energy depleted — disengage and return home to recover
 			if stats.energy < 1.0:
+				_energy_exhausted = true
 				_set_state(State.ATTACK_TO_NEUTRAL)
 				return
 			# Player moved out of melee range
@@ -585,6 +613,7 @@ func _update_state(delta: float) -> void:
 				return
 			# Energy depleted — disengage and return home to recover
 			if stats.energy < 1.0:
+				_energy_exhausted = true
 				_set_state(State.ATTACK_TO_NEUTRAL)
 				return
 			# Player ran away
@@ -607,7 +636,8 @@ func _update_state(delta: float) -> void:
 					and sprite.frame >= _active_ability.hit_frame:
 				_hit_applied = true
 				var hit_range : float = _active_ability.range_ + ATTACK_HIT_GRACE
-				if dist_sq < hit_range * hit_range:
+				var height_diff : float = absf(player.global_position.y - global_position.y)
+				if dist_sq < hit_range * hit_range and height_diff <= ATTACK_MAX_HEIGHT:
 					var dir : Vector3 = player.global_position - global_position
 					dir.y = 0.0
 					if dir.length_squared() > 0.001:
@@ -645,10 +675,36 @@ func _update_state(delta: float) -> void:
 		State.RETURNING:
 			var dist_home_sq : float = _dist_sq_to_home()
 			if dist_home_sq <= HOME_ARRIVE_DIST * HOME_ARRIVE_DIST:
+				var was_exhausted : bool = _energy_exhausted
 				_snap_to_home()
+				if was_exhausted:
+					_notice_cooldown = FLEE_NOTICE_COOLDOWN
 				_set_state(State.IDLE_NEUTRAL)
 				return
 			_move_toward_target(home_position, stats.mspd * RETURN_SPEED_MULT)
+
+		State.FLEE:
+			# Escape from player. Direction biased away from player with ±90° random
+			# deviation re-rolled every FLEE_DIR_CHANGE_INTERVAL seconds or on wall hit.
+			# TODO (A*): replace with pathfinding — preferred direction is away from player,
+			# but if that direction is blocked (deadlock), find a bypass path around the
+			# player to reach open space rather than bouncing against the same wall.
+			_flee_dir_timer -= delta
+			if _flee_dir_timer <= 0.0 or _flee_dir == Vector3.ZERO:
+				_flee_dir_timer = FLEE_DIR_CHANGE_INTERVAL
+				_flee_dir       = _pick_flee_dir()
+			velocity.x = _flee_dir.x * stats.mspd * CHASE_SPEED_MULT
+			velocity.z = _flee_dir.z * stats.mspd * CHASE_SPEED_MULT
+			_move_dir  = _flee_dir
+			_update_facing()
+			# Escaped beyond chase range — settle here as new home, calm down
+			if dist_sq > CHASE_DIST * CHASE_DIST:
+				home_position  = global_position
+				has_home       = true
+				temp_home      = false
+				_home_max_dist = false
+				_notice_cooldown = 0.0
+				_set_state(State.IDLE_NEUTRAL)
 
 		State.DEATH:
 			velocity.x = 0.0
@@ -667,7 +723,7 @@ func _set_state(new_state: State) -> void:
 	state     = new_state
 	_anim_done = false
 	in_combat = (state == State.NEUTRAL_TO_ATTACK or state == State.IDLE_ATTACK
-			or state == State.CHASE or state == State.ATTACK)
+			or state == State.CHASE or state == State.ATTACK or state == State.FLEE)
 	is_dead   = (state == State.DEATH or state == State.DEAD)
 	_update_ring_color()
 
@@ -761,7 +817,7 @@ func _sync_anim() -> void:
 		State.NOTICE:                 base = "notice"
 		State.NEUTRAL_TO_ATTACK:      base = "neutral_to_attack"
 		State.IDLE_ATTACK:            base = "idle_attack"
-		State.CHASE, State.RETURNING: base = "run"
+		State.CHASE, State.RETURNING, State.FLEE: base = "run"
 		State.ATTACK_TO_NEUTRAL:      base = "attack_to_neutral"
 		State.ATTACK:                 base = _chosen_attack
 		State.DEATH:                  base = "death"
@@ -856,6 +912,25 @@ func receive_hit(damage: float, knockback_dir: Vector3) -> void:
 	_start_hit_flash()
 	_apply_knockback(knockback_dir)
 
+	# Notice cooldown (exhausted creature just returned home) — player attacked it.
+	# Cancel cooldown and flee instead of fighting back.
+	if _notice_cooldown > 0.0:
+		_notice_cooldown = 0.0
+		_flee_dir        = _pick_flee_dir()
+		_flee_dir_timer  = FLEE_DIR_CHANGE_INTERVAL
+		_set_state(State.FLEE)
+		if not stats.is_alive():
+			_pending_death = true
+		return
+
+	# Already fleeing — player kept attacking. Creature turns and fights back.
+	if state == State.FLEE:
+		_update_facing_toward(player.global_position)
+		_set_state(State.NEUTRAL_TO_ATTACK)
+		if not stats.is_alive():
+			_pending_death = true
+		return
+
 	# Neutral creatures enter combat when hit
 	if aggression_type == "neutral":
 		var non_combat : Array = [
@@ -941,12 +1016,37 @@ func _dist_sq_to_home() -> float:
 	return diff.length_squared()
 
 
+# Returns a flee direction: away from player with a random ±90° angular deviation
+# so the creature doesn't run in a perfectly straight line (avoids obvious pathing).
+# TODO (A*): When pathfinding is available, replace with an A* query for a path that
+# leads away from the player. If the direct away-direction is a deadlock (wall, cliff),
+# the creature should try to bypass the player on the side that has open path rather
+# than bouncing against the same obstacle repeatedly.
+func _pick_flee_dir() -> Vector3:
+	if player == null:
+		var angle : float = randf() * TAU
+		return Vector3(sin(angle), 0.0, cos(angle))
+	var away : Vector3 = global_position - player.global_position
+	away.y = 0.0
+	if away.length_squared() < 0.001:
+		var angle : float = randf() * TAU
+		return Vector3(sin(angle), 0.0, cos(angle))
+	away = away.normalized()
+	var dev : float = randf_range(-PI * 0.5, PI * 0.5)
+	var cd  : float = cos(dev)
+	var sd  : float = sin(dev)
+	return Vector3(away.x * cd - away.z * sd, 0.0, away.x * sd + away.z * cd).normalized()
+
+
 func _snap_to_home() -> void:
-	velocity       = Vector3.ZERO
-	_home_max_dist = false
-	_wander_timer  = 0.0
-	_wander_elapsed = 0.0
-	_force_wander  = false
+	velocity          = Vector3.ZERO
+	_home_max_dist    = false
+	_energy_exhausted = false
+	_flee_dir         = Vector3.ZERO
+	_flee_dir_timer   = 0.0
+	_wander_timer     = 0.0
+	_wander_elapsed   = 0.0
+	_force_wander     = false
 	if temp_home:
 		home_position = Vector3.ZERO
 		temp_home     = false

@@ -48,53 +48,54 @@ const PIXEL_SIZE : float = 1.0 / float(TILE_PIXELS)
 # ── Layer definitions ──────────────────────────────────────────────────────────
 # Each entry: [tileset_path, csv_path, tiles_per_row, use_blend]
 const TERRAIN_LAYERS : Array = [
-	["res://assets/tilemaps/terrain/dark_dirt.png",     "res://assets/maps/level_01/_dark_dirt.csv",    3,  false],
-	["res://assets/tilemaps/terrain/dark_grass.png",    "res://assets/maps/level_01/_dark_grass.csv",   5,  true],
-	["res://assets/tilemaps/sub_terrain/rock_path.png", "res://assets/maps/level_01/_rock_path.csv",    10, true],
-	["res://assets/tilemaps/sub_terrain/flora.png",     "res://assets/maps/level_01/_flora.csv",        5,  true],
+	["res://assets/gfx/tilemaps/terrain/dark_dirt.png",     "res://assets/maps/level_01/_dark_dirt.csv",    3,  false],
+	["res://assets/gfx/tilemaps/terrain/dark_grass.png",    "res://assets/maps/level_01/_dark_grass.csv",   5,  true],
+	["res://assets/gfx/tilemaps/sub_terrain/rock_path.png", "res://assets/maps/level_01/_rock_path.csv",    10, true],
+	["res://assets/gfx/tilemaps/sub_terrain/flora.png",     "res://assets/maps/level_01/_flora.csv",        5,  true],
 ]
 
 const ENTITIES_CSV : String = "res://assets/maps/level_01/_entities.csv"
 
 # ── Prop table ─────────────────────────────────────────────────────────────────
 # tile_id → [cols, rows, sprite_type, sprite_name, height_ext, variant_count, has_collision, destructible]
+# height_ext: -1 = no height variant system (bush/grass — no _h suffix); ≥0 = tree h-level (_h0, _h1, …)
 const PROP_TABLE : Dictionary = {
-	101: [1, 1, "bush", "classic", 0,  5, false, true ],   # 1×1 — no collision (too small)
-	102: [2, 2, "bush", "classic", 0,  5, true,  true ],
-	103: [3, 3, "bush", "classic", 0,  5, true,  true ],
-	104: [1, 1, "bush", "classic", 0, -1, false, true ],
-	105: [2, 2, "bush", "classic", 0, -1, true,  true ],
-	106: [3, 3, "bush", "classic", 0, -1, true,  true ],
-	107: [1, 1, "bush", "classic", 0, -2, false, true ],
-	108: [2, 2, "bush", "classic", 0, -2, true,  true ],
-	109: [3, 3, "bush", "classic", 0, -2, true,  true ],
-	110: [1, 1, "bush", "classic", 0, -3, false, true ],
-	111: [2, 2, "bush", "classic", 0, -3, true,  true ],
-	112: [3, 3, "bush", "classic", 0, -3, true,  true ],
-	113: [1, 1, "bush", "classic", 0, -4, false, true ],
-	114: [2, 2, "bush", "classic", 0, -4, true,  true ],
-	115: [3, 3, "bush", "classic", 0, -4, true,  true ],
-	116: [1, 1, "bush", "classic", 0, -5, false, true ],
-	117: [2, 2, "bush", "classic", 0, -5, true,  true ],
-	118: [3, 3, "bush", "classic", 0, -5, true,  true ],
-	119: [1, 1, "bush", "leafy",   0,  1, false, true ],
-	120: [2, 2, "bush", "leafy",   0,  1, true,  true ],
-	121: [3, 3, "bush", "leafy",   0,  1, true,  true ],
-	122: [1, 1, "bush", "spiky",   0,  1, false, true ],
-	123: [2, 2, "bush", "spiky",   0,  1, true,  true ],
-	124: [3, 3, "bush", "spiky",   0,  1, true,  true ],
-	125: [1, 1, "tree", "mystic",  0,  1, true,  false],  # 1x1
-	126: [1, 1, "tree", "mystic",  1,  1, true,  false],  # 1x1_h1 (new middle height)
-	127: [1, 1, "tree", "mystic",  2,  1, true,  false],  # 1x1_h2 (old h1, renamed)
-	128: [2, 2, "tree", "mystic",  0,  1, true,  false],  # 2x2
-	129: [2, 2, "tree", "mystic",  1,  1, true,  false],  # 2x2_h1
-	130: [2, 2, "tree", "mystic",  2,  1, true,  false],  # 2x2_h2
-	131: [3, 2, "tree", "mystic",  0,  1, true,  false],  # 3x2
-	132: [3, 2, "tree", "mystic",  1,  1, true,  false],  # 3x2_h1
-	133: [3, 2, "tree", "mystic",  2,  1, true,  false],  # 3x2_h2
-	134: [1, 1, "grass", "classic", 0, 1, false, true ],  # 1x1
-	135: [2, 1, "grass", "classic", 0, 1, false, true ],  # 2x1
-	136: [3, 1, "grass", "classic", 0, 1, false, true ],  # 3x1
+	101: [1, 1, "bush", "classic", -1,  5, false, true ],   # 1×1 — no collision (too small)
+	102: [2, 2, "bush", "classic", -1,  5, true,  true ],
+	103: [3, 3, "bush", "classic", -1,  5, true,  true ],
+	104: [1, 1, "bush", "classic", -1, -1, false, true ],
+	105: [2, 2, "bush", "classic", -1, -1, true,  true ],
+	106: [3, 3, "bush", "classic", -1, -1, true,  true ],
+	107: [1, 1, "bush", "classic", -1, -2, false, true ],
+	108: [2, 2, "bush", "classic", -1, -2, true,  true ],
+	109: [3, 3, "bush", "classic", -1, -2, true,  true ],
+	110: [1, 1, "bush", "classic", -1, -3, false, true ],
+	111: [2, 2, "bush", "classic", -1, -3, true,  true ],
+	112: [3, 3, "bush", "classic", -1, -3, true,  true ],
+	113: [1, 1, "bush", "classic", -1, -4, false, true ],
+	114: [2, 2, "bush", "classic", -1, -4, true,  true ],
+	115: [3, 3, "bush", "classic", -1, -4, true,  true ],
+	116: [1, 1, "bush", "classic", -1, -5, false, true ],
+	117: [2, 2, "bush", "classic", -1, -5, true,  true ],
+	118: [3, 3, "bush", "classic", -1, -5, true,  true ],
+	119: [1, 1, "bush", "leafy",   -1,  1, false, true ],
+	120: [2, 2, "bush", "leafy",   -1,  1, true,  true ],
+	121: [3, 3, "bush", "leafy",   -1,  1, true,  true ],
+	122: [1, 1, "bush", "spiky",   -1,  1, false, true ],
+	123: [2, 2, "bush", "spiky",   -1,  1, true,  true ],
+	124: [3, 3, "bush", "spiky",   -1,  1, true,  true ],
+	125: [1, 1, "tree", "mystic",   0,  1, true,  false],  # h0
+	126: [1, 1, "tree", "mystic",   1,  1, true,  false],  # h1
+	127: [1, 1, "tree", "mystic",   2,  1, true,  false],  # h2
+	128: [2, 2, "tree", "mystic",   0,  1, true,  false],  # h0
+	129: [2, 2, "tree", "mystic",   1,  1, true,  false],  # h1
+	130: [2, 2, "tree", "mystic",   2,  1, true,  false],  # h2
+	131: [3, 2, "tree", "mystic",   0,  1, true,  false],  # h0
+	132: [3, 2, "tree", "mystic",   1,  1, true,  false],  # h1
+	133: [3, 2, "tree", "mystic",   2,  1, true,  false],  # h2
+	134: [1, 1, "grass", "classic", -1, 1, false, true ],  # 1x1
+	135: [2, 2, "grass", "classic", -1, 1, false, true ],  # 2x2
+	136: [3, 3, "grass", "classic", -1, 1, false, true ],  # 3x3
 }
 
 # Creature defaults: tile_id → [type, stat_id, aggression, has_home, can_wander]
@@ -135,6 +136,7 @@ var _despawn_queue : Array = []   # Array of {is_prop: bool, key: Vector2i}
 
 var _scanned            : bool       = false
 var _tree_height_cache  : Dictionary = {}   # sprite path → float (world-unit height)
+var _tree_cap_shapes    : Dictionary = {}   # Vector2i → CollisionShape3D (cone cap on _tree_col_body)
 
 
 # =============================================================================
@@ -167,6 +169,7 @@ func init_streaming(parent: Node3D, camera_rig: Node3D, player_body: CharacterBo
 	# Each tree adds a CylinderShape3D here instead of owning a StaticBody3D.
 	_tree_col_body      = StaticBody3D.new()
 	_tree_col_body.name = "TreeCollision"
+	_tree_col_body.add_to_group("tree_collision_body")
 	parent.add_child(_tree_col_body)
 
 	var spawn_tile    : Vector2i  = _world_to_tile(get_player_spawn())
@@ -457,8 +460,8 @@ func _process_queues() -> void:
 # the exact cylinder they need. Results are cached to avoid redundant loads.
 func _measure_sprite_height(p_cols: int, p_rows: int, stype: String, sname: String, h_ext: int) -> float:
 	var size_str : String = "%dx%d" % [p_cols, p_rows]
-	var h_part   : String = ("_h%d" % h_ext) if h_ext > 0 else ""
-	var path     : String = "res://assets/sprites/%s/%s/idle_alive/%s%s.png" % [stype, sname, size_str, h_part]
+	var h_part   : String = ("_h%d" % h_ext) if h_ext >= 0 else ""
+	var path     : String = "res://assets/gfx/props/%s/%s/idle_alive/%s%s.png" % [stype, sname, size_str, h_part]
 	if _tree_height_cache.has(path):
 		return _tree_height_cache[path]
 	# Fallback if asset is missing: estimate from tile rows + height extension.
@@ -535,18 +538,31 @@ func _do_spawn_prop(key: Vector2i, pd: Array) -> void:
 
 	_loaded_props[key] = prop
 
-	# Trees: add a CylinderShape3D to the shared body instead of per-prop collision.
-	# One BVH entry covers all tree shapes — broadphase cost drops from 547 to 1.
+	# Trees: add a CylinderShape3D + cone cap to the shared body.
+	# One BVH entry covers all shapes — broadphase cost drops from 547 to 1.
+	# Full-height cylinder (normal.y=0 sides) blocks lateral approach from any height.
+	# Cone cap: apex at exactly coll_h (visual sprite top), base at coll_h - base_r * 1.3.
+	# Apex-at-top means no invisible geometry above the sprite — player can jump over trees.
+	# normal.y≈0.61 < 0.707 → player slides off with pure physics.
+	# Cone shape reuses ObstacleProp._get_cone_shape() to share hull computation.
 	if not destructible and has_coll and _tree_col_body != null:
+		var base_r  : float = 11.0 * float(mini(prop_cols, prop_rows)) * PIXEL_SIZE
 		var coll_h  : float = _measure_sprite_height(prop_cols, prop_rows, sprite_type, sprite_name, height_ext)
 		var col     := CollisionShape3D.new()
 		var shp     := CylinderShape3D.new()
-		shp.radius   = 11.0 * float(mini(prop_cols, prop_rows)) * PIXEL_SIZE
+		shp.radius   = base_r
 		shp.height   = coll_h
 		col.position = Vector3(world_x, coll_h * 0.5, world_z)
 		col.shape    = shp
 		_tree_col_body.add_child(col)
 		_tree_shapes[key] = col
+		var cap_col := CollisionShape3D.new()
+		cap_col.shape    = ObstacleProp._get_cone_shape(base_r, base_r * 1.3)
+		# Position the cone so its apex (top of shape at local y = base_r * 1.3) aligns
+		# with coll_h. Base ring sits at coll_h - base_r * 1.3, well above walk threshold.
+		cap_col.position = Vector3(world_x, coll_h - base_r * 1.3, world_z)
+		_tree_col_body.add_child(cap_col)
+		_tree_cap_shapes[key] = cap_col
 
 
 func _do_spawn_creature(key: Vector2i, cd: Array) -> void:
@@ -590,6 +606,9 @@ func _execute_despawn_prop(key: Vector2i, raw: Variant) -> void:
 		if _tree_shapes.has(key):
 			_tree_shapes[key].queue_free()
 			_tree_shapes.erase(key)
+		if _tree_cap_shapes.has(key):
+			_tree_cap_shapes[key].queue_free()
+			_tree_cap_shapes.erase(key)
 		if is_instance_valid(prop):
 			prop.queue_free()
 	)

@@ -6,7 +6,7 @@ extends StaticBody3D
 # Configured before add_child() so _ready() fires with all vars set.
 #
 # Asset path formula (matches old project):
-#   res://assets/sprites/{sprite_type}/{sprite_name}/{state}[/{variant}]/{cols}x{rows}[_h{ext}].png
+#   res://assets/gfx/props/{sprite_type}/{sprite_name}/{state}[/{variant}]/{cols}x{rows}[_h{ext}].png
 #
 # Canvas padding (trees only):
 #   set _idle_blit_y = rows * TILE_SIZE / 4
@@ -32,7 +32,7 @@ var sprite_type   : String = ""
 var sprite_name   : String = ""
 var states        : Array  = ["idle_alive"]
 var has_collision : bool   = false
-var height_ext    : int    = 0
+var height_ext    : int    = -1   # -1 = no height variant system (bush, grass); ≥0 = tree h-level
 var variant_count : int    = 1   # 1 = no variants; >1 = random pick; <0 = fixed (-1 = variant 1, etc.)
 
 # Canvas padding — set by map_loader for trees; override in TerrainProp._ready() for grass.
@@ -40,8 +40,9 @@ var _idle_blit_y     : int = -1   # -1 = raw PNG, ≥0 = pad canvas by _canvas_a
 var _canvas_add_rows : int = TILE_SIZE / 2
 
 # ── Runtime ────────────────────────────────────────────────────────────────────
-var sprite       : AnimatedSprite3D
-var _variant_idx : int = 0
+var sprite        : AnimatedSprite3D
+var _variant_idx  : int   = 0
+var _coll_height  : float = 0.0   # world-unit cylinder height; set in _ready() when has_collision
 
 
 # =============================================================================
@@ -61,17 +62,14 @@ func _ready() -> void:
 		var base_r : float = 11.0 * float(mini(cols, rows)) * PIXEL_SIZE
 		shp.radius = base_r
 
-		# Trees: extend collision to full visual height so the player can't enter the
-		# canopy. Minimum 2.0 ensures even a 1×1 tree blocks the 1.5-unit jump peak.
-		# Note: map_loader routes non-destructible tree collision to _tree_col_body
-		# (with pixel-measured height), so this branch is for any tree spawned
-		# standalone. Bushes: 1-unit cylinder is sufficient.
-		var coll_h : float = 1.0
-		if sprite_type == "tree":
-			coll_h = maxf(float(rows) + float(height_ext), 2.0)
-
-		shp.height     = coll_h
-		col.position.y = coll_h * 0.5
+		# Measure actual visual height from sprite pixels so the cylinder extends to
+		# the visual top of the prop. For bushes (2x2 ≈ 1.81u, 3x3 ≈ 2.7u) this
+		# keeps the top above the player's ~1.5u jump peak — no lateral access.
+		# For trees spawned standalone, same logic; trees via map_loader use
+		# _tree_col_body with an identical measurement.
+		_coll_height   = _measure_content_height()
+		shp.height     = _coll_height
+		col.position.y = _coll_height * 0.5
 		col.shape      = shp
 		add_child(col)
 
@@ -129,9 +127,9 @@ func _load_animations() -> void:
 
 func _load_prop_tex(state: String) -> Texture2D:
 	var size_str : String = "%dx%d" % [cols, rows]
-	var h_part   : String = ("_h%d" % height_ext) if height_ext > 0 else ""
+	var h_part   : String = ("_h%d" % height_ext) if height_ext >= 0 else ""
 	var v_part   : String = ("/%d" % (_variant_idx + 1)) if variant_count > 1 else ""
-	var path     : String = "res://assets/sprites/%s/%s/%s%s/%s%s.png" % [
+	var path     : String = "res://assets/gfx/props/%s/%s/%s%s/%s%s.png" % [
 		sprite_type, sprite_name, state, v_part, size_str, h_part]
 	if not ResourceLoader.exists(path):
 		return null
@@ -156,10 +154,33 @@ func _load_prop_tex(state: String) -> Texture2D:
 
 func _frames_key() -> String:
 	var size_str : String = "%dx%d" % [cols, rows]
-	var h_part   : String = ("_h%d" % height_ext) if height_ext > 0 else ""
+	var h_part   : String = ("_h%d" % height_ext) if height_ext >= 0 else ""
 	var v_part   : String = ("/%d" % (_variant_idx + 1)) if variant_count > 1 else ""
-	return "res://assets/sprites/%s/%s/%s%s/%s%s.png" % [
+	return "res://assets/gfx/props/%s/%s/%s%s/%s%s.png" % [
 		sprite_type, sprite_name, states[0], v_part, size_str, h_part]
+
+
+func _measure_content_height() -> float:
+	var size_str : String = "%dx%d" % [cols, rows]
+	var h_part   : String = ("_h%d" % height_ext) if height_ext >= 0 else ""
+	var v_part   : String = ("/%d" % (_variant_idx + 1)) if variant_count > 1 else ""
+	var path     : String = "res://assets/gfx/props/%s/%s/%s%s/%s%s.png" % [
+		sprite_type, sprite_name, states[0], v_part, size_str, h_part]
+	var fallback : float = maxf(float(rows) + float(maxi(height_ext, 0)), 1.0)
+	if not ResourceLoader.exists(path):
+		return fallback
+	var tex : Texture2D = load(path) as Texture2D
+	if tex == null:
+		return fallback
+	var img  : Image  = tex.get_image()
+	img.convert(Image.FORMAT_RGBA8)
+	var used : Rect2i = img.get_used_rect()
+	if used.size.y <= 0:
+		return fallback
+	# used.size.y = pixel span from topmost to bottommost non-transparent row.
+	# Sprite is drawn so its bottom content row aligns with ground → this equals
+	# the prop's world height. Minimum 1.0 to guarantee a solid base cylinder.
+	return maxf(float(used.size.y) * PIXEL_SIZE, 1.0)
 
 
 func _apply_sprite_position(tex: Texture2D) -> void:

@@ -23,7 +23,7 @@ signal died
 const ANIM_DEATH : String = "death"
 
 var alive          : bool   = true
-var _reaction_anim : String = ""   # "bump" for obstacles, "pass" for terrain
+var _reaction_anim : String = ""   # "wobble" for both obstacles and terrain
 var _area_radius   : float  = 0.0  # set in subclass _ready() before super._ready()
 var _react_shape   : CollisionShape3D = null   # detection shape; disabled on death
 var _detect_zone   : Area3D = null             # DetectZone Area3D; monitorable=false on death
@@ -51,12 +51,16 @@ func _ready() -> void:
 	detect_area.monitorable     = true
 	detect_area.monitoring      = false
 
+	# Sphere (not cylinder) so objects falling from above (e.g. pushed block off a
+	# cliff) also trigger detection, not just lateral approach.
+	# Radius = 80% of area_radius — keeps reaction zone slightly tighter than before.
+	# Center at y = detect_r so the sphere bottom sits on the ground.
 	_react_shape = CollisionShape3D.new()
-	var shp := CylinderShape3D.new()
-	shp.radius          = _area_radius
-	shp.height          = 1.5
-	_react_shape.position.y = 0.75
-	_react_shape.shape  = shp
+	var shp      := SphereShape3D.new()
+	var detect_r : float = _area_radius * 0.8
+	shp.radius              = detect_r
+	_react_shape.position.y = detect_r
+	_react_shape.shape      = shp
 	detect_area.add_child(_react_shape)
 	add_child(detect_area)
 	_detect_zone = detect_area
@@ -122,9 +126,9 @@ func _load_animations() -> void:
 
 func _load_anim_sheet(anim: String) -> Texture2D:
 	var size_str : String = "%dx%d" % [cols, rows]
-	var h_part   : String = ("_h%d" % height_ext) if height_ext > 0 else ""
+	var h_part   : String = ("_h%d" % height_ext) if height_ext >= 0 else ""
 	var v_part   : String = ("/%d" % (_variant_idx + 1)) if variant_count > 1 else ""
-	var path     : String = "res://assets/spritesheets/props/%s/%s/%s%s/%s%s.png" % [
+	var path     : String = "res://assets/gfx/props/%s/%s/%s%s/%s%s.png" % [
 		sprite_type, sprite_name, anim, v_part, size_str, h_part]
 	if not ResourceLoader.exists(path):
 		return null
