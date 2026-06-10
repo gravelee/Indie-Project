@@ -88,23 +88,85 @@ Zone 2 implementation       → after Zone 2 story
   rat neutral+no-home+no-wander
 - Test geometry in main.gd: ledge, ramp, cliff, mountain, small walls, pushable block
 
-### Pending (no priority order yet)
+### Incremental Rebuild Plan (active approach)
+main.gd is fully commented out. Re-introduce systems one stage at a time.
+The developer reads each file before it is wired back in.
+
+```
+Stage 1  — Bare scene          : flat StaticBody3D + camera fixed in place        [ ]
+Stage 2  — Camera rig          : camera_rig.gd — orbit, zoom, pitch               [ ]
+Stage 3  — Player movement     : player.gd (movement only, cube placeholder)      [ ]
+Stage 4  — Player sprite       : player.gd sprite + billboard + directional anims [ ]
+Stage 5  — Stats skeleton      : stats.gd (HP only) + ability.gd/abilities.gd     [ ]
+Stage 6  — Player combat       : attack state, hitbox, dummy target               [ ]
+Stage 7  — Terrain height      : terrain_generator.gd, HeightMapShape3D           [ ]
+Stage 8  — One creature no AI  : creature.gd (spawned hardcoded, takes damage)    [ ]
+Stage 9  — Creature AI         : wander → notice → chase → attack, one at a time  [ ]
+Stage 10 — Pathfinding         : port pathfinder.gd XZ-plane A* into creature     [ ]
+Stage 11 — Status effects      : status_effect.gd, statuses.gd                    [ ]
+Stage 12 — HUD                 : hud.gd player bars, creature overhead bars       [ ]
+Stage 13 — Combat feedback     : floating numbers (damage/crit/dodge/exp/dot)     [ ]
+Stage 14 — Map loading         : map_loader.gd — terrain CSV, prop/creature spawn [ ]
+```
+
+### What Was NOT Ported from the 2D Project (found via code review)
+These exist in `godot_project/` and need to be brought into 3D — added per stage above.
+
+**combat_feedback.gd** — COMPLETELY MISSING in 3D.
+  Floating damage numbers: physical (white), magic (blue), crit (red), dodge/block/resist (grey),
+  DoT (yellow), EXP (purple), effect names (gold). Reads `ability.last_hit_verdict[]` each frame.
+  Drawn on a CanvasLayer in screen-space. World-to-screen via player-relative delta + rotation.
+  → Add at Stage 13.
+
+**Floating EXP on creature death** — MISSING.
+  Old `combat_feedback._read_creatures()` detects `State.DEATH` and spawns "EXP +N" text.
+  `ability.use()` calls `user_stats.gain_exp(t.stats.exp_reward())` when target dies.
+  Neither the feedback nor exp award is wired in the 3D version.
+  → Add at Stage 13 (feedback) and Stage 6 (exp award in ability.use).
+
+**Pathfinder stuck detection + teleport recovery** — PARTIALLY MISSING.
+  Old `creature._check_wait()` / `_start_teleport()`: if stuck for 27.5s or takes 30% hp
+  damage while waiting, gives up and teleports home (fade out → snap → fade in).
+  Also `_check_collisions()` temp-blocks a waypoint tile when another creature blocks the path.
+  The 3D creature.gd has basic stuck detection but the give-up/teleport chain needs review.
+  → Verify/complete at Stage 10 (pathfinding).
+
+**Pathfinder dynamic blockers** — MISSING.
+  Old `map._update_dynamic_blockers()`: every second marks each creature's center tile as solid
+  in the A* grid so creatures path around each other. `pathfinder.set_dynamic_blockers(tiles)`.
+  The 3D NavigationAgent3D handles some of this but not creature-creature avoidance explicitly.
+  → Add at Stage 10 (pathfinding).
+
+**stats.gd rank system** — NOT YET NEEDED but note for future.
+  `rank_grade()` / `rank_title()` — lifetime EXP → letter grade (E → SSS) and title.
+  `upgrade_stat()` — spends EXP to raise one base stat +1, two-in-a-row cooldown guard.
+  → Add when progression/leveling system is implemented.
+
+**Weapon sprite (player)** — NEEDS REVIEW in 3D player.gd.
+  Old player.gd has a second `AnimatedSprite2D weapon_sprite` that plays during FORWARD_SLASH.
+  Sword flips based on facing direction. Check if 3D player has equivalent.
+  → Verify at Stage 4.
+
+**ability.use() rage gain on hit/crit** — NEEDS VERIFY.
+  Old: attacker gains rage on every crit (+2) or normal hit (+1). Target gains rage on being hit (+1).
+  Check 3D ability.gd for this.
+  → Verify at Stage 6.
+
+**Ability range_ field used in check_resources** — NEEDS VERIFY.
+  Old creature uses `ability.check_resources(stats, dist)` — distance is checked against
+  `ability.range_`. Verify 3D version does the same.
+  → Verify at Stage 9.
+
+### Pending (no priority order — resume after staged rebuild)
 - ~~**Rename move → wander**~~ ✓ DONE
-- ~~**Player attack hitting props**~~ ✓ DONE — `_do_attack()` hits damageable_props group; one-hit kill via `take_hit()`.
-- ~~**export_sprite.py auto-size generation**~~ ✓ DONE — SCALABLE_PROPS config, only 1x1 source needed, all sizes auto-generated via rotsprite.
-- ~~**Startup music**~~ ✓ DONE — `caketown_loop.ogg` playing with crossfade loop and fade-in baked in.
-- **LibreSprite .ase project files** (deferred): Currently working with individual frame pngs only.
-  Future improvement: save one `.ase` file per animation alongside the frames folder
-  (e.g. `wander_front.ase` next to `wander/front/`). Lets you reopen work with layers,
-  palette, and history intact. Not required for export pipeline — adopt whenever ready.
-- Rat/snake combat animations — notice, stances, attacks, death. See dungeon_design.md Art TODO
-  for full animation standard and current status table.
-- Prop calibration — props don't fit 3D world well, need per-prop height/offset tuning
-- CSV map loading — entities and props spawned from CSV, not hardcoded in main.gd `_ready()`
-- ~~**Terrain autogenerator**~~ ✓ DONE — `terrain_generator.gd` reads dark_grass autotile CSV,
-  maps tile IDs → [NW,NE,SW,SE] corner heights via tile_values.json, builds heightmap directly.
-  Outdoor height 0.75u (walkable). Dungeon height passed as 4th arg to generate().
-- Tree/prop idle animations — alive props should animate (sway, ambient movement)
+- ~~**Player attack hitting props**~~ ✓ DONE
+- ~~**export_sprite.py auto-size generation**~~ ✓ DONE
+- ~~**Startup music**~~ ✓ DONE
+- ~~**Terrain autogenerator**~~ ✓ DONE
+- **LibreSprite .ase project files** (deferred)
+- Rat/snake combat animations — notice, stances, attacks, death
+- Prop calibration — per-prop height/offset tuning
+- Tree/prop idle animations
 
 ### Key Decisions Locked Since Last Code Session (apply to rewrite from day one)
 - Blocking costs NO energy while held — only active shield abilities (e.g. Shield Bash) cost energy
