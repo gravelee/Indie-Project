@@ -89,7 +89,8 @@ const ONE_SHOT_STATES : Dictionary = {
 
 # ── Public refs ────────────────────────────────────────────────────────────
 
-var sprite      : AnimatedSprite3D
+var sprite             : AnimatedSprite3D
+var _sprite_base_offset : float = 0.0   # offset.y at Y=0; terrain compensation added per frame
 var stats       : Stats
 var camera_rig  : Node3D
 var player      : CharacterBody3D
@@ -397,7 +398,8 @@ func _compute_sprite_offset() -> void:
 	img.convert(Image.FORMAT_RGBA8)
 	var first_frame  := img.get_region(Rect2i(0, 0, SPRITE_SIZE, SPRITE_SIZE))
 	var empty_bottom : int = SPRITE_SIZE - first_frame.get_used_rect().end.y
-	sprite.offset.y = float(SPRITE_SIZE) / 2.0 - float(empty_bottom)
+	sprite.offset.y    = float(SPRITE_SIZE) / 2.0 - float(empty_bottom)
+	_sprite_base_offset = sprite.offset.y
 
 
 # =============================================================================
@@ -450,6 +452,11 @@ func _physics_process(delta: float) -> void:
 
 	_sync_anim()
 	move_and_slide()
+
+	# Z-sort compensation — same as player: anchor sprite sort key at Y=0,
+	# shift offset.y to keep visual at correct world height.
+	sprite.position.y = -global_position.y
+	sprite.offset.y   = _sprite_base_offset + global_position.y / sprite.pixel_size
 
 	# Collision recovery — pick new direction on wall/obstacle hit
 	if state == State.WANDER:

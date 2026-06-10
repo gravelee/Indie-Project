@@ -54,6 +54,7 @@ func _ready() -> void:
 	
 	_load_or_create_settings()
 	_build_materials()
+	_build_terrain_light()
 
 	# Load terrain and props from map CSV files
 	map_loader = MapLoader.new()
@@ -86,6 +87,7 @@ func _ready() -> void:
 # ---------------------------------------------------------------------------
 
 func _load_or_create_settings() -> void:
+	
 	if ResourceLoader.exists(SETTINGS_SAVE_PATH):
 		cam = ResourceLoader.load(SETTINGS_SAVE_PATH) as CameraSettings
 	if cam == null:
@@ -162,6 +164,29 @@ func _process(_delta: float) -> void:
 	map_loader.update(player_body.global_position)
 
 
+
+
+# ---------------------------------------------------------------------------
+# TERRAIN LIGHTING
+# Sprites use UNSHADED — light has zero effect on them.
+# Only the terrain mesh (SHADING_MODE_PER_VERTEX) responds, making slopes visible.
+# ---------------------------------------------------------------------------
+
+func _build_terrain_light() -> void:
+	var env_node := WorldEnvironment.new()
+	var env      := Environment.new()
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color  = Color(1.0, 1.0, 1.0)
+	env.ambient_light_energy = 0.5
+	env_node.environment     = env
+	add_child(env_node)
+
+	var light := DirectionalLight3D.new()
+	light.name             = "SunLight"
+	light.rotation_degrees = Vector3(-50.0, 30.0, 0.0)
+	light.light_energy     = 0.7
+	light.shadow_enabled   = false
+	add_child(light)
 
 
 # ---------------------------------------------------------------------------

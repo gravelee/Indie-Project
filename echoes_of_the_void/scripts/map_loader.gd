@@ -156,9 +156,10 @@ var _spawn_queue   : Array = []   # Array of {is_prop: bool, key: Vector2i}
 # Deferred despawn queue — same throttle, prevents hundreds of Tween creations in one frame
 var _despawn_queue : Array = []   # Array of {is_prop: bool, key: Vector2i}
 
-var _scanned            : bool       = false
-var _tree_height_cache  : Dictionary = {}   # sprite path → float (world-unit height)
-var _tree_cap_shapes    : Dictionary = {}   # Vector2i → CollisionShape3D (cone cap on _tree_col_body)
+var _scanned            : bool             = false
+var _tree_height_cache  : Dictionary       = {}   # sprite path → float (world-unit height)
+var _tree_cap_shapes    : Dictionary       = {}   # Vector2i → CollisionShape3D (cone cap on _tree_col_body)
+var _terrain_gen        : TerrainGenerator = null
 
 
 # =============================================================================
@@ -167,17 +168,18 @@ var _tree_cap_shapes    : Dictionary = {}   # Vector2i → CollisionShape3D (con
 
 func load_terrain(parent: Node3D) -> void:
 	_ensure_scanned()
+	_terrain_gen = TerrainGenerator.new()
+	_terrain_gen.generate(MAP_COLS, MAP_ROWS, TERRAIN_LAYERS)
 	_build_composite_terrain(parent)
 	_build_ground_collision(parent)
 
 
 func get_player_spawn() -> Vector3:
 	_ensure_scanned()
-	return Vector3(
-		(float(_player_spawn_col) + 0.5) * TILE_WORLD,
-		0.0,
-		(float(_player_spawn_row) + 0.5) * TILE_WORLD
-	)
+	var wx : float = (float(_player_spawn_col) + 0.5) * TILE_WORLD
+	var wz : float = (float(_player_spawn_row) + 0.5) * TILE_WORLD
+	var wy : float = _terrain_gen.get_height(wx, wz) if _terrain_gen != null else 0.0
+	return Vector3(wx, wy + 2.0, wz)
 
 
 # Call after building player + camera_rig. Replaces old spawn_entities().
@@ -270,23 +272,60 @@ func _build_composite_terrain(parent: Node3D) -> void:
 
 	var tex : ImageTexture = ImageTexture.create_from_image(composite)
 	var mat := StandardMaterial3D.new()
-	mat.albedo_texture    = tex
-	mat.texture_filter    = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	mat.flags_transparent = false
-	mat.shading_mode      = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_texture              = tex
+	mat.albedo_color                = Color.WHITE
+	mat.texture_filter              = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	mat.transparency                = BaseMaterial3D.TRANSPARENCY_DISABLED
+	mat.shading_mode                = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.vertex_color_use_as_albedo  = true
 
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(float(MAP_COLS) * TILE_WORLD, float(MAP_ROWS) * TILE_WORLD)
+	# Build ArrayMesh via SurfaceTool — one quad (two triangles) per tile cell.
+	# Vertices are in world coordinates; vis.position stays at ZERO.
+	# Vertex color encodes height: dirt (Y=0) → 0.55 brightness, grass peak → 1.0.
+	# This makes valleys visibly darker than hilltops regardless of lighting.
+	var vh     : PackedFloat32Array = _terrain_gen.get_vert_heights()
+	var stride : int                = MAP_COLS + 1
+	var max_h  : float              = TerrainGenerator.GRASS_HEIGHT
 
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for j : int in range(MAP_ROWS):
+		for i : int in range(MAP_COLS):
+			var vi_tl : int = i       + j       * stride
+			var vi_tr : int = (i + 1) + j       * stride
+			var vi_bl : int = i       + (j + 1) * stride
+			var vi_br : int = (i + 1) + (j + 1) * stride
+			var s_tl  : float = 0.55 + 0.45 * clampf(vh[vi_tl] / max_h, 0.0, 1.0)
+			var s_tr  : float = 0.55 + 0.45 * clampf(vh[vi_tr] / max_h, 0.0, 1.0)
+			var s_bl  : float = 0.55 + 0.45 * clampf(vh[vi_bl] / max_h, 0.0, 1.0)
+			var s_br  : float = 0.55 + 0.45 * clampf(vh[vi_br] / max_h, 0.0, 1.0)
+			# Triangle 1: tl → tr → bl
+			st.set_color(Color(s_tl, s_tl, s_tl, 1.0))
+			st.set_uv(Vector2(float(i)     / float(MAP_COLS), float(j)     / float(MAP_ROWS)))
+			st.add_vertex(Vector3(float(i),     vh[vi_tl], float(j)))
+			st.set_color(Color(s_tr, s_tr, s_tr, 1.0))
+			st.set_uv(Vector2(float(i + 1) / float(MAP_COLS), float(j)     / float(MAP_ROWS)))
+			st.add_vertex(Vector3(float(i + 1), vh[vi_tr], float(j)))
+			st.set_color(Color(s_bl, s_bl, s_bl, 1.0))
+			st.set_uv(Vector2(float(i)     / float(MAP_COLS), float(j + 1) / float(MAP_ROWS)))
+			st.add_vertex(Vector3(float(i),     vh[vi_bl], float(j + 1)))
+			# Triangle 2: tr → br → bl
+			st.set_color(Color(s_tr, s_tr, s_tr, 1.0))
+			st.set_uv(Vector2(float(i + 1) / float(MAP_COLS), float(j)     / float(MAP_ROWS)))
+			st.add_vertex(Vector3(float(i + 1), vh[vi_tr], float(j)))
+			st.set_color(Color(s_br, s_br, s_br, 1.0))
+			st.set_uv(Vector2(float(i + 1) / float(MAP_COLS), float(j + 1) / float(MAP_ROWS)))
+			st.add_vertex(Vector3(float(i + 1), vh[vi_br], float(j + 1)))
+			st.set_color(Color(s_bl, s_bl, s_bl, 1.0))
+			st.set_uv(Vector2(float(i)     / float(MAP_COLS), float(j + 1) / float(MAP_ROWS)))
+			st.add_vertex(Vector3(float(i),     vh[vi_bl], float(j + 1)))
+
+	st.generate_normals()
 	var vis := MeshInstance3D.new()
 	vis.name              = "Terrain"
-	vis.mesh              = plane
+	vis.mesh              = st.commit()
 	vis.material_override = mat
-	vis.position          = Vector3(
-		float(MAP_COLS) * 0.5 * TILE_WORLD,
-		0.0,
-		float(MAP_ROWS) * 0.5 * TILE_WORLD
-	)
+	vis.position          = Vector3.ZERO
 	parent.add_child(vis)
 
 
@@ -345,8 +384,16 @@ func _blit_layer(composite: Image, tileset_path: String, csv_path: String,
 func _build_ground_collision(parent: Node3D) -> void:
 	var body := StaticBody3D.new()
 	body.name = "Ground"
+	# HeightMapShape3D is always centered at its CollisionShape3D origin.
+	# Position at map center so local (-50, h, -50)→(+50, h, +50) maps to
+	# world (0, h, 0)→(100, h, 100).
+	body.position = Vector3(float(MAP_COLS) * 0.5, 0.0, float(MAP_ROWS) * 0.5)
+	var shape := HeightMapShape3D.new()
+	shape.map_width = MAP_COLS + 1
+	shape.map_depth = MAP_ROWS + 1
+	shape.map_data  = _terrain_gen.get_vert_heights()
 	var col := CollisionShape3D.new()
-	col.shape = WorldBoundaryShape3D.new()
+	col.shape = shape
 	body.add_child(col)
 	parent.add_child(body)
 
@@ -541,9 +588,10 @@ func _do_spawn_prop(key: Vector2i, pd: Array) -> void:
 	# The prop StaticBody3D without shapes has no BVH entry — negligible overhead.
 	prop.has_collision = has_coll and destructible
 
-	var world_x : float = (float(map_col) + float(prop_cols) * 0.5) * TILE_WORLD
-	var world_z : float = (float(map_row) + float(prop_rows) * 0.5) * TILE_WORLD
-	prop.position = Vector3(world_x, 0.0, world_z)
+	var world_x   : float = (float(map_col) + float(prop_cols) * 0.5) * TILE_WORLD
+	var world_z   : float = (float(map_row) + float(prop_rows) * 0.5) * TILE_WORLD
+	var terrain_y : float = _terrain_gen.get_height(world_x, world_z)
+	prop.position = Vector3(world_x, terrain_y, world_z)
 
 	# Canvas padding — must be set before add_child() triggers _ready()
 	if sprite_type == "tree":
@@ -551,6 +599,14 @@ func _do_spawn_prop(key: Vector2i, pd: Array) -> void:
 		prop._canvas_add_rows = prop_rows * WorldProp.TILE_SIZE / 2
 
 	_parent.add_child(prop)
+
+	# Z-sort: anchor sprite at world Y=0 so elevated props sort like ground-level ones.
+	# The player uses the same trick (player.gd line ~413). Without this, props on grass
+	# (terrain_y≈1.5) are closer to the overhead camera than the player on dirt (Y=0)
+	# and render in front. offset.y compensates so the visual stays at terrain height.
+	if prop.sprite != null:
+		prop.sprite.position.y = -terrain_y
+		prop.sprite.offset.y  += terrain_y / PIXEL_SIZE
 
 	# Fade in (skipped during initial load so first frame shows world fully)
 	if not _initial_load and prop.sprite != null:
@@ -574,7 +630,7 @@ func _do_spawn_prop(key: Vector2i, pd: Array) -> void:
 		var shp     := CylinderShape3D.new()
 		shp.radius   = base_r
 		shp.height   = coll_h
-		col.position = Vector3(world_x, coll_h * 0.5, world_z)
+		col.position = Vector3(world_x, terrain_y + coll_h * 0.5, world_z)
 		col.shape    = shp
 		_tree_col_body.add_child(col)
 		_tree_shapes[key] = col
@@ -582,7 +638,7 @@ func _do_spawn_prop(key: Vector2i, pd: Array) -> void:
 		cap_col.shape    = ObstacleProp._get_cone_shape(base_r, base_r * 1.3)
 		# Position the cone so its apex (top of shape at local y = base_r * 1.3) aligns
 		# with coll_h. Base ring sits at coll_h - base_r * 1.3, well above walk threshold.
-		cap_col.position = Vector3(world_x, coll_h - base_r * 1.3, world_z)
+		cap_col.position = Vector3(world_x, terrain_y + coll_h - base_r * 1.3, world_z)
 		_tree_col_body.add_child(cap_col)
 		_tree_cap_shapes[key] = cap_col
 
@@ -591,15 +647,13 @@ func _do_spawn_creature(key: Vector2i, cd: Array) -> void:
 	if _loaded_creatures.has(key):
 		return
 
-	var map_col : int = key.x
-	var map_row : int = key.y
+	var map_col : int   = key.x
+	var map_row : int   = key.y
+	var cx      : float = (float(map_col) + 0.5) * TILE_WORLD
+	var cz      : float = (float(map_row) + 0.5) * TILE_WORLD
 	var body := CharacterBody3D.new()
 	body.name     = cd[0].capitalize()
-	body.position = Vector3(
-		(float(map_col) + 0.5) * TILE_WORLD,
-		0.0,
-		(float(map_row) + 0.5) * TILE_WORLD
-	)
+	body.position = Vector3(cx, _terrain_gen.get_height(cx, cz), cz)
 	body.set_script(load("res://scripts/creature.gd"))
 	_parent.add_child(body)
 	body.call("init", cd[0], cd[1], _camera_rig, _player_body, cd[2], cd[3], cd[4])

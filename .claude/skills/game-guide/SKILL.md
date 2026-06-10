@@ -54,30 +54,33 @@ Zone 2 implementation       → after Zone 2 story
 ```
 
 ### Current Status *(update this whenever a milestone is hit)*
-- **Last completed**: Three fixes + music this session:
-  1. **Startup music** — `caketown_loop.ogg` wired into `main.gd _start_music()`.
-     WAV processed (trim silence, bake 2.5s fade-in, bake 3.5s crossfade loop), converted to OGG
-     via ffmpeg native vorbis (~137 kbps, 2.7 MB). `AudioStreamOggVorbis`, `loop=true`,
-     `loop_offset=2.5` to skip intro fade on repeat. WAV deleted.
-  2. **Despawn use-after-free crash** — `map_loader.gd _start_despawn_prop/creature()`: assigning
-     a freed node to a typed `Node` variable crashes before `is_instance_valid()` runs. Fixed by
-     using `Variant` for the dict get, validating, then casting. Both prop and creature despawn patched.
-  3. **Z-sort early crossover fix** — player appeared in front of small bushes too early due to
-     camera pitch causing sprite.position.y to contribute to sort depth. Taller player sprite
-     (y_center≈1.5) sorted closer to camera than short bush (y_center≈0.5) at same Z.
-     Fix: `sprite.offset.y` for visual positioning (keeps node at y=0), +
-     `sprite.sorting_use_aabb_center = false` (sort by node origin, not AABB center) on all
-     sprites — player.gd, creature.gd, world_prop.gd. Sort is now purely Z-based.
-  4. *(Previous session)* Player attack hits props, export_sprite auto-size, prop freeze bug fixed.
-- **Active work**: Phase 1 Core Feel — evaluating next priority.
-- **Next session target**: TBD — subclass ability design or next Phase 1 item.
+- **Last completed**: Terrain height system — outdoor terrain now shows visible 3D hills and valleys
+  that the player can walk across naturally.
+  1. **Terrain height generator** (`terrain_generator.gd`) — complete rewrite. Reads the dark_grass
+     autotile CSV and maps each tile ID (0–49) to its [NW, NE, SW, SE] corner heights using
+     `tile_values.json` (1=1.0, 0=0.0, -1=0.5). Corner values are pushed directly to the 4
+     surrounding mesh vertices and averaged. No Gaussian blur needed — the autotile system already
+     encodes smooth slopes at every edge.
+  2. **Height scale** — `GRASS_HEIGHT = 0.75` for outdoor zones. Steepest hard-edge slope ≈ 37°,
+     under Godot's 45° `floor_max_angle`. Player walks naturally from dirt to grass.
+     Dungeon use: pass 4.0–6.0 as 4th arg to `generate()` for wall-height cliffs.
+  3. **Terrain lighting** (`main.gd`) — `WorldEnvironment` + `DirectionalLight3D` added so
+     slope shading is visible. Terrain mesh uses `SHADING_MODE_PER_VERTEX`. Sprites remain UNSHADED.
+  4. **Z-sort on elevated terrain** — props and creatures on grass (y>0) use
+     `sprite.position.y = -terrain_y` + `sprite.offset.y += terrain_y / PIXEL_SIZE` so elevated
+     sprites don't sort in front of lower ones. Player had this already; creatures and props wired.
+  5. **Development rebuild plan** — agreed to start a fresh parallel project built incrementally
+     (bare scene → camera → player movement → sprites → terrain → creatures → AI → map loading)
+     so the developer can understand and own each system before the next is added.
+- **Active work**: Planning fresh incremental project build.
+- **Next session target**: New project — Stage 1 (bare scene + flat collision + camera).
 - **Blocked on**: Design questions — (1) Does pet have HP and can it die? (2) Is stealth a button
   or ability-only? (3) Level cap final decision (leaning 30). (4) Player starting stats: all 1s or
   preset minimum?
 
 ### What the map currently has (loaded from CSV via map_loader.gd)
-- Full terrain from CSV tilemap (dirt, grass layers composited into one PlaneMesh texture)
-- Mystic trees (1×1, 1×1_h1 NEW, 1×1_h2, 2×2, 2×2_h1, 2×2_h2, 3×2, 3×2_h1, 3×2_h2), streamed
+- Full terrain from CSV tilemap — composite texture + heightmap mesh (grass elevated 0.75u, smooth slopes)
+- Mystic trees (1×1, 1×1_h1, 1×1_h2, 2×2, 2×2_h1, 2×2_h2, 3×2, 3×2_h1, 3×2_h2), streamed
 - Bushes (small/mid/large, classic 5 variants + leafy + spiky, with and without collision), streamed
 - Grass (1×1, 2×1, 3×1, no collision), streamed
 - Player spawn from entities CSV
@@ -98,9 +101,9 @@ Zone 2 implementation       → after Zone 2 story
   for full animation standard and current status table.
 - Prop calibration — props don't fit 3D world well, need per-prop height/offset tuning
 - CSV map loading — entities and props spawned from CSV, not hardcoded in main.gd `_ready()`
-- Terrain autogenerator port — old system in `tiled/scripts/map auto gen` (old 2D project).
-  Uses CA noise → dual-grid 18-tile tileset → smoothing pass. Not started for 3D.
-  Ground mesh already exists (25×25 checkerboard); full tileset approach for 3D TBD.
+- ~~**Terrain autogenerator**~~ ✓ DONE — `terrain_generator.gd` reads dark_grass autotile CSV,
+  maps tile IDs → [NW,NE,SW,SE] corner heights via tile_values.json, builds heightmap directly.
+  Outdoor height 0.75u (walkable). Dungeon height passed as 4th arg to generate().
 - Tree/prop idle animations — alive props should animate (sway, ambient movement)
 
 ### Key Decisions Locked Since Last Code Session (apply to rewrite from day one)
