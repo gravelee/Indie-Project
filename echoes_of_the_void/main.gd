@@ -7,8 +7,8 @@ extends Node3D
 # Everything is commented out. Systems are re-introduced one stage at a time.
 # See SKILL.md "Incremental Rebuild Plan" for the stage order.
 #
-# Stage 1 — Bare scene: flat ground + fixed camera.           ← CURRENT
-# Stage 2 — Camera rig: camera_rig.gd wired back in.
+# Stage 1 — Bare scene: flat ground + fixed camera.           ← DONE
+# Stage 2 — Camera rig: camera_rig.gd wired back in.         ← CURRENT
 # Stage 3 — Player movement (cube placeholder).
 # Stage 4 — Player sprite + billboard + directional anims.
 # Stage 5 — Stats skeleton (HP only) + ability/abilities.
@@ -25,19 +25,16 @@ extends Node3D
 
 const TILE_SIZE : float = 1.0
 
-# ---------------------------------------------------------------------------
-# Variable declarations kept for reference — uncomment as each stage adds them
-# ---------------------------------------------------------------------------
+var cam           : CameraSettings
+var camera_rig    : Node3D
+var player_body   : CharacterBody3D
+var player_sprite : AnimatedSprite3D
 
-#var cam        : CameraSettings
-#var camera_rig : Node3D
 #var game_ui    : Node
 #var hud        : CanvasLayer
 #var debug_panel : Node2D
 #var map_loader : MapLoader
 
-#var player_body   : CharacterBody3D
-#var player_sprite : AnimatedSprite3D
 #var billboard_on  : bool = true
 
 #var mat_light    : StandardMaterial3D
@@ -53,21 +50,20 @@ const TILE_SIZE : float = 1.0
 # STAGE 1 — Bare scene
 # ---------------------------------------------------------------------------
 
-func _ready() -> void:
-	_build_ground()
-	_build_camera()
-
-
+# Called: Godot engine (_ready).
 func _build_ground() -> void:
+
 	# Flat 100×100 tile ground — visual mesh + collision.
 	var body := StaticBody3D.new()
 	body.name = "Ground"
 
 	var mesh := PlaneMesh.new()
 	mesh.size = Vector2(100.0, 100.0)
+
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(0.45, 0.42, 0.32)
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+
 	var vis := MeshInstance3D.new()
 	vis.mesh = mesh
 	vis.material_override = mat
@@ -85,13 +81,90 @@ func _build_ground() -> void:
 	add_child(body)
 
 
-func _build_camera() -> void:
-	# Fixed camera looking straight down at map center — no controls yet.
-	var cam := Camera3D.new()
-	cam.name = "Camera"
-	cam.position = Vector3(50.0, 30.0, 50.0)
-	cam.rotation_degrees = Vector3(-70.0, 0.0, 0.0)
-	add_child(cam)
+# Called: Godot engine (_ready).
+func _build_box(pos: Vector3, size: Vector3, color: Color) -> void:
+
+	var body := StaticBody3D.new()
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var vis := MeshInstance3D.new()
+	vis.mesh = mesh
+	vis.material_override = mat
+	body.add_child(vis)
+	var col := CollisionShape3D.new()
+	var shp := BoxShape3D.new()
+	shp.size = size
+	col.shape = shp
+	body.add_child(col)
+	body.position = pos
+	add_child(body)
+
+
+# ---------------------------------------------------------------------------
+# STAGE 2 — Camera rig
+# ---------------------------------------------------------------------------
+
+# Called: Godot engine (_ready).
+func _build_placeholder_player() -> void:
+
+	player_body = CharacterBody3D.new()
+	player_body.name = "Player"
+	player_body.position = Vector3(50.0, 0.0, 50.0)
+
+	# Visible box so we can see what the camera is tracking.
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(1.0, 2.0, 1.0)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.8, 0.3, 0.3)
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var vis := MeshInstance3D.new()
+	vis.mesh = mesh
+	vis.material_override = mat
+	vis.position = Vector3(0.0, 1.0, 0.0)   # center box on feet position
+	player_body.add_child(vis)
+
+	# Collision shape required by CharacterBody3D.
+	var col := CollisionShape3D.new()
+	var shp := CapsuleShape3D.new()
+	shp.radius = 0.4
+	shp.height = 1.8
+	col.shape = shp
+	col.position = Vector3(0.0, 1.0, 0.0)
+	player_body.add_child(col)
+
+	# Minimal sprite node — no texture yet, camera only needs pixel_size.
+	player_sprite = AnimatedSprite3D.new()
+	player_sprite.pixel_size = 1.0 / 32.0
+	player_body.add_child(player_sprite)
+
+	add_child(player_body)
+
+
+# Called: Godot engine (_ready).
+func _build_camera_rig() -> void:
+
+	cam = CameraSettings.new()
+	camera_rig = Node3D.new()
+	camera_rig.name = "CameraRig"
+	camera_rig.set_script(load("res://scripts/camera_rig.gd"))
+	add_child(camera_rig)
+	camera_rig.call("init", cam, player_body, player_sprite)
+	camera_rig.call("apply_active_preset")
+
+
+# ---------------------------------------------------------------------------
+# READY
+# ---------------------------------------------------------------------------
+
+func _ready() -> void:
+
+	_build_ground()
+	_build_box(Vector3(54.0, 2.0, 50.0), Vector3(2.0, 2.0, 2.0), Color(0.3, 0.3, 0.8))
+	_build_placeholder_player()
+	_build_camera_rig()
 
 
 # ---------------------------------------------------------------------------
@@ -116,17 +189,6 @@ func _build_camera() -> void:
 #	player_body.set("movement_blocked", game_ui.call("any_ui_open"))
 #	hud.call("refresh")
 #	map_loader.update(player_body.global_position)
-
-
-# -- Stage 2: camera rig -------------------------------------------------------
-#func _build_camera_rig() -> void:
-#	camera_rig = Node3D.new()
-#	camera_rig.name = "CameraRig"
-#	camera_rig.set_script(load("res://scripts/camera_rig.gd"))
-#	add_child(camera_rig)
-#	camera_rig.call("init", cam, player_body, player_sprite)
-#	camera_rig.call("apply_active_preset")
-#	player_body.set("camera_rig", camera_rig)
 
 
 # -- Stage 3+4: player ---------------------------------------------------------
