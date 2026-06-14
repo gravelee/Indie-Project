@@ -2,151 +2,91 @@ extends Node3D
 
 # =============================================================================
 # MAIN — world building, player, input routing.
-#
-# !! INCREMENTAL REBUILD IN PROGRESS !!
-# Everything is commented out. Systems are re-introduced one stage at a time.
-# See SKILL.md "Incremental Rebuild Plan" for the stage order.
-#
-# Stage 1 — Bare scene: flat ground + fixed camera.           ← DONE
-# Stage 2 — Camera rig: camera_rig.gd wired back in.         ← CURRENT
-# Stage 3 — Player movement (cube placeholder).
-# Stage 4 — Player sprite + billboard + directional anims.
-# Stage 5 — Stats skeleton (HP only) + ability/abilities.
-# Stage 6 — Player combat: attack state, hitbox, dummy target.
-# Stage 7 — Terrain height: terrain_generator + HeightMapShape3D.
-# Stage 8 — One creature, no AI.
-# Stage 9 — Creature AI states (one at a time).
-# Stage 10 — Pathfinding (A* XZ plane).
-# Stage 11 — Status effects.
-# Stage 12 — HUD.
-# Stage 13 — Combat feedback (floating numbers).
-# Stage 14 — Map loading (CSV terrain + props + streaming).
 # =============================================================================
 
-const TILE_SIZE : float = 1.0
+const TILE_SIZE           : float  = 1.0
+const SETTINGS_SAVE_PATH  : String = "user://camera_settings.tres"
 
 var cam           : CameraSettings
 var camera_rig    : Node3D
 var player_body   : CharacterBody3D
 var player_sprite : AnimatedSprite3D
-
-#var game_ui    : Node
-#var hud        : CanvasLayer
-#var debug_panel : Node2D
-#var map_loader : MapLoader
-
-#var billboard_on  : bool = true
-
-#var mat_light    : StandardMaterial3D
-#var mat_dark     : StandardMaterial3D
-#var mat_ledge    : StandardMaterial3D
-#var mat_ramp     : StandardMaterial3D
-#var mat_water    : StandardMaterial3D
-#var mat_cliff    : StandardMaterial3D
-#var mat_mountain : StandardMaterial3D
+var game_ui       : Node
+var hud           : CanvasLayer
+var debug_panel   : Node2D
+var map_loader    : MapLoader
 
 
 # ---------------------------------------------------------------------------
-# STAGE 1 — Bare scene
+# SETTINGS
 # ---------------------------------------------------------------------------
 
-# Called: Godot engine (_ready).
-func _build_ground() -> void:
+# Called: _ready().
+func _load_or_create_settings() -> void:
 
-	# Flat 100×100 tile ground — visual mesh + collision.
-	var body := StaticBody3D.new()
-	body.name = "Ground"
-
-	var mesh := PlaneMesh.new()
-	mesh.size = Vector2(100.0, 100.0)
-
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.45, 0.42, 0.32)
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-
-	var vis := MeshInstance3D.new()
-	vis.mesh = mesh
-	vis.material_override = mat
-	# PlaneMesh is centered at origin; shift so (0,0)→(100,100) matches tile grid.
-	vis.position = Vector3(50.0, 0.0, 50.0)
-	body.add_child(vis)
-
-	var col := CollisionShape3D.new()
-	var shp := BoxShape3D.new()
-	shp.size = Vector3(100.0, 0.1, 100.0)
-	col.shape = shp
-	col.position = Vector3(50.0, -0.05, 50.0)
-	body.add_child(col)
-
-	add_child(body)
-
-
-# Called: Godot engine (_ready).
-func _build_box(pos: Vector3, size: Vector3, color: Color) -> void:
-
-	var body := StaticBody3D.new()
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	var vis := MeshInstance3D.new()
-	vis.mesh = mesh
-	vis.material_override = mat
-	body.add_child(vis)
-	var col := CollisionShape3D.new()
-	var shp := BoxShape3D.new()
-	shp.size = size
-	col.shape = shp
-	body.add_child(col)
-	body.position = pos
-	add_child(body)
+	if ResourceLoader.exists(SETTINGS_SAVE_PATH):
+		cam = ResourceLoader.load(SETTINGS_SAVE_PATH) as CameraSettings
+	if cam == null:
+		cam = CameraSettings.new()
 
 
 # ---------------------------------------------------------------------------
-# STAGE 2 — Camera rig
+# TERRAIN LIGHT
 # ---------------------------------------------------------------------------
 
-# Called: Godot engine (_ready).
-func _build_placeholder_player() -> void:
+# Called: _ready().
+func _build_terrain_light() -> void:
+
+	var env_node := WorldEnvironment.new()
+	var env      := Environment.new()
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color  = Color(1.0, 1.0, 1.0)
+	env.ambient_light_energy = 0.5
+	env_node.environment     = env
+	add_child(env_node)
+
+	var light := DirectionalLight3D.new()
+	light.name             = "SunLight"
+	light.rotation_degrees = Vector3(-50.0, 30.0, 0.0)
+	light.light_energy     = 0.7
+	light.shadow_enabled   = false
+	add_child(light)
+
+
+# ---------------------------------------------------------------------------
+# MAP
+# ---------------------------------------------------------------------------
+
+# Called: _ready().
+func _build_map() -> void:
+
+	map_loader = MapLoader.new()
+	map_loader.load_terrain(self)
+
+
+# ---------------------------------------------------------------------------
+# PLAYER
+# ---------------------------------------------------------------------------
+
+# Called: _ready().
+func _build_player(spawn_pos: Vector3) -> void:
 
 	player_body = CharacterBody3D.new()
-	player_body.name = "Player"
-	player_body.position = Vector3(50.0, 0.0, 50.0)
-
-	# Visible box so we can see what the camera is tracking.
-	var mesh := BoxMesh.new()
-	mesh.size = Vector3(1.0, 2.0, 1.0)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.8, 0.3, 0.3)
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	var vis := MeshInstance3D.new()
-	vis.mesh = mesh
-	vis.material_override = mat
-	vis.position = Vector3(0.0, 1.0, 0.0)   # center box on feet position
-	player_body.add_child(vis)
-
-	# Collision shape required by CharacterBody3D.
-	var col := CollisionShape3D.new()
-	var shp := CapsuleShape3D.new()
-	shp.radius = 0.4
-	shp.height = 1.8
-	col.shape = shp
-	col.position = Vector3(0.0, 1.0, 0.0)
-	player_body.add_child(col)
-
-	# Minimal sprite node — no texture yet, camera only needs pixel_size.
-	player_sprite = AnimatedSprite3D.new()
-	player_sprite.pixel_size = 1.0 / 32.0
-	player_body.add_child(player_sprite)
-
+	player_body.name     = "Player"
+	player_body.position = spawn_pos
+	player_body.set_script(load("res://scripts/player.gd"))
 	add_child(player_body)
+	player_body.call("init", cam)
+	player_sprite = player_body.get("sprite") as AnimatedSprite3D
 
 
-# Called: Godot engine (_ready).
+# ---------------------------------------------------------------------------
+# CAMERA RIG
+# ---------------------------------------------------------------------------
+
+# Called: _ready().
 func _build_camera_rig() -> void:
 
-	cam = CameraSettings.new()
 	camera_rig = Node3D.new()
 	camera_rig.name = "CameraRig"
 	camera_rig.set_script(load("res://scripts/camera_rig.gd"))
@@ -156,114 +96,79 @@ func _build_camera_rig() -> void:
 
 
 # ---------------------------------------------------------------------------
+# UI / HUD
+# ---------------------------------------------------------------------------
+
+# Called: _ready().
+func _build_ui() -> void:
+
+	game_ui = Node.new()
+	game_ui.name = "GameUI"
+	game_ui.set_script(load("res://scripts/game_ui.gd"))
+	add_child(game_ui)
+	game_ui.call("init", cam, camera_rig, player_body)
+
+
+# Called: _ready().
+func _build_hud() -> void:
+
+	hud = CanvasLayer.new()
+	hud.name  = "HUD"
+	hud.layer = 1
+	hud.set_script(load("res://scripts/hud.gd"))
+	add_child(hud)
+	hud.call("init", player_body)
+
+	var dp_canvas := CanvasLayer.new()
+	dp_canvas.name  = "DebugPanelCanvas"
+	dp_canvas.layer = 2
+	add_child(dp_canvas)
+
+	debug_panel = Node2D.new()
+	debug_panel.set_script(load("res://scripts/debug_panel.gd"))
+	dp_canvas.add_child(debug_panel)
+	debug_panel.call("init", player_body)
+
+
+# ---------------------------------------------------------------------------
 # READY
 # ---------------------------------------------------------------------------
 
+# Called: Godot engine (_ready).
 func _ready() -> void:
 
-	_build_ground()
-	_build_box(Vector3(54.0, 2.0, 50.0), Vector3(2.0, 2.0, 2.0), Color(0.3, 0.3, 0.8))
-	_build_placeholder_player()
+	_load_or_create_settings()
+	_build_terrain_light()
+	_build_map()
+
+	var spawn_pos : Vector3 = map_loader.get_player_spawn()
+	_build_player(spawn_pos)
 	_build_camera_rig()
 
+	player_body.set("camera_rig", camera_rig)
+	map_loader.init_streaming(self, camera_rig, player_body)
+
+	_build_ui()
+	_build_hud()
+
 
 # ---------------------------------------------------------------------------
-# Uncomment as stages are introduced
+# INPUT / PROCESS
 # ---------------------------------------------------------------------------
 
-#func _input(event: InputEvent) -> void:
-#	if event is InputEventKey and event.pressed:
-#		match event.keycode:
-#			KEY_ESCAPE:
-#				game_ui.call("on_escape")
-#			KEY_F:
-#				billboard_on = not billboard_on
-#				player_sprite.billboard = (
-#					BaseMaterial3D.BILLBOARD_FIXED_Y if billboard_on
-#					else BaseMaterial3D.BILLBOARD_DISABLED
-#				)
+# Called: Godot engine (InputEvent).
+func _input(event: InputEvent) -> void:
+
+	if event is InputEventKey and event.pressed:
+		match event.keycode:
+			KEY_ESCAPE:
+				game_ui.call("on_escape")
 
 
-#func _process(_delta: float) -> void:
-#	camera_rig.scroll_zoom_blocked        = game_ui.call("is_mouse_over_panel")
-#	player_body.set("movement_blocked", game_ui.call("any_ui_open"))
-#	hud.call("refresh")
-#	map_loader.update(player_body.global_position)
+# Called: Godot engine (every frame).
+func _process(_delta: float) -> void:
 
-
-# -- Stage 3+4: player ---------------------------------------------------------
-#func _build_player(spawn_pos: Vector3 = Vector3(50.0, 0.0, 50.0)) -> void:
-#	player_body = CharacterBody3D.new()
-#	player_body.name = "Player"
-#	player_body.position = spawn_pos
-#	player_body.set_script(load("res://scripts/player.gd"))
-#	add_child(player_body)
-#	player_body.call("init", cam)
-#	player_sprite = player_body.get("sprite") as AnimatedSprite3D
-
-
-# -- Stage 5+: settings / UI / HUD ---------------------------------------------
-#const SETTINGS_SAVE_PATH : String = "user://camera_settings.tres"
-#func _load_or_create_settings() -> void:
-#	if ResourceLoader.exists(SETTINGS_SAVE_PATH):
-#		cam = ResourceLoader.load(SETTINGS_SAVE_PATH) as CameraSettings
-#	if cam == null:
-#		cam = CameraSettings.new()
-
-#func _build_ui() -> void:
-#	game_ui = Node.new()
-#	game_ui.name = "GameUI"
-#	game_ui.set_script(load("res://scripts/game_ui.gd"))
-#	add_child(game_ui)
-#	game_ui.call("init", cam, camera_rig, player_body)
-
-#func _build_hud() -> void:
-#	hud = CanvasLayer.new()
-#	hud.name  = "HUD"
-#	hud.layer = 1
-#	hud.set_script(load("res://scripts/hud.gd"))
-#	add_child(hud)
-#	hud.call("init", player_body)
-#	var dp_canvas := CanvasLayer.new()
-#	dp_canvas.name  = "DebugPanelCanvas"
-#	dp_canvas.layer = 2
-#	add_child(dp_canvas)
-#	debug_panel = Node2D.new()
-#	debug_panel.set_script(load("res://scripts/debug_panel.gd"))
-#	dp_canvas.add_child(debug_panel)
-#	debug_panel.call("init", player_body)
-
-
-# -- Stage 7: terrain ----------------------------------------------------------
-#func _build_terrain_light() -> void:
-#	var env_node := WorldEnvironment.new()
-#	var env      := Environment.new()
-#	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-#	env.ambient_light_color  = Color(1.0, 1.0, 1.0)
-#	env.ambient_light_energy = 0.5
-#	env_node.environment     = env
-#	add_child(env_node)
-#	var light := DirectionalLight3D.new()
-#	light.name             = "SunLight"
-#	light.rotation_degrees = Vector3(-50.0, 30.0, 0.0)
-#	light.light_energy     = 0.7
-#	light.shadow_enabled   = false
-#	add_child(light)
-
-
-# -- Stage 14: map loader ------------------------------------------------------
-#func _build_map() -> void:
-#	map_loader = MapLoader.new()
-#	map_loader.load_terrain(self)
-
-
-# -- Test / reference geometry (re-add when relevant) -------------------------
-#func _build_materials() -> void: ...
-#func _build_ledge() -> void: ...
-#func _build_ramp() -> void: ...
-#func _build_cliff() -> void: ...
-#func _build_mountain() -> void: ...
-#func _build_small_wall(center, size) -> void: ...
-#func _build_test_block() -> void: ...
-#func _build_creature(...) -> void: ...
-#func _start_music() -> void: ...
+	camera_rig.set("scroll_zoom_blocked", game_ui.call("is_mouse_over_panel"))
+	player_body.set("movement_blocked",   game_ui.call("any_ui_open"))
+	hud.call("refresh")
+	map_loader.update(player_body.global_position)

@@ -168,6 +168,53 @@ These exist in `godot_project/` and need to be brought into 3D — added per sta
 - Prop calibration — per-prop height/offset tuning
 - Tree/prop idle animations
 
+### Key Decisions Locked — Art & Sprite System
+
+**Sprite layers (decided 2026-06-14):**
+- Body layer = base character. Two body variants: `default/` (melee/rogue) and `staff/` (caster, staff strapped to back in ALL animations).
+- Weapon/active layer = what's in the hands. Swapped on equip. Each combination is its own sprite set.
+- Face layer = static small sprite, unique per NPC/character. Swapped per person.
+- Staff on back: always visible in every animation. Changes visually per tier but recolored via shader — not redrawn.
+- Shield: offhand slot, not always equipped. Baked into weapon combination sprite (e.g. sword_shield/).
+- Caster has NO weapon swing. Main hand = gestures (WoW spellcast style). Offhand = wand raises and fires projectile.
+- Player is LEFT-HANDED. Main hand = left. Offhand = right.
+- Weapon tiers = same animations, different sprite. Color/glow changes via shader where possible.
+
+**Weapon slots:**
+- Main hand: fists, sword, pickaxe, dagger, crossbow (one-handed, both slots)
+- Offhand: shield, dagger, wand (offhand only)
+- Two-handed (no offhand): staff (but strapped to back — see caster notes above)
+- Dagger special: valid in both main and offhand simultaneously
+
+**Non-directional animations (south only, treated as universal):**
+death, spawn, sitting, sits_down, stands_up, talking
+
+**art_source folder structure (decided, not yet implemented):**
+```
+art_source/entities/player/ares/
+    body/
+        default/{direction}/{animation}/   ← weapon-free body, melee/rogue
+        staff/{direction}/{animation}/     ← staff on back, caster
+    weapon/
+        {combination}/{direction}/{animation}/
+        combinations: fists, sword, sword_shield, sword_dagger, sword_wand,
+                      pickaxe, pickaxe_shield, pickaxe_dagger, pickaxe_wand,
+                      dagger, dagger_dagger, dagger_shield, dagger_wand,
+                      crossbow, crossbow_shield, crossbow_dagger, crossbow_wand,
+                      gestures (caster main), wand (caster offhand)
+    face/
+        ares.png   ← static, unique per character
+```
+**Pending weapon design questions (answer before drawing any weapon sprites):**
+- Crossbow from offhand — fire-able or visual only?
+- Dagger dual wield — alternating or simultaneous strikes?
+- Shield — always passively strapped or raises during block?
+- Wand arm — animates on cast or hangs passively?
+- Empty offhand — natural hang or specific idle pose?
+
+**asset_loader.gd** must support layered sprite loading (body + weapon + face) when built at Stage 8.
+Current player sprites (with sword+shield baked in) are placeholder — need redraw without weapon before real project art pass.
+
 ### Key Decisions Locked Since Last Code Session (apply to rewrite from day one)
 - Blocking costs NO energy while held — only active shield abilities (e.g. Shield Bash) cost energy
 - Hybrid leveling: quests give 1 guaranteed stat point; EXP buys additional stat or talent points
@@ -213,7 +260,7 @@ Genetic Disaster, BOTW, Majora's Mask, DnD. Always give practical, scoped advice
 
 ## 1. Game Identity & Core Feel
 
-**The pitch**: A top-down action RPG with real-time Zelda-feel combat (active shield, dodge roll,
+**The pitch**: A 3D isometric-style action RPG with real-time Zelda-feel combat (active shield, dodge roll,
 directional attacks) built on WoW-depth systems (stats, resources, talent chains, gear, dungeons).
 No class is chosen — your playstyle and stat investment define what you become. Every dungeon run
 has value beyond the story because you're always farming toward the next talent unlock.
@@ -232,10 +279,10 @@ require new stat distributions, resonance efficiency modifiers, and weapon acces
 when the races themselves are well-defined. Each character plays through the same core game with
 the same mechanics; their race and starting life shape what they bring to it, not how the systems work.
 
-**Camera**: Top-down, full 360° rotation via RMB drag. WASD is always camera-relative.
+**Camera**: Angled overhead 3D camera, 15°–40° pitch, 360° orbit via RMB drag. WASD is always camera-relative.
 3D world — Z-sorting handled by Godot engine. Camera system complete (see Section 2).
 
-**Visual style**: 2D sprites in a 3D-positioned world. Pixel art. Top-down perspective.
+**Visual style**: 2D sprites in a 3D-positioned world. Pixel art. Angled overhead 3D perspective (pitch -15° to -40°).
 Sprites use fixed directional animations — they do not rotate to face camera.
 
 **Key design references**:
@@ -273,7 +320,7 @@ proven reason.
 ### 3D World + 2D Sprite Setup
 - **Entity node type**: `CharacterBody3D` (physics) with `AnimatedSprite3D` child (visual).
 - **Billboard mode**: `BILLBOARD_FIXED_Y` — sprite always faces camera on Y axis only.
-  Never use `BILLBOARD_ENABLED` (full billboard breaks top-down look).
+  Never use `BILLBOARD_ENABLED` (full billboard breaks the angled overhead look).
 - **pixel_size**: `1.0 / 32.0` — converts pixel coordinates to world units.
   At 96px sprite, world height = `96 * pixel_size = 3.0`.
 - **Required sprite settings** (ALL sprites — entity, prop, tree, anything):
