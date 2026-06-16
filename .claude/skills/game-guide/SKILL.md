@@ -84,6 +84,10 @@ Zone 2 implementation       → after Zone 2 story
   11. **Airborne detection** — cliff fall and creature throw-back both enter JUMP state via the
       same block. velocity.y > 0 → RISE + frame 1 (ascending); <= 0 → FALL + frame 2 (descending).
       The existing RISE→FALL transition handles the apex automatically.
+  12. **SPAWN and DEAD states** — player starts in SPAWN (invincible, 29-frame animation, no input).
+      On completion → IDLE. Death is deferred: is_dead=true at 0 HP but state=DEAD only triggers
+      once grounded and knockback settled (for JUMP: at LAND exit). Death animation plays once and
+      holds last frame. Both states block cliff detection and zero x/z velocity.
 - **Active work**: test_project Stage 8 — creature.gd AI state machine.
 - **Next session target**: Creature AI (Stage 9) — wander → notice → chase → attack.
 - **Blocked on**: (1) Does pet have HP and can it die? (2) Is stealth a button or ability-only?
@@ -109,7 +113,13 @@ Zone 2 implementation       → after Zone 2 story
     snap to Color(2,2,2) → fade back to normal in HIT_FLASH_DURATION=0.1s)
   - Airborne detection: velocity.y > 0 → RISE/frame 1 (thrown up by creature); <= 0 → FALL/frame 2
     (ledge fall). Both enter JUMP state and run through LAND normally.
-  - Animations: walking, running, idle_neutral, idle_attack_unarmed, attack_unarmed, jump (all 4 dirs)
+  - SPAWN state: plays 29-frame spawn animation on init, invincible, no input, no movement.
+    Transitions to IDLE when animation finishes.
+  - DEAD state: is_dead=true at 0 HP. state=DEAD deferred until grounded + knockback < 0.1.
+    Mid-air death resolves at JUMP LAND exit. Plays 29-frame death animation, holds last frame.
+    Invincible, no input, no movement, terminal.
+  - Animations: walking, running, idle_neutral, idle_attack_unarmed, attack_unarmed, jump (all 4 dirs),
+    spawn, death (non-directional, 29 frames each)
   - Sprite offset uses actual frame height (get_height()) — capsule center at y=0.9
 - Stats: full stats.gd (STR/AGI/STA/DEF/BMS, derived patk/pdef/mspd, regen, take_damage)
 - Abilities: punch (damage_mult=1.0, range=1.5, cooldown=1.0) + rat_bite in registry

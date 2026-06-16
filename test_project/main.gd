@@ -29,7 +29,7 @@ func _build_player() -> void:
 
 	player_body          = CharacterBody3D.new()
 	player_body.name     = "Player"
-	player_body.position = Vector3(50.0, 0.0, 50.0)
+	player_body.position = Vector3(50.0, 20.0, 50.0)
 
 	# Capsule center at y=0.9 = half the height — bottom sits exactly at y=0 (ground level).
 	# At y=1.0 the bottom is 0.1 above ground; physics corrects to body.y=-0.1,

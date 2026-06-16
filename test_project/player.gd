@@ -124,9 +124,13 @@ var last_dir      : String = "south"
 # All player stat values (HP, energy, patk, pdef, mspd, etc). Set in init().
 var stats : Stats
 
-# Current movement/action state. ATTACK and JUMP are owned by _input and their
-# respective update functions — movement logic must never overwrite them.
-enum State { IDLE, WALK, RUN, ATTACK, JUMP }
+# Current movement/action state.
+# IDLE/WALK/RUN: movement states, driven by input each frame.
+# ATTACK: owned by _input and _attack_update — movement logic must not overwrite.
+# JUMP: owned by _input and _jump_update — covers voluntary jumps, ledge falls, throw-backs.
+# SPAWN: invincible, full animation plays, no input accepted.
+# DEAD: invincible, full animation plays to last frame then holds, terminal.
+enum State { IDLE, WALK, RUN, ATTACK, JUMP, SPAWN, DEAD }
 var state : State = State.IDLE
 
 # Tracks which physics sub-phase the player is in during a jump.
@@ -153,7 +157,6 @@ var _jump_cooldown_timer : float = 0.0
 var _jump_locked_vel  : Vector2 = Vector2.ZERO
 
 # True once HP reaches zero. Read by creatures to stop chasing a dead player.
-# Will gate into a full DEAD state when player death is implemented.
 var is_dead : bool = false
 
 
@@ -222,7 +225,10 @@ func _load_sprite_frames() -> SpriteFrames:
 		["jump_north",           base + "north/jump/",           5],
 		["jump_south",           base + "south/jump/",           5],
 		["jump_east",            base + "east/jump/",            5],
-		["jump_west",            base + "west/jump/",            5]]
+		["jump_west",            base + "west/jump/",            5],
+		# Non-directional animations — no direction suffix, same clip for all facing directions.
+		["spawn",                base + "spawn/",                29],
+		["death",                base + "death/",                29]]
 
 	for anim : Array in anims:
 		var anim_name   : String = anim[0]
@@ -245,6 +251,10 @@ func _load_sprite_frames() -> SpriteFrames:
 	frames.set_animation_loop("jump_south", false)
 	frames.set_animation_loop("jump_east",  false)
 	frames.set_animation_loop("jump_west",  false)
+
+	# Lifecycle animations play once and hold the last frame.
+	frames.set_animation_loop("spawn", false)
+	frames.set_animation_loop("death", false)
 
 	return frames
 
@@ -396,7 +406,7 @@ func _flash_sprite() -> void:
 # Getting hit resets both gates: regen pauses and combat window refreshes.
 func receive_hit(damage: float, dir: Vector3) -> void:
 
-	if is_dead:
+	if is_dead or state == State.SPAWN:
 		return
 	var actual : float = stats.take_damage(damage)
 	_regen_timer   = REGEN_PAUSE
@@ -475,13 +485,41 @@ func _jump_update(delta: float) -> void:
 			elif _jump_frame_timer > 0.0:
 				player_sprite.frame = 4
 			else:
-				state                = State.IDLE
 				_jump_phase          = JumpPhase.WINDUP
 				_jump_launched       = false
 				_jump_cooldown_timer = JUMP_COOLDOWN
-				var idle : String = "idle_attack_" + _weapon_style() + "_" + last_dir \
-					if _is_in_combat() else "idle_neutral_" + last_dir
-				player_sprite.play(idle)
+				# If the player died mid-air, trigger death now that they have landed.
+				if is_dead:
+					state = State.DEAD
+					player_sprite.play("death")
+				else:
+					state = State.IDLE
+					var idle : String = "idle_attack_" + _weapon_style() + "_" + last_dir \
+						if _is_in_combat() else "idle_neutral_" + last_dir
+					player_sprite.play(idle)
+
+
+# ===========================================================================
+# LIFECYCLE
+# ===========================================================================
+
+# Called: _physics_process() while state == SPAWN.
+# Waits for the spawn animation to finish then transitions to IDLE.
+# The player is invincible during SPAWN — receive_hit() returns early.
+func _spawn_update() -> void:
+
+	if not player_sprite.is_playing():
+		state = State.IDLE
+		player_sprite.play("idle_neutral_" + last_dir)
+
+
+# Called: _physics_process() while state == DEAD.
+# Terminal state — no transitions out. The death animation was started in
+# _physics_process() when is_dead was detected. AnimatedSprite3D holds the
+# last frame automatically once a non-looping animation finishes.
+func _dead_update() -> void:
+
+	pass
 
 
 # ===========================================================================
@@ -511,6 +549,10 @@ func init(p_camera_rig: Node3D, p_player_sprite: AnimatedSprite3D) -> void:
 	stats = Stats.new(1, 1, 1, 1, 3)
 	punch = Abilities.get_ability("punch")
 
+	# Begin in SPAWN — player is invincible until the animation completes.
+	state = State.SPAWN
+	player_sprite.play("spawn")
+
 
 # ===========================================================================
 # INPUT
@@ -521,7 +563,16 @@ func init(p_camera_rig: Node3D, p_player_sprite: AnimatedSprite3D) -> void:
 # via the continuous Input.get_vector() poll — not here.
 func _input(event: InputEvent) -> void:
 
+	if is_dead or state == State.SPAWN:
+		return
+
 	if event is InputEventKey and event.pressed and not event.echo:
+		# DEBUG ONLY — remove before release.
+		#if event.keycode == KEY_K:
+			#stats.hp = 0.0
+			#is_dead  = true
+			#print("DEBUG: player force-killed")
+			#return
 		if event.keycode == KEY_1:
 			# KEY_1 triggers the punch ability (placeholder — more abilities will expand this).
 			# JUMP and ATTACK block each other — no attacking mid-air, no jumping mid-swing.
@@ -585,8 +636,9 @@ func _physics_process(delta: float) -> void:
 	var can_sprint : bool    = stats.energy >= 1.0
 
 	# Update movement state.
-	# ATTACK and JUMP are owned by _input and their update functions — never touch them here.
-	if state != State.ATTACK and state != State.JUMP:
+	# ATTACK, JUMP, SPAWN, and DEAD are owned by their update functions — never touch them here.
+	if state != State.ATTACK and state != State.JUMP \
+			and state != State.SPAWN and state != State.DEAD:
 		if is_moving and is_shift and can_sprint:
 			state = State.RUN
 		elif is_moving:
@@ -599,7 +651,8 @@ func _physics_process(delta: float) -> void:
 	#   velocity.y > 0 → still ascending (thrown back by a big creature hit) → RISE, frame 1
 	#   velocity.y <= 0 → descending or neutral (ledge fall, gravity already pulling) → FALL, frame 2
 	# No energy cost — involuntary air time is never gated on energy.
-	if state != State.JUMP and not is_on_floor():
+	if state != State.JUMP and state != State.SPAWN and state != State.DEAD \
+			and not is_on_floor():
 		_jump_locked_vel        = Vector2(velocity.x, velocity.z)
 		state                   = State.JUMP
 		_jump_launched          = true
@@ -631,7 +684,11 @@ func _physics_process(delta: float) -> void:
 
 	# All JUMP phases (including WINDUP on the ground) lock horizontal movement to the
 	# velocity committed at Space press — no steering from any phase onward.
-	if state == State.JUMP:
+	# SPAWN and DEAD: zero horizontal velocity — player must not move during either state.
+	if state == State.SPAWN or state == State.DEAD:
+		velocity.x = 0.0
+		velocity.z = 0.0
+	elif state == State.JUMP:
 		velocity.x = _jump_locked_vel.x + _knockback_vel.x
 		velocity.z = _jump_locked_vel.y + _knockback_vel.z
 	else:
@@ -640,6 +697,15 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	# Decay knockback each frame. move_toward() reaches exactly zero — no float drift.
 	_knockback_vel = _knockback_vel.move_toward(Vector3.ZERO, KNOCKBACK_FRICTION * delta)
+
+	# Deferred death transition — covers dying during IDLE, WALK, RUN, ATTACK.
+	# JUMP handles its own landing → DEAD transition in _jump_update().
+	# Wait until grounded and knockback settled so the throw-back arc or slide
+	# resolves naturally before the death animation plays.
+	if is_dead and state != State.DEAD and state != State.JUMP:
+		if is_on_floor() and _knockback_vel.length() < 0.1:
+			state = State.DEAD
+			player_sprite.play("death")
 
 	# Sprint energy drain — accumulate real time so tap-sprinting still costs energy
 	# proportional to how long the key was held, not a flat cost per frame.
@@ -658,6 +724,10 @@ func _physics_process(delta: float) -> void:
 			_attack_update()
 		State.JUMP:
 			_jump_update(delta)
+		State.SPAWN:
+			_spawn_update()
+		State.DEAD:
+			_dead_update()
 
 	# --- Timers and regen ---
 
