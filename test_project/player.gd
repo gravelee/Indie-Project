@@ -20,6 +20,38 @@ const SPRINT_MULT        : float = 1.2
 # Keeps the player in combat idle stance briefly after killing something.
 const COMBAT_TIMEOUT     : float = 3.0
 
+# Downward acceleration in world units/s² applied each frame when airborne.
+# Negative because Y is up — gravity pulls down.
+const GRAVITY            : float = -20.0
+
+# Upward velocity in world units/s applied once when the jump launches at JUMP_LAUNCH_FRAME.
+# At GRAVITY=-20, this gives ~1.5 tiles of peak height and ~0.775s air time.
+const JUMP_VEL           : float = 7.75
+
+# Animation frame index at which jump velocity is applied (player leaves the ground).
+# Frame 0 = prep (windup on ground), frame 1 = ascent begins (launch here).
+const JUMP_LAUNCH_FRAME  : int   = 1
+
+# Seconds the sprite stays over-bright white after taking a hit before tweening back to normal.
+const HIT_FLASH_DURATION : float = 0.1
+
+# Duration of one animation frame in seconds at 8 fps.
+# Used by _jump_update() to pace frame 0 (WINDUP) and frames 3-4 (LAND) at the
+# correct rate without calling play() — jump frames are driven by physics phase.
+const ANIM_FRAME_DUR     : float = 1.0 / 8.0
+
+# Seconds after a full landing (both LAND frames done) before the player can jump again.
+# Starts on LAND exit — applies to both voluntary jumps and cliff falls.
+const JUMP_COOLDOWN      : float = 0.3
+
+# Initial speed in world units/s applied to the player when a creature lands a hit.
+# Decays to zero each frame via KNOCKBACK_FRICTION — not a duration, a rate.
+const KNOCKBACK_STRENGTH : float = 8.0
+
+# World units/s deceleration applied to _knockback_vel each frame via move_toward().
+# At 20.0 the player stops in ~0.4s. Higher = snappier, lower = longer slide.
+const KNOCKBACK_FRICTION : float = 20.0
+
 # Maps a cardinal direction string to its flat 2D input vector.
 # Used by _attack_check() to reconstruct a world-space direction from last_dir.
 const DIR_MAP : Dictionary = {
@@ -40,6 +72,10 @@ var _regen_timer      : float = 0.0
 # Gate: combat idle animations are active while this is above zero.
 # Only reset to COMBAT_TIMEOUT when a creature is actually hit — not on prop hits.
 var _combat_timer     : float = 0.0
+
+# Current knockback velocity in world units/s. Set by receive_hit(), decays to
+# Vector3.ZERO each frame via move_toward(). Added on top of movement velocity.
+var _knockback_vel    : Vector3 = Vector3.ZERO
 
 
 # ---------------------------------------------------------------------------
@@ -88,10 +124,37 @@ var last_dir      : String = "south"
 # All player stat values (HP, energy, patk, pdef, mspd, etc). Set in init().
 var stats : Stats
 
-# Current movement/action state. ATTACK is owned by _input/_attack_update
-# and must never be overwritten by movement logic.
-enum State { IDLE, WALK, RUN, ATTACK }
+# Current movement/action state. ATTACK and JUMP are owned by _input and their
+# respective update functions — movement logic must never overwrite them.
+enum State { IDLE, WALK, RUN, ATTACK, JUMP }
 var state : State = State.IDLE
+
+# Tracks which physics sub-phase the player is in during a jump.
+# WINDUP: on ground, prep frame playing. RISE: airborne, going up.
+# FALL: airborne, going down. LAND: touched ground, absorption frame playing.
+enum JumpPhase { WINDUP, RISE, FALL, LAND }
+var _jump_phase    : JumpPhase = JumpPhase.WINDUP
+
+# True once JUMP_VEL has been applied this jump. Guards against re-applying on
+# repeated frames and tells the gravity block not to snap velocity.y to 0.
+var _jump_launched    : bool  = false
+
+# Counts down in WINDUP (holds prep frame) and LAND (paces contact → absorption frames).
+# Not used during RISE or FALL — those phases are driven purely by velocity.y and is_on_floor().
+var _jump_frame_timer   : float = 0.0
+
+# Counts down after the LAND animation completes. Jump is blocked while above zero.
+# Starts on LAND exit for both voluntary jumps and cliff falls.
+var _jump_cooldown_timer : float = 0.0
+
+# Horizontal velocity (world X, world Z) captured the moment the player goes airborne.
+# Held constant during RISE and FALL so there is no mid-air steering — the player commits
+# to a direction at launch. Set on voluntary jumps, ledge falls, and creature throw-backs.
+var _jump_locked_vel  : Vector2 = Vector2.ZERO
+
+# True once HP reaches zero. Read by creatures to stop chasing a dead player.
+# Will gate into a full DEAD state when player death is implemented.
+var is_dead : bool = false
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +217,12 @@ func _load_sprite_frames() -> SpriteFrames:
 		["attack_unarmed_north", base + "north/attack/unarmed/", 5],
 		["attack_unarmed_south", base + "south/attack/unarmed/", 5],
 		["attack_unarmed_east",  base + "east/attack/unarmed/",  5],
-		["attack_unarmed_west",  base + "west/attack/unarmed/",  5]]
+		["attack_unarmed_west",  base + "west/attack/unarmed/",  5],
+		# 5-frame jump animation: frame 0=prep, 1=ascend, 2=descend, 3=contact, 4=absorption.
+		["jump_north",           base + "north/jump/",           5],
+		["jump_south",           base + "south/jump/",           5],
+		["jump_east",            base + "east/jump/",            5],
+		["jump_west",            base + "west/jump/",            5]]
 
 	for anim : Array in anims:
 		var anim_name   : String = anim[0]
@@ -171,6 +239,12 @@ func _load_sprite_frames() -> SpriteFrames:
 	frames.set_animation_loop("attack_unarmed_south", false)
 	frames.set_animation_loop("attack_unarmed_east",  false)
 	frames.set_animation_loop("attack_unarmed_west",  false)
+
+	# Jump animations must not loop — _jump_update() waits for is_playing()=false in LAND phase.
+	frames.set_animation_loop("jump_north", false)
+	frames.set_animation_loop("jump_south", false)
+	frames.set_animation_loop("jump_east",  false)
+	frames.set_animation_loop("jump_west",  false)
 
 	return frames
 
@@ -213,7 +287,7 @@ func _is_in_combat() -> bool:
 # ANIMATION
 # ===========================================================================
 
-# Called: _process().
+# Called: _physics_process().
 # Resolves the correct animation name from current state and input, then plays it
 # only if it differs from what's already playing (avoids restarting the same clip).
 func _anim_apply(input: Vector2) -> void:
@@ -286,7 +360,7 @@ func _attack_check() -> void:
 		print("dummy hit for ", actual, " — hp: ", target_stats.hp, "/", target_stats.hp_max)
 
 
-# Called: _process() while state == ATTACK.
+# Called: _physics_process() while state == ATTACK.
 # Polls the animation frame each tick to apply damage exactly at hit_frame,
 # then waits for playback to end before releasing the ATTACK state.
 func _attack_update() -> void:
@@ -303,6 +377,111 @@ func _attack_update() -> void:
 	if frame >= _active_ability.hit_frame and not _hit_applied:
 		_hit_applied = true
 		_attack_check()
+
+
+# Called: receive_hit().
+# Snaps the sprite modulate to over-bright white, then tweens it back to normal over
+# HIT_FLASH_DURATION seconds. Works on any hit — stacks correctly because create_tween()
+# creates a fresh tween each time, overwriting any still-running flash from a prior hit.
+func _flash_sprite() -> void:
+
+	player_sprite.modulate = Color(2.0, 2.0, 2.0, 1.0)
+	var tween : Tween = create_tween()
+	tween.tween_property(player_sprite, "modulate", Color(1.0, 1.0, 1.0, 1.0), HIT_FLASH_DURATION)
+
+
+# Called: creature._attack_check() when a creature's raycast hits the player.
+# damage : raw damage value from the creature's ability.calc_damage().
+# _dir   : flat direction from creature to player — unused now, reserved for knockback.
+# Getting hit resets both gates: regen pauses and combat window refreshes.
+func receive_hit(damage: float, dir: Vector3) -> void:
+
+	if is_dead:
+		return
+	var actual : float = stats.take_damage(damage)
+	_regen_timer   = REGEN_PAUSE
+	_combat_timer  = COMBAT_TIMEOUT
+	# Push the player away from the attacker. dir points from creature to player
+	# so it's already the correct knockback direction.
+	_knockback_vel = dir.normalized() * KNOCKBACK_STRENGTH
+	_flash_sprite()
+	print("player hit for ", actual, " — hp: ", stats.hp, "/", stats.hp_max)
+	if not stats.is_alive():
+		is_dead = true
+		print("player died")
+
+
+# Called: creature._physics_process() every frame while in a hostile state.
+# Keeps the combat window open while a creature is actively chasing or attacking —
+# without this the combat idle animation would drop 3s after the last hit even if
+# a rat is running straight at the player.
+func _extend_combat_timer() -> void:
+
+	if not is_dead:
+		_combat_timer = COMBAT_TIMEOUT
+
+
+# ===========================================================================
+# JUMP
+# ===========================================================================
+
+# Called: _physics_process() while state == JUMP.
+# Drives all four jump phases. Frames are set manually — play() is never called
+# during a jump because play() advances at fixed 8fps regardless of air time.
+# Instead each frame is held for exactly as long as the matching physics state lasts:
+#   frame 0 (WINDUP) — held for ANIM_FRAME_DUR, then commit direction and launch
+#   frame 1 (RISE)   — locked velocity, held while velocity.y > 0 (full ascent)
+#   frame 2 (FALL)   — locked velocity, held while airborne and descending
+#   frame 3 (LAND)   — first contact, held for ANIM_FRAME_DUR
+#   frame 4 (LAND)   — absorption, held for ANIM_FRAME_DUR then idle
+# _jump_locked_vel is set the moment the player goes airborne (voluntary jump, ledge fall,
+# or creature throw-back) so horizontal momentum is always deterministic, never steerable.
+func _jump_update(delta: float) -> void:
+
+	match _jump_phase:
+
+		JumpPhase.WINDUP:
+			# Hold prep frame for one animation frame duration, then apply launch velocity.
+			_jump_frame_timer -= delta
+			if _jump_frame_timer <= 0.0 and not _jump_launched:
+				# Capture the horizontal velocity at the exact moment of launch.
+				# This locks direction for the entire air time — no steering in RISE or FALL.
+				_jump_locked_vel    = Vector2(velocity.x, velocity.z)
+				velocity.y          = JUMP_VEL
+				_jump_launched      = true
+				_jump_phase         = JumpPhase.RISE
+				player_sprite.frame = 1
+
+		JumpPhase.RISE:
+			# Hold ascent frame until apex — velocity.y turns zero then negative.
+			if velocity.y <= 0.0:
+				_jump_phase         = JumpPhase.FALL
+				player_sprite.frame = 2
+
+		JumpPhase.FALL:
+			# Hold descent frame until grounded. Start the landing timer on contact.
+			if is_on_floor():
+				velocity.y          = 0.0
+				_jump_phase         = JumpPhase.LAND
+				player_sprite.frame = 3
+				# Reserve time for frame 3 (contact) + frame 4 (absorption).
+				_jump_frame_timer   = ANIM_FRAME_DUR * 2.0
+
+		JumpPhase.LAND:
+			# Count down through the two landing frames then hand control back.
+			_jump_frame_timer -= delta
+			if _jump_frame_timer > ANIM_FRAME_DUR:
+				player_sprite.frame = 3
+			elif _jump_frame_timer > 0.0:
+				player_sprite.frame = 4
+			else:
+				state                = State.IDLE
+				_jump_phase          = JumpPhase.WINDUP
+				_jump_launched       = false
+				_jump_cooldown_timer = JUMP_COOLDOWN
+				var idle : String = "idle_attack_" + _weapon_style() + "_" + last_dir \
+					if _is_in_combat() else "idle_neutral_" + last_dir
+				player_sprite.play(idle)
 
 
 # ===========================================================================
@@ -322,7 +501,11 @@ func init(p_camera_rig: Node3D, p_player_sprite: AnimatedSprite3D) -> void:
 
 	# Lift the sprite so its base sits on the ground.
 	# Sprite origin is at its center, so shift up by half the world-unit height.
-	player_sprite.position.y = 32.0 * player_sprite.pixel_size * 0.5
+	# Read the actual texture height from the loaded frames — using a hardcoded value
+	# would be wrong whenever the sprite size changes.
+	var frame_h : int            = player_sprite.sprite_frames \
+		.get_frame_texture("idle_neutral_south", 0).get_height()
+	player_sprite.position.y = float(frame_h) * player_sprite.pixel_size * 0.5
 
 	# STR=1 AGI=1 STA=1 DEF=1 BMS=3 — minimal stats for combat testing.
 	stats = Stats.new(1, 1, 1, 1, 3)
@@ -334,14 +517,15 @@ func init(p_camera_rig: Node3D, p_player_sprite: AnimatedSprite3D) -> void:
 # ===========================================================================
 
 # Called: Godot engine (InputEvent).
-# Handles ability activation on key press. Movement is handled in _process()
+# Handles ability activation on key press. Movement is handled in _physics_process()
 # via the continuous Input.get_vector() poll — not here.
 func _input(event: InputEvent) -> void:
 
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_1:
 			# KEY_1 triggers the punch ability (placeholder — more abilities will expand this).
-			if state != State.ATTACK and punch.can_use(stats):
+			# JUMP and ATTACK block each other — no attacking mid-air, no jumping mid-swing.
+			if state != State.ATTACK and state != State.JUMP and punch.can_use(stats):
 				# Block regen for the full REGEN_PAUSE window from this swing.
 				_regen_timer    = REGEN_PAUSE
 				# Reset hit guard at swing start so the hit fires exactly once this swing when the
@@ -352,31 +536,81 @@ func _input(event: InputEvent) -> void:
 				_active_ability.spend(stats)
 				player_sprite.play("attack_" + _weapon_style() + "_" + last_dir)
 
+		elif event.keycode == KEY_SPACE:
+			# Space starts a jump. Must be grounded, not mid-attack or mid-jump, have energy,
+			# and the post-landing cooldown must have expired.
+			if state != State.ATTACK and state != State.JUMP and is_on_floor() \
+					and stats.energy >= 1.0 and _jump_cooldown_timer <= 0.0:
+				stats.energy     -= 1.0
+				# Lock direction immediately at press time — velocity here is from the last
+				# move_and_slide() so it reflects actual momentum, not raw input.
+				# This also prevents steering during the WINDUP frame.
+				_jump_locked_vel  = Vector2(velocity.x, velocity.z)
+				state             = State.JUMP
+				_jump_phase       = JumpPhase.WINDUP
+				_jump_launched    = false
+				_jump_frame_timer = ANIM_FRAME_DUR
+				# Set animation and hold frame 0 — do NOT call play().
+				# _jump_update() drives each frame manually from physics phase so each
+				# frame holds as long as the physics state lasts, not just 0.125s each.
+				player_sprite.animation = "jump_" + last_dir
+				player_sprite.frame     = 0
+				player_sprite.pause()
+
 
 # ===========================================================================
 # PROCESS
 # ===========================================================================
 
 # Called: Godot engine (every frame).
-func _process(delta: float) -> void:
+func _physics_process(delta: float) -> void:
 
 	# Sync h_angle from the rig each frame so movement always matches the current camera orbit.
 	h_angle = camera_rig.get("h_angle")
 
-	var input      : Vector2 = Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
+	# Build the input vector manually so cam.use_wasd and cam.use_arrows are respected.
+	var input : Vector2 = Vector2.ZERO
+	if (cam.use_wasd   and Input.is_key_pressed(KEY_A)) or \
+		(cam.use_arrows and Input.is_key_pressed(KEY_LEFT)):  input.x -= 1.0
+	if (cam.use_wasd   and Input.is_key_pressed(KEY_D)) or \
+		(cam.use_arrows and Input.is_key_pressed(KEY_RIGHT)): input.x += 1.0
+	if (cam.use_wasd   and Input.is_key_pressed(KEY_W)) or \
+		(cam.use_arrows and Input.is_key_pressed(KEY_UP)):    input.y -= 1.0
+	if (cam.use_wasd   and Input.is_key_pressed(KEY_S)) or \
+		(cam.use_arrows and Input.is_key_pressed(KEY_DOWN)):  input.y += 1.0
+	input = input.normalized() if input.length() > 1.0 else input
+
 	var is_moving  : bool    = input.length() >= 0.1
 	var is_shift   : bool    = Input.is_key_pressed(KEY_SHIFT)
 	var can_sprint : bool    = stats.energy >= 1.0
 
 	# Update movement state.
-	# ATTACK state is set and cleared by _input()/_attack_update() — never touch it here.
-	if state != State.ATTACK:
+	# ATTACK and JUMP are owned by _input and their update functions — never touch them here.
+	if state != State.ATTACK and state != State.JUMP:
 		if is_moving and is_shift and can_sprint:
 			state = State.RUN
 		elif is_moving:
 			state = State.WALK
 		else:
 			state = State.IDLE
+
+	# Detect going airborne without a voluntary jump — ledge fall OR thrown upward by a creature.
+	# Check velocity.y to pick the correct starting frame and phase rather than always assuming descent:
+	#   velocity.y > 0 → still ascending (thrown back by a big creature hit) → RISE, frame 1
+	#   velocity.y <= 0 → descending or neutral (ledge fall, gravity already pulling) → FALL, frame 2
+	# No energy cost — involuntary air time is never gated on energy.
+	if state != State.JUMP and not is_on_floor():
+		_jump_locked_vel        = Vector2(velocity.x, velocity.z)
+		state                   = State.JUMP
+		_jump_launched          = true
+		player_sprite.animation = "jump_" + last_dir
+		player_sprite.pause()
+		if velocity.y > 0.0:
+			_jump_phase         = JumpPhase.RISE
+			player_sprite.frame = 1
+		else:
+			_jump_phase         = JumpPhase.FALL
+			player_sprite.frame = 2
 
 	# Rotate the 2D input vector by h_angle into a flat 3D world direction.
 	# This keeps WASD camera-relative regardless of which way the camera is orbiting.
@@ -386,8 +620,26 @@ func _process(delta: float) -> void:
 
 	# RUN moves faster than WALK by SPRINT_MULT.
 	var speed : float = stats.mspd * (SPRINT_MULT if state == State.RUN else 1.0)
-	velocity = direction * speed
+	# Apply gravity when airborne. Reset Y when on floor so it doesn't accumulate.
+	# Skip the reset in JUMP when _jump_launched is true — the launch velocity was set in
+	# _jump_update() last frame (after move_and_slide) and must survive to this frame's
+	# move_and_slide() call, otherwise it gets zeroed before the player actually lifts off.
+	if not is_on_floor():
+		velocity.y += GRAVITY * delta
+	elif not (state == State.JUMP and _jump_launched):
+		velocity.y = 0.0
+
+	# All JUMP phases (including WINDUP on the ground) lock horizontal movement to the
+	# velocity committed at Space press — no steering from any phase onward.
+	if state == State.JUMP:
+		velocity.x = _jump_locked_vel.x + _knockback_vel.x
+		velocity.z = _jump_locked_vel.y + _knockback_vel.z
+	else:
+		velocity.x = direction.x * speed + _knockback_vel.x
+		velocity.z = direction.z * speed + _knockback_vel.z
 	move_and_slide()
+	# Decay knockback each frame. move_toward() reaches exactly zero — no float drift.
+	_knockback_vel = _knockback_vel.move_toward(Vector3.ZERO, KNOCKBACK_FRICTION * delta)
 
 	# Sprint energy drain — accumulate real time so tap-sprinting still costs energy
 	# proportional to how long the key was held, not a flat cost per frame.
@@ -404,16 +656,19 @@ func _process(delta: float) -> void:
 			_anim_apply(input)
 		State.ATTACK:
 			_attack_update()
+		State.JUMP:
+			_jump_update(delta)
 
 	# --- Timers and regen ---
 
 	# Advance all stat internal timers (GCD, etc).
 	stats.tick(delta)
 
-	# Count down both gates. Must tick before the regen check below so the gate
+	# Count down all gates. Must tick before the regen check below so the gate
 	# reaches zero and regen fires on the same frame it expires.
-	_regen_timer  = maxf(0.0, _regen_timer  - delta)
-	_combat_timer = maxf(0.0, _combat_timer - delta)
+	_regen_timer         = maxf(0.0, _regen_timer         - delta)
+	_combat_timer        = maxf(0.0, _combat_timer        - delta)
+	_jump_cooldown_timer = maxf(0.0, _jump_cooldown_timer - delta)
 
 	# Tick the active ability cooldown so it becomes ready again after each use.
 	punch.tick(delta)

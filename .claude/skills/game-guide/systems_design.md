@@ -179,6 +179,67 @@ meaningful decisions: invest in raw stats (more HP, more Energy, etc.) or invest
 - Drop chance reflects chain position: Tier A abilities drop more commonly, Tier B less so,
   Tier C are rare drops. This is the only rarity distinction for talents.
 
+### Talent Tree Design Notes — Mobility
+
+**Philosophy**: Mobility talents are where WoW's RPG depth meets Zelda's action feel.
+In a stat-RPG, mobility is a number. In a Zelda game, mobility is a *feel*. These talents
+bridge the gap: each one is a concrete stat or code change that produces a viscerally different
+movement experience. A player who goes deep into the mobility tree should feel like a completely
+different entity to control than one who ignored it.
+
+All mobility talents are in a single tree accessible to any build (no class gate). They cost
+talent points like any other chain. Tier A unlocks Tier B, Tier B unlocks Tier C.
+
+**Jump cooldown reduction** *(code: `JUMP_COOLDOWN` in player.gd)*
+- Tier A: reduce post-land cooldown from 0.3s → 0.2s
+- Tier B: reduce to 0.1s
+- Tier C: remove cooldown entirely — instant re-jump on landing
+- Design note: at Tier C the player can effectively bunny-hop for movement. This is intentional
+  and rewards investment. Tier C should require significant talent point spend.
+
+**Snap landing** *(code: LAND phase second frame in `_jump_update()`)*
+- Single tier talent: remove the second LAND frame (frame 4 absorption) — player regains
+  full control immediately on first contact (frame 3 only, then idle).
+- Effect: snappier, more aggressive feel. Pairs naturally with jump cooldown reduction.
+- Implementation: in LAND phase, check for this talent flag and skip frame 4 entirely.
+
+**Jump height / jump length** *(code: `JUMP_VEL` in player.gd)*
+- Tier A: JUMP_VEL 7.75 → 9.0 (peak height ~2.0 tiles, air time ~0.9s)
+- Tier B: JUMP_VEL → 10.5 (peak height ~2.75 tiles, air time ~1.05s)
+- Tier C: JUMP_VEL → 12.0 (peak height ~3.6 tiles, air time ~1.2s)
+- Design note: jump length scales with jump height because `_jump_locked_vel` carries
+  horizontal momentum through the longer arc. A sprinting Tier C jump covers serious ground.
+  This also opens up platforming sections in dungeons gated behind this talent.
+
+**Sprint speed bonus** *(code: `SPRINT_MULT` in player.gd)*
+- Tier A: SPRINT_MULT 1.2 → 1.35
+- Tier B: SPRINT_MULT → 1.5
+- Tier C: SPRINT_MULT → 1.7
+- Design note: stacks with bms stat investment. A high-bms, Tier C sprint character covers
+  the map fast. This is the intended reward for a fully mobility-focused build.
+
+**Knockback resistance** *(code: `KNOCKBACK_STRENGTH` in player.gd — apply as a divisor)*
+- Tier A: incoming knockback reduced 25% (multiply received strength by 0.75)
+- Tier B: reduced 50%
+- Tier C: reduced 75% — nearly rooted on hits
+- Design note: knockback from creatures interrupts movement and feels terrible against fast
+  enemies. Resistance here dramatically changes how the player survives sustained combat.
+  High tier = tank-style presence. Implement as a multiplier on the received dir vector in
+  `receive_hit()`.
+
+**Object movement speed + cost reduction** *(push/pull system — not yet implemented)*
+- Affects the speed at which the player pushes or pulls moveable objects (puzzle blocks,
+  heavy props, crates). Also reduces energy cost per world unit moved.
+- Tier A: movement speed +30%, energy cost -20%
+- Tier B: speed +60%, cost -40%
+- Tier C: speed +100% (2× default), cost -60%
+- Design note: puzzle blocks that feel sluggish to a fresh player become fluid at Tier C.
+  Also opens time-pressure puzzle designs (hit a switch, then push the block before it resets)
+  that aren't feasible without at least Tier A investment. The energy cost reduction matters
+  in longer puzzle sequences where energy is being drained by multiple push attempts.
+  Implementation note: when push/pull is built, add `push_speed_mult` and `push_energy_mult`
+  to the player's stat modifier layer.
+
 ### Boss Ability Scroll Drops
 - Every dungeon boss has a chance to drop one or more talent ability scrolls.
 - Scrolls are class-influenced: a player with Weaponmaster tendencies (high AGI/STR, physical
@@ -212,8 +273,11 @@ does not scale to the player — the world is set, the player rises to meet it.
 - **Knockback**: ALL entities (player and creatures) knocked back on damage.
   Velocity impulse away from attacker. Duration: 0.15-0.25s. Force: 200-400 px/s.
   Use Tween to smoothly return control after knockback.
-- **Hit flash**: On damage — modulate sprite to Color(2, 2, 2) for 0.08-0.12s, then return.
-  Use a Tween. Required on ALL damageable entities: player, creatures, props.
+- **Hit flash**: On damage — modulate sprite to Color(2, 2, 2, 1) instantly, then Tween back
+  to Color(1, 1, 1, 1) over HIT_FLASH_DURATION (0.1s). Use create_tween() — creates a fresh
+  Tween each hit so rapid hits restart cleanly without getting stuck.
+  ✓ Implemented on player (player.gd _flash_sprite()). Required on ALL damageable entities:
+  player, creatures, props — wire in at Stage 8 (creatures) and when props take damage.
 - **Attack cone**: 80px radius, 45° quarter-cone. Keep tight and responsive.
   Hit detection is instant — no lag between input and resolution.
 

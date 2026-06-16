@@ -28,8 +28,9 @@ order, and talent farming all drive repeat playthroughs.
 - Resource rename pending in code: `rage → focus`, `mp/mana → flow`.
 - Blocking costs NO energy while held. Active shield abilities (e.g. Shield Bash) do cost energy.
 - Year 1 scope: Zone 1 + Zone 2 fully playable. Everything else: design only.
-- Project: `/Users/Grproth/Desktop/Tech Prototype/` is the active 3D game project.
-  Old 2D project preserved intact for reference only — never touch it.
+- Active test project: `/Users/Grproth/Desktop/Indie Project/test_project/` — incremental rebuild.
+  Main project (`echoes_of_the_void/`) preserved intact for reference — never touch it.
+  Old 2D project also preserved intact for reference — never touch it.
 
 ---
 
@@ -54,53 +55,80 @@ Zone 2 implementation       → after Zone 2 story
 ```
 
 ### Current Status *(update this whenever a milestone is hit)*
-- **Last completed**: Terrain height system — outdoor terrain now shows visible 3D hills and valleys
-  that the player can walk across naturally.
-  1. **Terrain height generator** (`terrain_generator.gd`) — complete rewrite. Reads the dark_grass
-     autotile CSV and maps each tile ID (0–49) to its [NW, NE, SW, SE] corner heights using
-     `tile_values.json` (1=1.0, 0=0.0, -1=0.5). Corner values are pushed directly to the 4
-     surrounding mesh vertices and averaged. No Gaussian blur needed — the autotile system already
-     encodes smooth slopes at every edge.
-  2. **Height scale** — `GRASS_HEIGHT = 0.75` for outdoor zones. Steepest hard-edge slope ≈ 37°,
-     under Godot's 45° `floor_max_angle`. Player walks naturally from dirt to grass.
-     Dungeon use: pass 4.0–6.0 as 4th arg to `generate()` for wall-height cliffs.
-  3. **Terrain lighting** (`main.gd`) — `WorldEnvironment` + `DirectionalLight3D` added so
-     slope shading is visible. Terrain mesh uses `SHADING_MODE_PER_VERTEX`. Sprites remain UNSHADED.
-  4. **Z-sort on elevated terrain** — props and creatures on grass (y>0) use
-     `sprite.position.y = -terrain_y` + `sprite.offset.y += terrain_y / PIXEL_SIZE` so elevated
-     sprites don't sort in front of lower ones. Player had this already; creatures and props wired.
-  5. **Development rebuild plan** — agreed to start a fresh parallel project built incrementally
-     (bare scene → camera → player movement → sprites → terrain → creatures → AI → map loading)
-     so the developer can understand and own each system before the next is added.
-- **Active work**: Planning fresh incremental project build.
-- **Next session target**: New project — Stage 1 (bare scene + flat collision + camera).
-- **Blocked on**: Design questions — (1) Does pet have HP and can it die? (2) Is stealth a button
-  or ability-only? (3) Level cap final decision (leaning 30). (4) Player starting stats: all 1s or
-  preset minimum?
+- **Last completed**: test_project Stages 1–6 + jump system fully built.
+  1. **Stage 1–2** — flat 100×100 ground plane + camera_rig.gd wired with orbit/pitch/zoom.
+     Build order fix: camera_rig.init() must run before player.init() so camera_rig.cam is
+     set when player reads it via `camera_rig.get("cam")`.
+  2. **Stage 3–4** — player movement (WASD camera-relative, sprint, gravity) + full sprite system
+     (walking, running, idle_neutral, idle_attack_unarmed, attack_unarmed, jump — all 4 dirs).
+     Jump frames driven manually by physics phase, not by play() — each frame held as long as
+     the matching physics state lasts. Cliff falling auto-switches to JUMP/FALL.
+  3. **Stage 5** — stats.gd (full derived stats, regen, take_damage) + ability.gd (cooldown,
+     calc_damage, AGI crit) + abilities.gd (punch + rat_bite registry).
+  4. **Stage 6** — attack state (KEY_1 → punch), raycast hit detection, dummy target fallback,
+     receive_hit() + knockback on player, is_dead flag, _extend_combat_timer().
+  5. **Stage 8 partial** — creature.gd spawned with collision + sprite + receive_hit() print.
+     No AI state machine yet.
+  6. **Jump system** — JUMP state + JumpPhase (WINDUP/RISE/FALL/LAND). JUMP_VEL=7.75,
+     GRAVITY=-20, JUMP_COOLDOWN=0.3s. Energy cost: 1 per jump. Direction locked at Space press.
+     Mid-air movement locked via _jump_locked_vel. Cliff fall detection in _physics_process().
+  7. **Capsule fix** — collision capsule center at y=0.9 (half height 1.8) so body rests at y=0
+     and sprite bottom aligns with ground. Was y=1.0 which caused sprite to dip underground.
+  8. **Full commenting pass** — all .gd files (player, stats, ability, abilities, camera_rig,
+     camera_settings, creature, main) brought to consistent commenting standard.
+  9. **Const extractions** — AGI_MSPD, AGI_CRIT, DIR_MAP (class-level), JUMP_VEL,
+     JUMP_LAUNCH_FRAME, ANIM_FRAME_DUR, JUMP_COOLDOWN, KNOCKBACK_STRENGTH, KNOCKBACK_FRICTION,
+     HIT_FLASH_DURATION.
+  10. **Hit flash** — receive_hit() snaps player_sprite.modulate to Color(2,2,2,1) then Tweens
+      back to normal over 0.1s. create_tween() each hit so rapid hits restart cleanly.
+  11. **Airborne detection** — cliff fall and creature throw-back both enter JUMP state via the
+      same block. velocity.y > 0 → RISE + frame 1 (ascending); <= 0 → FALL + frame 2 (descending).
+      The existing RISE→FALL transition handles the apex automatically.
+- **Active work**: test_project Stage 8 — creature.gd AI state machine.
+- **Next session target**: Creature AI (Stage 9) — wander → notice → chase → attack.
+- **Blocked on**: (1) Does pet have HP and can it die? (2) Is stealth a button or ability-only?
 
-### What the map currently has (loaded from CSV via map_loader.gd)
+### What the old echoes_of_the_void project has (reference only — do not modify)
 - Full terrain from CSV tilemap — composite texture + heightmap mesh (grass elevated 0.75u, smooth slopes)
-- Mystic trees (1×1, 1×1_h1, 1×1_h2, 2×2, 2×2_h1, 2×2_h2, 3×2, 3×2_h1, 3×2_h2), streamed
-- Bushes (small/mid/large, classic 5 variants + leafy + spiky, with and without collision), streamed
-- Grass (1×1, 2×1, 3×1, no collision), streamed
+- Mystic trees, bushes, grass props — all streamed
 - Player spawn from entities CSV
 - 4 test creatures: rat hostile+home+wander, rat hostile+home+no-wander, snake hostile+no-home+wander,
   rat neutral+no-home+no-wander
 - Test geometry in main.gd: ledge, ramp, cliff, mountain, small walls, pushable block
 
+### What the test_project currently has
+- Flat 100×100 ground plane (StaticBody3D box collision + PlaneMesh visual)
+- camera_rig.gd: orbit (RMB drag + Q/E keys), pitch (Shift+=/- keys), zoom (scroll/=/- keys),
+  wall clip avoidance, indoor/outdoor presets
+- Player (CharacterBody3D + AnimatedSprite3D BILLBOARD_FIXED_Y):
+  - WASD movement (camera-relative), sprint (Shift), gravity, knockback
+  - Jump system: WINDUP/RISE/FALL/LAND phases, energy cost 1, cooldown 0.3s,
+    direction locked at press, cliff fall auto-detection, frames driven by physics not play()
+  - Attack (KEY_1 → punch ability, raycast hit detection)
+  - receive_hit(): damage, knockback (_knockback_vel), is_dead flag, hit flash (Tween modulate
+    snap to Color(2,2,2) → fade back to normal in HIT_FLASH_DURATION=0.1s)
+  - Airborne detection: velocity.y > 0 → RISE/frame 1 (thrown up by creature); <= 0 → FALL/frame 2
+    (ledge fall). Both enter JUMP state and run through LAND normally.
+  - Animations: walking, running, idle_neutral, idle_attack_unarmed, attack_unarmed, jump (all 4 dirs)
+  - Sprite offset uses actual frame height (get_height()) — capsule center at y=0.9
+- Stats: full stats.gd (STR/AGI/STA/DEF/BMS, derived patk/pdef/mspd, regen, take_damage)
+- Abilities: punch (damage_mult=1.0, range=1.5, cooldown=1.0) + rat_bite in registry
+- Rat creature: collision + sprite (idle_neutral) + receive_hit() print — no AI
+- Blue box obstacle at (54,2,50) for camera clip testing
+- Red dummy target (StaticBody3D, Stats STA=100, set_meta("stats")) for combat testing
+
 ### Incremental Rebuild Plan (active approach)
-main.gd is fully commented out. Re-introduce systems one stage at a time.
-The developer reads each file before it is wired back in.
+Each stage read and understood by the developer before wiring in the next.
 
 ```
-Stage 1  — Bare scene          : flat StaticBody3D + camera fixed in place        [ ]
-Stage 2  — Camera rig          : camera_rig.gd — orbit, zoom, pitch               [ ]
-Stage 3  — Player movement     : player.gd (movement only, cube placeholder)      [ ]
-Stage 4  — Player sprite       : player.gd sprite + billboard + directional anims [ ]
-Stage 5  — Stats skeleton      : stats.gd (HP only) + ability.gd/abilities.gd     [ ]
-Stage 6  — Player combat       : attack state, hitbox, dummy target               [ ]
+Stage 1  — Bare scene          : flat StaticBody3D + camera fixed in place        [✓]
+Stage 2  — Camera rig          : camera_rig.gd — orbit, zoom, pitch               [✓]
+Stage 3  — Player movement     : player.gd (movement, gravity, sprint, knockback)  [✓]
+Stage 4  — Player sprite       : sprite + billboard + directional anims + jump     [✓]
+Stage 5  — Stats skeleton      : stats.gd full + ability.gd + abilities.gd        [✓]
+Stage 6  — Player combat       : attack state, hitbox, dummy target, receive_hit   [✓]
 Stage 7  — Terrain height      : terrain_generator.gd, HeightMapShape3D           [ ]
-Stage 8  — One creature no AI  : creature.gd (spawned hardcoded, takes damage)    [ ]
+Stage 8  — One creature no AI  : creature.gd (spawned hardcoded, takes damage)    [~] partial
 Stage 9  — Creature AI         : wander → notice → chase → attack, one at a time  [ ]
 Stage 10 — Pathfinding         : port pathfinder.gd XZ-plane A* into creature     [ ]
 Stage 11 — Status effects      : status_effect.gd, statuses.gd                    [ ]
@@ -156,6 +184,17 @@ These exist in `godot_project/` and need to be brought into 3D — added per sta
   Old creature uses `ability.check_resources(stats, dist)` — distance is checked against
   `ability.range_`. Verify 3D version does the same.
   → Verify at Stage 9.
+
+### Mobility Talent Tree (future — talent system implementation)
+Full design in `systems_design.md` → Section 3 → "Talent Tree Design Notes — Mobility".
+Six talent chains, all in one tree, no class gate:
+- Jump cooldown reduction (0.3s → 0s, 3 tiers) — `JUMP_COOLDOWN` in player.gd
+- Snap landing (remove frame 4 absorption, 1 tier) — LAND phase in `_jump_update()`
+- Jump height / length (JUMP_VEL 7.75 → 12.0, 3 tiers) — `JUMP_VEL` in player.gd
+- Sprint speed bonus (SPRINT_MULT 1.2 → 1.7, 3 tiers) — `SPRINT_MULT` in player.gd
+- Knockback resistance (25% → 75% reduction, 3 tiers) — multiplier on `receive_hit()` dir vec
+- Object push/pull speed + energy cost reduction (3 tiers) — future push/pull system
+Design philosophy: WoW stat depth applied to Zelda action feel — mobility is a *feel*, not a number.
 
 ### Pending (no priority order — resume after staged rebuild)
 - ~~**Rename move → wander**~~ ✓ DONE

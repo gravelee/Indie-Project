@@ -31,13 +31,15 @@ func _build_player() -> void:
 	player_body.name     = "Player"
 	player_body.position = Vector3(50.0, 0.0, 50.0)
 
-	# Capsule centered at y=1.0 so its base sits flush with the ground plane.
+	# Capsule center at y=0.9 = half the height — bottom sits exactly at y=0 (ground level).
+	# At y=1.0 the bottom is 0.1 above ground; physics corrects to body.y=-0.1,
+	# which dips the sprite slightly underground.
 	var col := CollisionShape3D.new()
 	var shp := CapsuleShape3D.new()
 	shp.radius   = 0.4
 	shp.height   = 1.8
 	col.shape    = shp
-	col.position = Vector3(0.0, 1.0, 0.0)
+	col.position = Vector3(0.0, 0.9, 0.0)
 	player_body.add_child(col)
 
 	# BILLBOARD_FIXED_Y, ALPHA_CUT_DISABLED, TEXTURE_FILTER_NEAREST are required
@@ -182,8 +184,11 @@ func _ready() -> void:
 
 	_build_player()
 	_build_camera_rig()
-	player_body.call("init", camera_rig, player_sprite)
+	# camera_rig.init() must run first — it sets camera_rig.cam, which player.init()
+	# reads via camera_rig.get("cam"). pixel_size is already set in _build_player()
+	# so the rig doesn't need player.init() to have run first.
 	camera_rig.call("init", cam, player_body, player_sprite)
+	player_body.call("init", camera_rig, player_sprite)
 
 	_build_rat()
 	_build_dummy()
