@@ -10,11 +10,21 @@ extends RefCounted
 # At 200 AGI the bonus is 1.0 world unit/s, so AGI never outpaces a direct bms investment.
 const AGI_MSPD     : float = 0.005
 
+# Crit chance added per point of AGI. 0.5% per point — 200 AGI = 100% crit rate.
+# Lives here because it is a stat formula — ability.gd must not read raw stat fields directly.
+const AGI_CRIT     : float = 0.005
+
 # HP recovered per second while out of combat and regen is not gated.
 const HP_REGEN     : float = 1.0
 
 # Energy recovered per second while out of combat and not sprinting.
 const ENERGY_REGEN : float = 1.0
+
+# Focus lost per second while out of combat. Keeps focus from carrying over between pulls.
+const FOCUS_DECAY  : float = 1.0
+
+# Hard cap on focus. Abilities that cost focus gate on this via check_resources().
+const FOCUS_MAX    : int   = 100
 
 # Global cooldown in seconds — minimum time between any two ability uses.
 # Not yet enforced in the test project; reserved for when the full ability system is wired.
@@ -50,9 +60,14 @@ var bms  : int
 # Current HP. Reduced by take_damage(), restored by regen(). Death at 0.
 var hp     : float
 
-# Current energy. Spent by abilities via spend(), restored by regen().
-# Also drained by sprinting at SPRINT_ENERGY_COST per second.
+# Current energy. Spent by abilities via spend_resources(), restored by regen().
+# Also drained by sprinting and jumping.
 var energy : float
+
+# Current focus. Gained by landing hits (+1), crits (+2), receiving damage (+1),
+# and passively +1 every 5s while in combat. Decays at FOCUS_DECAY per second
+# out of combat. Starts at 0 — never pre-filled.
+var focus  : float
 
 
 # ---------------------------------------------------------------------------
@@ -69,7 +84,10 @@ var hp_max     : int
 # Maximum energy. Scales with level. energy is capped at this value.
 var energy_max : int
 
-# Physical attack power. Used by ability.calc_damage() as the base damage value.
+# Maximum focus. Fixed at FOCUS_MAX for now — no stat scales it yet.
+var focus_max  : int
+
+# Physical attack power. Base damage input for calc_ability_damage(). ability.calc_damage() delegates here.
 var patk       : float
 
 # Physical defense. Subtracted from incoming damage in take_damage().
@@ -130,6 +148,10 @@ var mspd       : float
 # Counts down the global cooldown. Ability use is blocked while above zero.
 var gcd_timer : float = 0.0
 
+# Accumulates elapsed time during out-of-combat regen. Focus is reduced by one
+# whole point per second — same pattern as sprint energy drain in player.gd.
+var _focus_decay_accum : float = 0.0
+
 
 # ===========================================================================
 # INIT
@@ -148,8 +170,10 @@ func _init(_str: int, _agi: int, _sta: int, _def: int, _bms: int) -> void:
 	_recalculate_all()
 
 	# Fill resources after recalc so hp_max and energy_max are already set.
+	# Focus starts at 0 — it is earned in combat, never pre-filled.
 	hp     = hp_max
 	energy = energy_max
+	focus  = 0.0
 
 
 # ===========================================================================
@@ -167,6 +191,7 @@ func _recalculate_all() -> void:
 
 	hp_max     = 20 + (sta * 2) + (level * 2)
 	energy_max = 10 + level
+	focus_max  = FOCUS_MAX
 	patk       = (str_ * 3.0) + (level * 2.0)
 	pdef       = def_ + (agi  * 0.5)
 	# AGI adds a tiny flat bonus on top of bms — meaningful at very high AGI only.
@@ -177,7 +202,7 @@ func _recalculate_all() -> void:
 # TICK
 # ===========================================================================
 
-# Called: player._process() every frame.
+# Called: player._physics_process() every frame.
 # Counts the GCD timer down. Nothing else — callers check gcd_timer > 0 directly.
 func tick(dt: float) -> void:
 
@@ -188,26 +213,83 @@ func tick(dt: float) -> void:
 # REGEN
 # ===========================================================================
 
-# Called: player._process() when _regen_timer <= 0 and not sprinting.
+# Called: player._physics_process() when _regen_timer <= 0 and not sprinting.
 # Restores HP and energy at flat per-second rates. Capped at their maximums.
+# Also decays focus — both regen and focus decay share the same out-of-combat condition.
 func regen(dt: float) -> void:
 
 	hp     = minf(hp_max,     hp     + HP_REGEN     * dt)
 	energy = minf(energy_max, energy + ENERGY_REGEN * dt)
+	_focus_decay_accum += FOCUS_DECAY * dt
+	if _focus_decay_accum >= FOCUS_DECAY:
+		var ticks : int = int(_focus_decay_accum / FOCUS_DECAY)
+		focus              = maxf(0.0, focus - float(ticks))
+		_focus_decay_accum -= float(ticks) * FOCUS_DECAY
 
 
 # ===========================================================================
 # COMBAT
 # ===========================================================================
 
+# Called: ability.can_use() — gates ability activation.
+# Returns true only if all three resource costs can be met simultaneously.
+# All costs are checked before any are deducted — partial affordability is never accepted.
+func check_resources(hp_cost: int, energy_cost: int, focus_cost: int) -> bool:
+
+	if float(hp_cost)     > hp:     return false
+	if float(energy_cost) > energy: return false
+	if float(focus_cost)  > focus:  return false
+	return true
+
+
+# Called: ability.spend() — deducts resources after can_use() confirmed affordability.
+func spend_resources(hp_cost: int, energy_cost: int, focus_cost: int) -> void:
+
+	hp     = hp     - float(hp_cost)
+	energy = energy - float(energy_cost)
+	focus  = focus  - float(focus_cost)
+
+
+# Called: ability.calc_damage().
+# Rolls crit from AGI, applies damage multiplier, awards focus, returns final damage.
+# All damage math and focus gain for offensive hits live here — never in ability.gd.
+func calc_ability_damage(mult: float) -> float:
+
+	var base    : float = patk * mult # patk = 0 means no damage.
+	var is_crit : bool  = randf() < agi * AGI_CRIT
+	if is_crit:
+		base *= 2.0
+		gain_focus(2)
+		print("focus +2 (crit) — focus: ", int(focus), "/", focus_max)
+	else:
+		gain_focus(1)
+		print("focus +1 (hit) — focus: ", int(focus), "/", focus_max)
+	return base
+
+
+# Called: calc_ability_damage(), gain_focus_on_receive(), player._physics_process() passive tick.
+# Adds amount to focus, clamped to focus_max.
+func gain_focus(amount: int) -> void:
+
+	focus = minf(float(focus_max), floor(focus + float(amount) + 0.4999))
+
+
+# Called: player.receive_hit().
+# Awards +1 focus when the entity takes a hit — being in danger builds aggression.
+func gain_focus_on_receive() -> void:
+
+	gain_focus(1)
+	print("focus +1 (received hit) — focus: ", int(focus), "/", focus_max)
+
+
 # Called: ability.calc_damage() result passed in from player._attack_check() or creature.
 # Subtracts pdef from raw damage, floors the result, and returns the actual damage dealt.
-# Minimum damage is 1.0 — pdef can never fully negate a hit.
+# Minimum damage is 1.0 — pdef can reduce a hit but never fully negate it.
 # The + 0.4999 before floor() is a rounding trick: values >= X.5 round up, below round down,
 # without using round() which would round X.5 up to X+1 (we want conservative rounding).
 func take_damage(raw_damage: float) -> float:
 
-	var actual : float = floor(maxf(1.0, raw_damage - pdef) + 0.4999)
+	var actual : float = maxf(1.0, floor(raw_damage - pdef + 0.4999))
 	hp = maxf(0.0, hp - actual)
 	# Snap to exactly 0.0 if below 1 — avoids floating point values like 0.0001
 	# being treated as alive by is_alive().
@@ -241,3 +323,10 @@ func hp_pct() -> float:
 func energy_pct() -> float:
 
 	return energy / float(energy_max) if energy_max > 0 else 0.0
+
+
+# Called: hud.gd (bar display).
+# Returns focus as a 0.0–1.0 fraction for drawing the focus bar. Guards against divide-by-zero.
+func focus_pct() -> float:
+
+	return focus / float(focus_max) if focus_max > 0 else 0.0

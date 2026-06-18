@@ -5,9 +5,6 @@ extends RefCounted
 # Constants
 # ---------------------------------------------------------------------------
 
-# Crit chance added per point of AGI. 0.5% per point — 200 AGI = 100% crit rate.
-const AGI_CRIT : float = 0.005
-
 
 # ---------------------------------------------------------------------------
 # Data fields — all set by _init(), never left at a default.
@@ -28,8 +25,14 @@ var cooldown    : float
 # Animation frame index at which the hit is applied. Checked each tick by _attack_update().
 var hit_frame   : int
 
+# HP drained from the user when spend() is called. 0 = no HP cost.
+var hp_cost     : int
+
 # Energy drained from the user when spend() is called. can_use() gates on this before allowing use.
 var energy_cost : int
+
+# Focus drained from the user when spend() is called. 0 = no focus cost.
+var focus_cost  : int
 
 # Animation base name (e.g. "attack_unarmed"). Direction suffix appended by player/creature at play time.
 var anim        : String
@@ -62,7 +65,9 @@ func _init(p_id: String, data: Dictionary) -> void:
 	assert(data.has("range_"),          "Ability._init: missing 'range_' for '%s'" % p_id)
 	assert(data.has("cooldown"),        "Ability._init: missing 'cooldown' for '%s'" % p_id)
 	assert(data.has("hit_frame"),       "Ability._init: missing 'hit_frame' for '%s'" % p_id)
+	assert(data.has("hp_cost"),         "Ability._init: missing 'hp_cost' for '%s'" % p_id)
 	assert(data.has("energy_cost"),     "Ability._init: missing 'energy_cost' for '%s'" % p_id)
+	assert(data.has("focus_cost"),      "Ability._init: missing 'focus_cost' for '%s'" % p_id)
 	assert(data.has("anim"),            "Ability._init: missing 'anim' for '%s'" % p_id)
 
 	id          = p_id
@@ -70,7 +75,9 @@ func _init(p_id: String, data: Dictionary) -> void:
 	range_      = float(data["range_"])
 	cooldown    = float(data["cooldown"])
 	hit_frame   = int(data["hit_frame"])
+	hp_cost     = int(data["hp_cost"])
 	energy_cost = int(data["energy_cost"])
+	focus_cost  = int(data["focus_cost"])
 	anim        = str(data["anim"])
 
 
@@ -95,27 +102,19 @@ func can_use(user: Stats) -> bool:
 
 	if _timer > 0.0:
 		return false
-	if float(energy_cost) > user.energy:
-		return false
-	return true
+	return user.check_resources(hp_cost, energy_cost, focus_cost)
 
 
 # Called: player.gd, creature.gd immediately after can_use() returns true.
-# Drains energy and starts the cooldown — committed, no refund.
+# Deducts resources and starts the cooldown — committed, no refund.
 func spend(user: Stats) -> void:
 
-	user.energy -= float(energy_cost)
-	_timer       = cooldown
+	user.spend_resources(hp_cost, energy_cost, focus_cost)
+	_timer = cooldown
 
 
 # Called: player.gd, creature.gd at hit_frame.
-# Calculates final damage from user stats. Crit chance scales with AGI.
-# Minimum damage is 1.0 so a very low patk still lands a hit.
+# Routes through stats.calc_ability_damage() — all damage math and focus gain live there.
 func calc_damage(user: Stats) -> float:
 
-	var actual  : float = maxf(1.0, user.patk * damage_mult)
-	# AGI contributes a small crit chance — 0.5% per point (200 AGI = 100% crit).
-	var is_crit : bool  = randf() < user.agi * AGI_CRIT
-	if is_crit:
-		actual *= 2.0
-	return actual
+	return user.calc_ability_damage(damage_mult)

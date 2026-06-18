@@ -192,5 +192,5 @@ func _ready() -> void:
 
 	_build_rat()
 	_build_dummy()
-	_build_box(Vector3(54.0, 1.0, 50.0), Vector3(2.0, 2.0, 2.0), Color(0.3, 0.3, 0.8))
+	_build_box(Vector3(54.0, 1.0, 50.0), Vector3(3.0, 3.0, 3.0), Color(0.3, 0.3, 0.8))
 	_build_ground()

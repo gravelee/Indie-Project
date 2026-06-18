@@ -44,6 +44,9 @@ const ANIM_FRAME_DUR     : float = 1.0 / 8.0
 # Starts on LAND exit — applies to both voluntary jumps and cliff falls.
 const JUMP_COOLDOWN      : float = 0.3
 
+# Seconds between passive focus ticks while in combat. Each tick grants +1 focus.
+const FOCUS_COMBAT_INTERVAL : float = 5.0
+
 # Initial speed in world units/s applied to the player when a creature lands a hit.
 # Decays to zero each frame via KNOCKBACK_FRICTION — not a duration, a rate.
 const KNOCKBACK_STRENGTH : float = 8.0
@@ -51,6 +54,12 @@ const KNOCKBACK_STRENGTH : float = 8.0
 # World units/s deceleration applied to _knockback_vel each frame via move_toward().
 # At 20.0 the player stops in ~0.4s. Higher = snappier, lower = longer slide.
 const KNOCKBACK_FRICTION : float = 20.0
+
+# Zoom distance at which the player sprite begins to fade (fully visible at or above this).
+const FADE_ZOOM_MAX : float = 5.0
+
+# Zoom distance at which the player sprite is fully transparent (at or below this).
+const FADE_ZOOM_MIN : float = 2.0
 
 # Maps a cardinal direction string to its flat 2D input vector.
 # Used by _attack_check() to reconstruct a world-space direction from last_dir.
@@ -149,7 +158,11 @@ var _jump_frame_timer   : float = 0.0
 
 # Counts down after the LAND animation completes. Jump is blocked while above zero.
 # Starts on LAND exit for both voluntary jumps and cliff falls.
-var _jump_cooldown_timer : float = 0.0
+var _jump_cooldown_timer  : float = 0.0
+
+# Counts down each 5s while in combat. On expiry grants +1 focus and resets.
+# Resets to 0 when leaving combat so the tick only fires during active fights.
+var _focus_combat_timer   : float = 0.0
 
 # Horizontal velocity (world X, world Z) captured the moment the player goes airborne.
 # Held constant during RISE and FALL so there is no mid-air steering — the player commits
@@ -321,6 +334,21 @@ func _anim_apply(input: Vector2) -> void:
 		player_sprite.play(anim_name)
 
 
+# Called: _physics_process().
+# Fades the player sprite out as the camera zooms in close so the player never
+# fully blocks the view. SPAWN and DEAD are exempt — always fully visible.
+# Uses zoom_effective (the actual clipped distance) so wall-clip pullback
+# does not cause the sprite to fade when the camera is forced closer by geometry.
+func _fade_update() -> void:
+
+	if state == State.SPAWN or state == State.DEAD:
+		player_sprite.modulate.a = 1.0
+		return
+	player_sprite.modulate.a = clampf(
+		inverse_lerp(FADE_ZOOM_MIN, FADE_ZOOM_MAX, camera_rig.get("zoom_effective")),
+		0.0, 1.0)
+
+
 # ===========================================================================
 # COMBAT
 # ===========================================================================
@@ -414,6 +442,7 @@ func receive_hit(damage: float, dir: Vector3) -> void:
 	# Push the player away from the attacker. dir points from creature to player
 	# so it's already the correct knockback direction.
 	_knockback_vel = dir.normalized() * KNOCKBACK_STRENGTH
+	stats.gain_focus_on_receive()
 	_flash_sprite()
 	print("player hit for ", actual, " — hp: ", stats.hp, "/", stats.hp_max)
 	if not stats.is_alive():
@@ -568,11 +597,9 @@ func _input(event: InputEvent) -> void:
 
 	if event is InputEventKey and event.pressed and not event.echo:
 		# DEBUG ONLY — remove before release.
-		#if event.keycode == KEY_K:
-			#stats.hp = 0.0
-			#is_dead  = true
-			#print("DEBUG: player force-killed")
-			#return
+		if event.keycode == KEY_K:
+			receive_hit(10.0, -global_transform.basis.z)
+			return
 		if event.keycode == KEY_1:
 			# KEY_1 triggers the punch ability (placeholder — more abilities will expand this).
 			# JUMP and ATTACK block each other — no attacking mid-air, no jumping mid-swing.
@@ -592,7 +619,7 @@ func _input(event: InputEvent) -> void:
 			# and the post-landing cooldown must have expired.
 			if state != State.ATTACK and state != State.JUMP and is_on_floor() \
 					and stats.energy >= 1.0 and _jump_cooldown_timer <= 0.0:
-				stats.energy     -= 1.0
+				stats.spend_resources(0, 1, 0)
 				# Lock direction immediately at press time — velocity here is from the last
 				# move_and_slide() so it reflects actual momentum, not raw input.
 				# This also prevents steering during the WINDUP frame.
@@ -713,9 +740,22 @@ func _physics_process(delta: float) -> void:
 		_run_energy_accum += delta
 		if _run_energy_accum >= 1.0:
 			# Drain a whole number of seconds at once to stay frame-rate independent.
-			var ticks         : int   = int(_run_energy_accum)
-			stats.energy      = maxf(0.0, stats.energy - SPRINT_ENERGY_COST * ticks)
+			var ticks : int = int(_run_energy_accum)
+			var cost  : int = int(SPRINT_ENERGY_COST * ticks)
+			if stats.check_resources(0, cost, 0):
+				stats.spend_resources(0, cost, 0)
 			_run_energy_accum -= float(ticks)
+
+	# Passive focus tick — +1 focus every 5s while in combat.
+	# Timer resets to 0 when leaving combat so partial ticks don't carry over.
+	if _combat_timer > 0.0:
+		_focus_combat_timer += delta
+		if _focus_combat_timer >= FOCUS_COMBAT_INTERVAL:
+			stats.gain_focus(1)
+			_focus_combat_timer -= FOCUS_COMBAT_INTERVAL
+			print("focus +1 (combat tick) — focus: ", int(stats.focus), "/", stats.focus_max)
+	else:
+		_focus_combat_timer = 0.0
 
 	match state:
 		State.IDLE, State.WALK, State.RUN:
@@ -728,6 +768,8 @@ func _physics_process(delta: float) -> void:
 			_spawn_update()
 		State.DEAD:
 			_dead_update()
+
+	_fade_update()
 
 	# --- Timers and regen ---
 
