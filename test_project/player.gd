@@ -69,6 +69,11 @@ const ATTACK_ORIGIN_HEIGHT        : float = 1.0
 # Prevents hitting creatures on ledges directly above or below the player.
 const ATTACK_MAX_HEIGHT           : float = 1.5
 
+# Minimum dot product between facing direction and player→target vector for a hit to land.
+# dot = cos(angle) — so 0.7071 = cos(45°) = ±45° cone (90° total arc).
+# Lower = wider cone: 0.5 = ±60°, 0.0 = ±90° (hemisphere), -1.0 = full circle.
+const ATTACK_ARC_DOT              : float = 0.7071
+
 # Knockback speed below which the deferred death trigger considers the player settled.
 # Prevents the death animation from firing mid-slide after a lethal hit.
 const KNOCKBACK_SETTLED_THRESHOLD : float = 0.1
@@ -392,9 +397,9 @@ func _attack_check() -> void:
 		var flat : Vector3 = Vector3(diff.x, 0.0, diff.z)
 		if flat.length_squared() > range_sq:
 			continue
-		# Facing gate — target must be in the front hemisphere (dot > 0 = within 90°).
-		# No tight arc cone yet — any target in front within range is valid.
-		if flat.length_squared() > 0.001 and flat.normalized().dot(dir_vec) <= 0.0:
+		# Facing gate — target must be within the attack cone.
+		# ATTACK_ARC_DOT = cos(45°) = 0.7071 → ±45° from facing direction (90° total arc).
+		if flat.length_squared() > 0.001 and flat.normalized().dot(dir_vec) <= ATTACK_ARC_DOT:
 			continue
 		# Each creature gets its own damage roll — crit is independent per target.
 		var damage : float = _active_ability.calc_damage(stats)

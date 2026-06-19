@@ -51,7 +51,10 @@ func _load_sprite_frames() -> SpriteFrames:
 
 # Called: main._build_rat().
 # Builds collision, sprite, and stats. Called after add_child() so the node is in the tree.
+# Joins the "creatures" group so player._attack_check() can find it via group iteration.
 func init() -> void:
+
+	add_to_group("creatures")
 
 	# --- Collision ---
 	# Capsule centered at y=1.0 so its base sits flush with the ground plane.
