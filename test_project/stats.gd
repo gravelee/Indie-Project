@@ -24,11 +24,23 @@ const ENERGY_REGEN : float = 1.0
 const FOCUS_DECAY  : float = 1.0
 
 # Hard cap on focus. Abilities that cost focus gate on this via check_resources().
-const FOCUS_MAX    : int   = 100
+const FOCUS_MAX         : int   = 100
+
+# Focus awarded to the attacker on a normal hit. Aggressive play builds focus steadily.
+const FOCUS_GAIN_HIT    : int   = 1
+
+# Focus awarded to the attacker on a crit. Double reward for landing a critical strike.
+const FOCUS_GAIN_CRIT   : int   = 2
+
+# Focus awarded to the defender on receiving a hit. Being in danger builds aggression.
+const FOCUS_GAIN_RECEIVE : int  = 1
+
+# Damage multiplier applied on a critical hit. 2.0 = double damage.
+const CRIT_MULT         : float = 2.0
 
 # Global cooldown in seconds — minimum time between any two ability uses.
 # Not yet enforced in the test project; reserved for when the full ability system is wired.
-const GCD          : float = 1.0
+const GCD               : float = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -258,12 +270,12 @@ func calc_ability_damage(mult: float) -> float:
 	var base    : float = patk * mult # patk = 0 means no damage.
 	var is_crit : bool  = randf() < agi * AGI_CRIT
 	if is_crit:
-		base *= 2.0
-		gain_focus(2)
-		print("focus +2 (crit) — focus: ", int(focus), "/", focus_max)
+		base *= CRIT_MULT
+		gain_focus(FOCUS_GAIN_CRIT)
+		print("focus +", FOCUS_GAIN_CRIT, " (crit) — focus: ", int(focus), "/", focus_max)
 	else:
-		gain_focus(1)
-		print("focus +1 (hit) — focus: ", int(focus), "/", focus_max)
+		gain_focus(FOCUS_GAIN_HIT)
+		print("focus +", FOCUS_GAIN_HIT, " (hit) — focus: ", int(focus), "/", focus_max)
 	return base
 
 
@@ -278,8 +290,8 @@ func gain_focus(amount: int) -> void:
 # Awards +1 focus when the entity takes a hit — being in danger builds aggression.
 func gain_focus_on_receive() -> void:
 
-	gain_focus(1)
-	print("focus +1 (received hit) — focus: ", int(focus), "/", focus_max)
+	gain_focus(FOCUS_GAIN_RECEIVE)
+	print("focus +", FOCUS_GAIN_RECEIVE, " (received hit) — focus: ", int(focus), "/", focus_max)
 
 
 # Called: ability.calc_damage() result passed in from player._attack_check() or creature.

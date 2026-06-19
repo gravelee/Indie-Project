@@ -55,42 +55,54 @@ Zone 2 implementation       → after Zone 2 story
 ```
 
 ### Current Status *(update this whenever a milestone is hit)*
-- **Last completed**: test_project Stages 1–6 + jump system fully built.
+- **Last completed**: test_project player.gd full pass — focus system, architecture cleanup,
+  combat improvements, and polish across player.gd and stats.gd.
   1. **Stage 1–2** — flat 100×100 ground plane + camera_rig.gd wired with orbit/pitch/zoom.
-     Build order fix: camera_rig.init() must run before player.init() so camera_rig.cam is
-     set when player reads it via `camera_rig.get("cam")`.
-  2. **Stage 3–4** — player movement (WASD camera-relative, sprint, gravity) + full sprite system
-     (walking, running, idle_neutral, idle_attack_unarmed, attack_unarmed, jump — all 4 dirs).
-     Jump frames driven manually by physics phase, not by play() — each frame held as long as
-     the matching physics state lasts. Cliff falling auto-switches to JUMP/FALL.
-  3. **Stage 5** — stats.gd (full derived stats, regen, take_damage) + ability.gd (cooldown,
-     calc_damage, AGI crit) + abilities.gd (punch + rat_bite registry).
-  4. **Stage 6** — attack state (KEY_1 → punch), raycast hit detection, dummy target fallback,
-     receive_hit() + knockback on player, is_dead flag, _extend_combat_timer().
+  2. **Stage 3–4** — player movement + full sprite system + jump (physics-driven frames).
+  3. **Stage 5** — stats.gd full + ability.gd + abilities.gd (punch + rat_bite registry).
+  4. **Stage 6** — attack state, hit detection, receive_hit(), knockback, _extend_combat_timer().
   5. **Stage 8 partial** — creature.gd spawned with collision + sprite + receive_hit() print.
-     No AI state machine yet.
   6. **Jump system** — JUMP state + JumpPhase (WINDUP/RISE/FALL/LAND). JUMP_VEL=7.75,
-     GRAVITY=-20, JUMP_COOLDOWN=0.3s. Energy cost: 1 per jump. Direction locked at Space press.
-     Mid-air movement locked via _jump_locked_vel. Cliff fall detection in _physics_process().
-  7. **Capsule fix** — collision capsule center at y=0.9 (half height 1.8) so body rests at y=0
-     and sprite bottom aligns with ground. Was y=1.0 which caused sprite to dip underground.
-  8. **Full commenting pass** — all .gd files (player, stats, ability, abilities, camera_rig,
-     camera_settings, creature, main) brought to consistent commenting standard.
-  9. **Const extractions** — AGI_MSPD, AGI_CRIT, DIR_MAP (class-level), JUMP_VEL,
-     JUMP_LAUNCH_FRAME, ANIM_FRAME_DUR, JUMP_COOLDOWN, KNOCKBACK_STRENGTH, KNOCKBACK_FRICTION,
-     HIT_FLASH_DURATION.
-  10. **Hit flash** — receive_hit() snaps player_sprite.modulate to Color(2,2,2,1) then Tweens
-      back to normal over 0.1s. create_tween() each hit so rapid hits restart cleanly.
-  11. **Airborne detection** — cliff fall and creature throw-back both enter JUMP state via the
-      same block. velocity.y > 0 → RISE + frame 1 (ascending); <= 0 → FALL + frame 2 (descending).
-      The existing RISE→FALL transition handles the apex automatically.
-  12. **SPAWN and DEAD states** — player starts in SPAWN (invincible, 29-frame animation, no input).
-      On completion → IDLE. Death is deferred: is_dead=true at 0 HP but state=DEAD only triggers
-      once grounded and knockback settled (for JUMP: at LAND exit). Death animation plays once and
-      holds last frame. Both states block cliff detection and zero x/z velocity.
-- **Active work**: test_project Stage 8 — creature.gd AI state machine.
+     GRAVITY=-20, JUMP_COOLDOWN=0.3s. Energy cost: 1. Direction locked at Space press.
+  7. **SPAWN and DEAD states** — SPAWN invincible until animation ends. DEAD deferred until
+     grounded + knockback settled. Mid-air death resolves at JUMP LAND exit. Terminal (no respawn yet).
+  8. **Focus system (full)** — gain +FOCUS_GAIN_HIT on hit, +FOCUS_GAIN_CRIT on crit,
+     +FOCUS_GAIN_RECEIVE on receive. Passive +1 every FOCUS_COMBAT_INTERVAL (5s) while in combat.
+     Decays at FOCUS_DECAY (1/s) out of combat via accumulator. All routing through stats.gd.
+  9. **Stats architecture** — all stat math lives in stats.gd. ability.gd delegates
+     can_use→check_resources, spend→spend_resources, calc_damage→calc_ability_damage.
+     No raw stat reads in ability.gd.
+  10. **Attack detection** — switched from single raycast to group iteration over "creatures".
+      Hits ALL valid targets in range simultaneously. Gates: height (ATTACK_MAX_HEIGHT=1.5) →
+      XZ distance → front hemisphere (dot>0). No arc cone yet — tune after combat testing.
+      Each creature hit gets its own independent damage roll and crit chance.
+  11. **Regen condition** — blocked by: _regen_timer>0 (recent swing), _combat_timer>0
+      (creature chasing — _extend_combat_timer() keeps this alive past _regen_timer),
+      sprint (RUN state), jump (JUMP state).
+  12. **Hit flash** — reddish tween (Color 1.0/0.15/0.15 → white). GL Compatibility clamps
+      modulate to [0,1] so overbright white (2,2,2) was invisible. Alpha preserved from
+      current modulate so it does not fight _fade_update().
+  13. **Sprite fade** — player fades out at close zoom (FADE_ZOOM_MIN=2 → FADE_ZOOM_MAX=5).
+      SPAWN and DEAD exempt. Uses zoom_effective so wall-clip pullback does not trigger fade.
+  14. **Magic number pass** — extracted: CRIT_MULT, FOCUS_GAIN_HIT, FOCUS_GAIN_CRIT,
+      FOCUS_GAIN_RECEIVE (stats.gd); ATTACK_ORIGIN_HEIGHT, ATTACK_MAX_HEIGHT,
+      KNOCKBACK_SETTLED_THRESHOLD (player.gd). Focus prints use int(focus).
+  15. **Sprint consistency** — spend_resources gated by check_resources inside accumulator
+      drain block. Same pattern as ability use (check before spend).
+- **Active work**: Moving to Stage 8 — creature.gd AI state machine.
 - **Next session target**: Creature AI (Stage 9) — wander → notice → chase → attack.
 - **Blocked on**: (1) Does pet have HP and can it die? (2) Is stealth a button or ability-only?
+
+### Player — pending for future sessions (no art/design yet)
+- **Respawn** — DEAD is currently terminal. Design needed: delay, position, resource state.
+- **Collision shape disable on death** — corpse currently blocks creature pathfinding.
+- **Ability bar** — expand `punch` var to `Array[Ability]` (10 slots, KEY_1–KEY_0).
+- **Attack cone** — deferred. Test combat feel with front hemisphere first, then tune ATTACK_ARC_DOT.
+- **Air knockback scale** — echoes uses 0.10x in air. Test project applies full strength airborne.
+- **Sprite z-sort compensation** — needed at Stage 7: `sprite.position.y = -global_position.y`
+  + `sprite.offset.y = SPRITE_SIZE*0.5 + global_position.y / pixel_size` per frame.
+- **Auto-target on receive_hit** — echoes auto-targets attacker if player has no current target.
+- **Weapon sprite layer, blocking, dodge roll** — all need art + design decisions first.
 
 ### What the old echoes_of_the_void project has (reference only — do not modify)
 - Full terrain from CSV tilemap — composite texture + heightmap mesh (grass elevated 0.75u, smooth slopes)
@@ -105,22 +117,25 @@ Zone 2 implementation       → after Zone 2 story
 - camera_rig.gd: orbit (RMB drag + Q/E keys), pitch (Shift+=/- keys), zoom (scroll/=/- keys),
   wall clip avoidance, indoor/outdoor presets
 - Player (CharacterBody3D + AnimatedSprite3D BILLBOARD_FIXED_Y):
-  - WASD movement (camera-relative), sprint (Shift), gravity, knockback
-  - Jump system: WINDUP/RISE/FALL/LAND phases, energy cost 1, cooldown 0.3s,
-    direction locked at press, cliff fall auto-detection, frames driven by physics not play()
-  - Attack (KEY_1 → punch ability, raycast hit detection)
-  - receive_hit(): damage, knockback (_knockback_vel), is_dead flag, hit flash (Tween modulate
-    snap to Color(2,2,2) → fade back to normal in HIT_FLASH_DURATION=0.1s)
-  - Airborne detection: velocity.y > 0 → RISE/frame 1 (thrown up by creature); <= 0 → FALL/frame 2
-    (ledge fall). Both enter JUMP state and run through LAND normally.
-  - SPAWN state: plays 29-frame spawn animation on init, invincible, no input, no movement.
-    Transitions to IDLE when animation finishes.
-  - DEAD state: is_dead=true at 0 HP. state=DEAD deferred until grounded + knockback < 0.1.
-    Mid-air death resolves at JUMP LAND exit. Plays 29-frame death animation, holds last frame.
-    Invincible, no input, no movement, terminal.
-  - Animations: walking, running, idle_neutral, idle_attack_unarmed, attack_unarmed, jump (all 4 dirs),
-    spawn, death (non-directional, 29 frames each)
-  - Sprite offset uses actual frame height (get_height()) — capsule center at y=0.9
+  - States: IDLE, WALK, RUN, ATTACK, JUMP, SPAWN, DEAD
+  - WASD movement (camera-relative, WASD + arrows via CameraSettings), sprint (Shift),
+    gravity, cliff fall auto-detection, frames driven by physics not play()
+  - Jump: WINDUP/RISE/FALL/LAND phases, JUMP_VEL=7.75, energy cost 1, cooldown 0.3s,
+    direction locked at launch, creature throwback enters RISE/FALL correctly
+  - Attack: KEY_1 → punch. Group iteration over "creatures" — hits ALL valid targets in range.
+    Gates: height (±1.5u) → XZ distance → front hemisphere. Each target: independent crit roll.
+    No arc cone yet — front hemisphere (dot>0) until combat feel is confirmed.
+  - receive_hit(): take_damage, knockback (_knockback_vel), focus gain, reddish hit flash,
+    is_dead flag. SPAWN invincible. Deferred death: state=DEAD only when grounded + settled.
+  - Resources: HP, energy, focus — all math in stats.gd. ability.gd delegates to stats methods.
+  - Focus: +1 hit, +2 crit, +1 receive, +1/5s passive in combat. Decays 1/s out of combat.
+  - Regen: blocked by recent swing, combat window (_combat_timer), sprint, jump.
+  - Sprint: check_resources + spend_resources inside accumulator drain — consistent with ability use.
+  - Sprite fade: fades at close zoom (2u–5u), exempt during SPAWN/DEAD. Alpha preserved in flash.
+  - Animations: walking, running, idle_neutral, idle_attack_unarmed, attack_unarmed, jump (4 dirs),
+    spawn, death (non-directional, 29 frames). Sprite offset from actual frame height.
+  - Equipment slots weapon_main/weapon_off declared, unused (art + design pending).
+  - DEBUG: K key → receive_hit(10.0) — remove before release.
 - Stats: full stats.gd (STR/AGI/STA/DEF/BMS, derived patk/pdef/mspd, regen, take_damage)
 - Abilities: punch (damage_mult=1.0, range=1.5, cooldown=1.0) + rat_bite in registry
 - Rat creature: collision + sprite (idle_neutral) + receive_hit() print — no AI

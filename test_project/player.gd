@@ -61,6 +61,18 @@ const FADE_ZOOM_MAX : float = 5.0
 # Zoom distance at which the player sprite is fully transparent (at or below this).
 const FADE_ZOOM_MIN : float = 2.0
 
+# Y offset from the player's feet used as the raycast origin for attacks.
+# Chest height — keeps the ray clear of the ground collision shape.
+const ATTACK_ORIGIN_HEIGHT        : float = 1.0
+
+# Maximum Y difference between player and target for an attack to connect.
+# Prevents hitting creatures on ledges directly above or below the player.
+const ATTACK_MAX_HEIGHT           : float = 1.5
+
+# Knockback speed below which the deferred death trigger considers the player settled.
+# Prevents the death animation from firing mid-slide after a lethal hit.
+const KNOCKBACK_SETTLED_THRESHOLD : float = 0.1
+
 # Maps a cardinal direction string to its flat 2D input vector.
 # Used by _attack_check() to reconstruct a world-space direction from last_dir.
 const DIR_MAP : Dictionary = {
@@ -354,48 +366,41 @@ func _fade_update() -> void:
 # ===========================================================================
 
 # Called: _attack_update().
-# Fires a short raycast in the player's facing direction. Applies damage if a
-# creature or dummy is hit. Sets _combat_timer only when a creature is hit —
-# hitting props or walls must not put the player in combat.
+# Iterates all nodes in the "creatures" group and applies damage to every valid target.
+# Each creature gets its own independent damage roll — own crit chance, own focus gain.
+# Sets _combat_timer on the first hit. No arc cone yet — front hemisphere only (dot > 0).
+# Tune to a tight arc cone (ATTACK_ARC_DOT) after combat feel is confirmed in testing.
+# NOTE: test dummy no longer supported here — add it to the "creatures" group or give it
+# a receive_hit() method at Stage 8 when real creatures land.
 func _attack_check() -> void:
 
-	# Map facing direction back to an input vector, then apply the same
-	# camera-relative transform used by movement — one formula, never drifts.
+	# Reconstruct the world-space facing direction from last_dir + current camera angle.
+	# Same formula as movement so attack direction never drifts from the visual facing.
 	var inp     : Vector2 = DIR_MAP[last_dir]
-	# Rotate the 2D input vector by h_angle to get a camera-relative 3D direction.
 	var dir_vec : Vector3 = Vector3(
 		inp.x * cos(h_angle) + inp.y * sin(h_angle), 0.0,
 		inp.x * -sin(h_angle) + inp.y * cos(h_angle))
 
-	var space  : PhysicsDirectSpaceState3D   = get_world_3d().direct_space_state
-	# Cast from chest height so the ray clears the ground collision shape.
-	var origin : Vector3                     = global_position + Vector3(0.0, 1.0, 0.0)
-	var target : Vector3                     = origin + dir_vec * _active_ability.range_
-	var params : PhysicsRayQueryParameters3D
-	params = PhysicsRayQueryParameters3D.create(origin, target)
-	# Exclude the player's own collision shape from the cast.
-	params.exclude = [get_rid()]
-	var result : Dictionary                  = space.intersect_ray(params)
+	var range_sq : float = _active_ability.range_ * _active_ability.range_
 
-	if result.is_empty():
-		return
-
-	var hit_body : Node  = result["collider"]
-	var damage   : float = _active_ability.calc_damage(stats)
-
-	# Creatures own their combat response via receive_hit() — direction is passed
-	# so the creature can apply knockback once that system is wired up.
-	if hit_body.has_method("receive_hit"):
-		hit_body.call("receive_hit", damage, dir_vec)
-		# Only enter combat on a creature hit — prop hits must not trigger combat state.
+	for node : Node in get_tree().get_nodes_in_group("creatures"):
+		var diff : Vector3 = node.global_position - global_position
+		# Height gate — rejects targets on ledges too far above or below.
+		if absf(diff.y) > ATTACK_MAX_HEIGHT:
+			continue
+		# XZ distance gate — flat plane only, height already handled above.
+		var flat : Vector3 = Vector3(diff.x, 0.0, diff.z)
+		if flat.length_squared() > range_sq:
+			continue
+		# Facing gate — target must be in the front hemisphere (dot > 0 = within 90°).
+		# No tight arc cone yet — any target in front within range is valid.
+		if flat.length_squared() > 0.001 and flat.normalized().dot(dir_vec) <= 0.0:
+			continue
+		# Each creature gets its own damage roll — crit is independent per target.
+		var damage : float = _active_ability.calc_damage(stats)
+		var kb_dir : Vector3 = flat.normalized() if flat.length_squared() > 0.001 else dir_vec
+		node.call("receive_hit", damage, kb_dir)
 		_combat_timer = COMBAT_TIMEOUT
-		return
-
-	# Fallback for test dummies that have stats but no receive_hit method.
-	if hit_body.has_meta("stats"):
-		var target_stats : Stats = hit_body.get_meta("stats")
-		var actual       : float = target_stats.take_damage(damage)
-		print("dummy hit for ", actual, " — hp: ", target_stats.hp, "/", target_stats.hp_max)
 
 
 # Called: _physics_process() while state == ATTACK.
@@ -418,14 +423,17 @@ func _attack_update() -> void:
 
 
 # Called: receive_hit().
-# Snaps the sprite modulate to over-bright white, then tweens it back to normal over
-# HIT_FLASH_DURATION seconds. Works on any hit — stacks correctly because create_tween()
-# creates a fresh tween each time, overwriting any still-running flash from a prior hit.
+# Snaps the sprite to a red tint, then tweens it back to normal over HIT_FLASH_DURATION seconds.
+# Red tint instead of overbright white because GL Compatibility clamps modulate to [0,1] —
+# Color(2,2,2) looks identical to Color(1,1,1) in that renderer so the flash is invisible.
+# Alpha is preserved from the current modulate so it does not fight _fade_update().
+# Works on any hit — stacks correctly because create_tween() creates a fresh tween each time.
 func _flash_sprite() -> void:
 
-	player_sprite.modulate = Color(2.0, 2.0, 2.0, 1.0)
+	var a : float = player_sprite.modulate.a
+	player_sprite.modulate = Color(1.0, 0.15, 0.15, a)
 	var tween : Tween = create_tween()
-	tween.tween_property(player_sprite, "modulate", Color(1.0, 1.0, 1.0, 1.0), HIT_FLASH_DURATION)
+	tween.tween_property(player_sprite, "modulate", Color(1.0, 1.0, 1.0, a), HIT_FLASH_DURATION)
 
 
 # Called: creature._attack_check() when a creature's raycast hits the player.
@@ -730,7 +738,7 @@ func _physics_process(delta: float) -> void:
 	# Wait until grounded and knockback settled so the throw-back arc or slide
 	# resolves naturally before the death animation plays.
 	if is_dead and state != State.DEAD and state != State.JUMP:
-		if is_on_floor() and _knockback_vel.length() < 0.1:
+		if is_on_floor() and _knockback_vel.length() < KNOCKBACK_SETTLED_THRESHOLD:
 			state = State.DEAD
 			player_sprite.play("death")
 
@@ -785,7 +793,12 @@ func _physics_process(delta: float) -> void:
 	# Tick the active ability cooldown so it becomes ready again after each use.
 	punch.tick(delta)
 
-	# Regen is blocked while _regen_timer is above zero (recent swing) or while sprinting
-	# (energy is draining — regenerating at the same time would cancel the cost).
-	if _regen_timer <= 0.0 and state != State.RUN:
+	# Regen is blocked while:
+	#   _regen_timer > 0  — recent swing (even against props)
+	#   _combat_timer > 0 — creature still chasing (_extend_combat_timer keeps this alive even
+	#                       after _regen_timer expires, so this check is not redundant)
+	#   state == RUN      — sprinting drains energy; regen at the same time would cancel the cost
+	#   state == JUMP     — brief exertion; regen mid-air would feel unearned
+	if _regen_timer <= 0.0 and _combat_timer <= 0.0 \
+			and state != State.RUN and state != State.JUMP:
 		stats.regen(delta)
