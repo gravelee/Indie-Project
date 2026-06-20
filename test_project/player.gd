@@ -1,4 +1,3 @@
-class_name Player
 extends Entity
 
 
@@ -63,6 +62,11 @@ const FADE_ZOOM_MAX : float = 5.0
 
 # Zoom distance at which the player sprite is fully transparent (at or below this).
 const FADE_ZOOM_MIN : float = 2.0
+
+# Flat tolerance added to hit_half_height comparisons to absorb physics safe-margin drift.
+# Godot's CharacterBody3D rests ~0.001u above the exact floor surface — without this slack
+# the height gate rejects attacks on same-level targets by a fraction of a unit.
+const ATTACK_HEIGHT_SLACK : float = 0.05
 
 # Minimum dot product between facing direction and player→target vector for a hit to land.
 # dot = cos(angle) — so 0.7071 = cos(45°) = ±45° cone (90° total arc).
@@ -374,9 +378,10 @@ func _attack_check() -> void:
 
 	for node : Node in get_tree().get_nodes_in_group("creatures"):
 		var diff : Vector3 = node.global_position - global_position
-		# Height gate — player origin (fist height) must fall within the target's hittable Y range.
-		# Each entity defines its own hit_half_height matching its drawn pixel area.
-		if absf(diff.y) > node.get("hit_half_height"):
+		# Height gate — player origin must fall within the target's hittable Y range.
+		# ATTACK_HEIGHT_SLACK absorbs physics safe-margin drift (~0.001u) so same-level
+		# targets are never rejected by a rounding-error fraction.
+		if absf(diff.y) > node.get("hit_half_height") + ATTACK_HEIGHT_SLACK:
 			continue
 		# XZ distance gate — flat plane only, height already handled above.
 		var flat : Vector3 = Vector3(diff.x, 0.0, diff.z)

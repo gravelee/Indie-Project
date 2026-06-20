@@ -27,32 +27,35 @@ var camera_rig    : Node3D
 # Script is assigned last so _ready() on player.gd does not fire before init() is called.
 func _build_player() -> void:
 
+	# Load once — used both to read constants and to assign the script.
+	var script : GDScript = load("res://player.gd")
+
 	player_body          = CharacterBody3D.new()
 	player_body.name     = "Player"
-	# Initial drop height accounts for the body origin being 1.5u above ground.
+	# Initial drop height accounts for the body origin being above ground.
 	player_body.position = Vector3(50.0, 21.5, 50.0)
 
-	# Body origin is at fist/chest height (1.5u above ground) so global_position.y
-	# reflects strike height for attack detection. The capsule world center stays at
-	# y=0.9 (bottom flush at y=0), so local offset = 0.9 - 1.5 = -0.6.
+	# Body origin is at fist/chest height so global_position.y reflects strike height.
+	# Capsule world center stays at y=0.9 (bottom flush at y=0).
+	# Local offset = capsule_half_height - body_origin_y (read from script).
 	var col := CollisionShape3D.new()
 	var shp := CapsuleShape3D.new()
 	shp.radius   = 0.4
 	shp.height   = 1.8
 	col.shape    = shp
-	col.position = Vector3(0.0, shp.height * 0.5 - Player.BODY_ORIGIN_Y, 0.0)
+	col.position = Vector3(0.0, shp.height * 0.5 - script.BODY_ORIGIN_Y, 0.0)
 	player_body.add_child(col)
 
 	# BILLBOARD_FIXED_Y, ALPHA_CUT_DISABLED, TEXTURE_FILTER_NEAREST are required
 	# on all sprites in the scene — see player.gd init() for full explanation.
 	player_sprite                = AnimatedSprite3D.new()
-	player_sprite.pixel_size     = Entity.PIXEL_SIZE
+	player_sprite.pixel_size     = script.PIXEL_SIZE
 	player_sprite.billboard      = BaseMaterial3D.BILLBOARD_FIXED_Y
 	player_sprite.alpha_cut      = SpriteBase3D.ALPHA_CUT_DISABLED
 	player_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	player_body.add_child(player_sprite)
 
-	player_body.set_script(load("res://player.gd"))
+	player_body.set_script(script)
 	add_child(player_body)
 
 
@@ -73,11 +76,14 @@ func _build_camera_rig() -> void:
 # creature.gd owns its own collision and sprite setup via init().
 func _build_rat() -> void:
 
+	# Load once — used both to read constants and to assign the script.
+	var script : GDScript = load("res://creature.gd")
+
 	var body : CharacterBody3D = CharacterBody3D.new()
 	body.name     = "Rat"
-	# Body origin at visual center of the rat's drawn pixels.
-	body.position = Vector3(52.0, Creature.BODY_ORIGIN_Y, 52.0)
-	body.set_script(load("res://creature.gd"))
+	# Body origin at visual center of the rat's drawn pixels (read from script).
+	body.position = Vector3(52.0, script.BODY_ORIGIN_Y, 52.0)
+	body.set_script(script)
 	add_child(body)
 	body.call("init")
 

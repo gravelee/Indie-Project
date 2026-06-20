@@ -95,6 +95,13 @@ Zone 2 implementation       → after Zone 2 story
       Physics capsule sized for gameplay (Player: h=1.8, r=0.4; Rat: h=1.2, r=0.3).
       hit_half_height defines the Y window for receiving hits — matched to drawn pixel area only.
   17. **Dummy removed** — _build_dummy() deleted. Rat covers same testing purpose.
+  18. **ATTACK_HEIGHT_SLACK = 0.05** — added to height gate in _attack_check(). Godot's
+      CharacterBody3D physics safe margin rests the body ~0.001u above the exact floor surface,
+      causing diff.y to exceed hit_half_height by a tiny fraction. Slack absorbs this without
+      widening the hitbox meaningfully. Applied as: absf(diff.y) > hhh + ATTACK_HEIGHT_SLACK.
+  19. **main.gd script loading** — entity constants (BODY_ORIGIN_Y, PIXEL_SIZE) read from
+      runtime load() of each script at builder function start. No preload (parse-time failure),
+      no duplicate constants. Single load() call reused for set_script() in same function.
 - **Active work**: Stage 8 complete. Moving to Stage 9 — creature AI.
 - **Next session target**: Creature AI (Stage 9) — wander → notice → chase → attack.
 - **Blocked on**: (1) Does pet have HP and can it die? (2) Is stealth a button or ability-only?
