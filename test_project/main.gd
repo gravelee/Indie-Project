@@ -29,23 +29,24 @@ func _build_player() -> void:
 
 	player_body          = CharacterBody3D.new()
 	player_body.name     = "Player"
-	player_body.position = Vector3(50.0, 20.0, 50.0)
+	# Initial drop height accounts for the body origin being 1.5u above ground.
+	player_body.position = Vector3(50.0, 21.5, 50.0)
 
-	# Capsule center at y=0.9 = half the height — bottom sits exactly at y=0 (ground level).
-	# At y=1.0 the bottom is 0.1 above ground; physics corrects to body.y=-0.1,
-	# which dips the sprite slightly underground.
+	# Body origin is at fist/chest height (1.5u above ground) so global_position.y
+	# reflects strike height for attack detection. The capsule world center stays at
+	# y=0.9 (bottom flush at y=0), so local offset = 0.9 - 1.5 = -0.6.
 	var col := CollisionShape3D.new()
 	var shp := CapsuleShape3D.new()
 	shp.radius   = 0.4
 	shp.height   = 1.8
 	col.shape    = shp
-	col.position = Vector3(0.0, 0.9, 0.0)
+	col.position = Vector3(0.0, shp.height * 0.5 - Player.BODY_ORIGIN_Y, 0.0)
 	player_body.add_child(col)
 
 	# BILLBOARD_FIXED_Y, ALPHA_CUT_DISABLED, TEXTURE_FILTER_NEAREST are required
 	# on all sprites in the scene — see player.gd init() for full explanation.
 	player_sprite                = AnimatedSprite3D.new()
-	player_sprite.pixel_size     = 3.0 / 32.0
+	player_sprite.pixel_size     = Entity.PIXEL_SIZE
 	player_sprite.billboard      = BaseMaterial3D.BILLBOARD_FIXED_Y
 	player_sprite.alpha_cut      = SpriteBase3D.ALPHA_CUT_DISABLED
 	player_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
@@ -74,46 +75,11 @@ func _build_rat() -> void:
 
 	var body : CharacterBody3D = CharacterBody3D.new()
 	body.name     = "Rat"
-	body.position = Vector3(52.0, 0.0, 52.0)
+	# Body origin at visual center of the rat's drawn pixels.
+	body.position = Vector3(52.0, Creature.BODY_ORIGIN_Y, 52.0)
 	body.set_script(load("res://creature.gd"))
 	add_child(body)
 	body.call("init")
-
-
-# Called: _ready().
-# Spawns a static test dummy that takes damage but has no receive_hit() method.
-# Uses set_meta("stats") as a fallback so player._attack_check() can read its HP directly.
-# The dummy exists to test the stats.take_damage() path without needing a full creature.
-func _build_dummy() -> void:
-
-	var body      := StaticBody3D.new()
-	body.name      = "Dummy"
-	body.position  = Vector3(52.0, 0.0, 50.0)
-
-	var mesh : BoxMesh           = BoxMesh.new()
-	mesh.size                    = Vector3(1.0, 2.0, 1.0)
-	var mat  : StandardMaterial3D = StandardMaterial3D.new()
-	mat.albedo_color              = Color(0.8, 0.2, 0.2)
-	mat.shading_mode              = BaseMaterial3D.SHADING_MODE_UNSHADED
-	var vis  : MeshInstance3D     = MeshInstance3D.new()
-	vis.mesh                      = mesh
-	vis.material_override         = mat
-	vis.position                  = Vector3(0.0, 1.0, 0.0)
-	body.add_child(vis)
-
-	var col := CollisionShape3D.new()
-	var shp := CapsuleShape3D.new()
-	shp.radius   = 0.4
-	shp.height   = 1.8
-	col.shape    = shp
-	col.position = Vector3(0.0, 1.0, 0.0)
-	body.add_child(col)
-
-	# STA=100 gives the dummy a large HP pool so it survives many hits during testing.
-	var dummy_stats : Stats = Stats.new(0, 0, 100, 0, 0)
-	body.set_meta("stats", dummy_stats)
-
-	add_child(body)
 
 
 # Called: _ready().
@@ -191,6 +157,5 @@ func _ready() -> void:
 	player_body.call("init", camera_rig, player_sprite)
 
 	_build_rat()
-	_build_dummy()
 	_build_box(Vector3(54.0, 1.0, 50.0), Vector3(3.0, 3.0, 3.0), Color(0.3, 0.3, 0.8))
 	_build_ground()

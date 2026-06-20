@@ -55,8 +55,7 @@ Zone 2 implementation       → after Zone 2 story
 ```
 
 ### Current Status *(update this whenever a milestone is hit)*
-- **Last completed**: test_project player.gd full pass — focus system, architecture cleanup,
-  combat improvements, and polish across player.gd and stats.gd.
+- **Last completed**: Entity base class + body origin redesign across all entity files.
   1. **Stage 1–2** — flat 100×100 ground plane + camera_rig.gd wired with orbit/pitch/zoom.
   2. **Stage 3–4** — player movement + full sprite system + jump (physics-driven frames).
   3. **Stage 5** — stats.gd full + ability.gd + abilities.gd (punch + rat_bite registry).
@@ -72,10 +71,9 @@ Zone 2 implementation       → after Zone 2 story
   9. **Stats architecture** — all stat math lives in stats.gd. ability.gd delegates
      can_use→check_resources, spend→spend_resources, calc_damage→calc_ability_damage.
      No raw stat reads in ability.gd.
-  10. **Attack detection** — switched from single raycast to group iteration over "creatures".
-      Hits ALL valid targets in range simultaneously. Gates: height (ATTACK_MAX_HEIGHT=1.5) →
-      XZ distance → front hemisphere (dot>0). No arc cone yet — tune after combat testing.
-      Each creature hit gets its own independent damage roll and crit chance.
+  10. **Attack detection** — group iteration over "creatures". Gates: hit_half_height (per-target
+      Y range) → XZ distance → cone (ATTACK_ARC_DOT=0.7071, ±45°). Each target: independent
+      damage roll. _attack_check() reads node.get("hit_half_height") — no global Y constant.
   11. **Regen condition** — blocked by: _regen_timer>0 (recent swing), _combat_timer>0
       (creature chasing — _extend_combat_timer() keeps this alive past _regen_timer),
       sprint (RUN state), jump (JUMP state).
@@ -84,12 +82,20 @@ Zone 2 implementation       → after Zone 2 story
       current modulate so it does not fight _fade_update().
   13. **Sprite fade** — player fades out at close zoom (FADE_ZOOM_MIN=2 → FADE_ZOOM_MAX=5).
       SPAWN and DEAD exempt. Uses zoom_effective so wall-clip pullback does not trigger fade.
-  14. **Magic number pass** — extracted: CRIT_MULT, FOCUS_GAIN_HIT, FOCUS_GAIN_CRIT,
-      FOCUS_GAIN_RECEIVE (stats.gd); ATTACK_ORIGIN_HEIGHT, ATTACK_MAX_HEIGHT,
-      KNOCKBACK_SETTLED_THRESHOLD (player.gd). Focus prints use int(focus).
-  15. **Sprint consistency** — spend_resources gated by check_resources inside accumulator
-      drain block. Same pattern as ability use (check before spend).
-- **Active work**: Moving to Stage 8 — creature.gd AI state machine.
+  14. **entity.gd base class** — new file. class_name Entity extends CharacterBody3D.
+      Shared: PIXEL_SIZE, HIT_FLASH_DURATION, sprite, stats, hit_half_height, is_dead,
+      _last_damage, _flash_sprite(), receive_hit() (damage/focus/flash/death). Children call
+      super.receive_hit() then add their own logic. player.gd and creature.gd extend Entity.
+  15. **Body origin design** — entity global_position.y is the visual center of drawn pixels,
+      not feet. Physics capsule offset compensates so collision is unchanged.
+      Player: BODY_ORIGIN_Y=1.5 (fist/chest, full 3u drawn). Rat: BODY_ORIGIN_Y=0.75 (center
+      of 1.5u drawn). hit_half_height = BODY_ORIGIN_Y for any entity whose sprite base sits
+      at ground. main.gd uses Player.BODY_ORIGIN_Y and Creature.BODY_ORIGIN_Y — no magic numbers.
+  16. **Hitbox design** — physics capsule (movement) and hurtbox (hit_half_height) are separate.
+      Physics capsule sized for gameplay (Player: h=1.8, r=0.4; Rat: h=1.2, r=0.3).
+      hit_half_height defines the Y window for receiving hits — matched to drawn pixel area only.
+  17. **Dummy removed** — _build_dummy() deleted. Rat covers same testing purpose.
+- **Active work**: Stage 8 complete. Moving to Stage 9 — creature AI.
 - **Next session target**: Creature AI (Stage 9) — wander → notice → chase → attack.
 - **Blocked on**: (1) Does pet have HP and can it die? (2) Is stealth a button or ability-only?
 
@@ -97,7 +103,10 @@ Zone 2 implementation       → after Zone 2 story
 - **Respawn** — DEAD is currently terminal. Design needed: delay, position, resource state.
 - **Collision shape disable on death** — corpse currently blocks creature pathfinding.
 - **Ability bar** — expand `punch` var to `Array[Ability]` (10 slots, KEY_1–KEY_0).
-- **Attack cone** — deferred. Test combat feel with front hemisphere first, then tune ATTACK_ARC_DOT.
+- **Attack cone** — ATTACK_ARC_DOT=0.7071 (±45°, 90° total) implemented. Tune after combat testing.
+- **Attack Y asymmetry** — currently symmetric (±hit_half_height of each target). Natural
+  asymmetry already exists from body origin offsets: player at 1.5u, rat at 0.75u. Tighter
+  downward limit (separate UP/DOWN consts) is a future design option if needed after testing.
 - **Air knockback scale** — echoes uses 0.10x in air. Test project applies full strength airborne.
 - **Sprite z-sort compensation** — needed at Stage 7: `sprite.position.y = -global_position.y`
   + `sprite.offset.y = SPRITE_SIZE*0.5 + global_position.y / pixel_size` per frame.
@@ -123,8 +132,9 @@ Zone 2 implementation       → after Zone 2 story
   - Jump: WINDUP/RISE/FALL/LAND phases, JUMP_VEL=7.75, energy cost 1, cooldown 0.3s,
     direction locked at launch, creature throwback enters RISE/FALL correctly
   - Attack: KEY_1 → punch. Group iteration over "creatures" — hits ALL valid targets in range.
-    Gates: height (±1.5u) → XZ distance → front hemisphere. Each target: independent crit roll.
-    No arc cone yet — front hemisphere (dot>0) until combat feel is confirmed.
+    Gates: height (±1.5u) → XZ distance → cone (ATTACK_ARC_DOT=0.7071 = cos(45°) = ±45°, 90° total).
+    Each target: independent crit roll. Tune ATTACK_ARC_DOT to widen/narrow cone after testing.
+    Lower value = wider: 0.5=±60°, 0.0=±90° hemisphere, -1.0=full circle.
   - receive_hit(): take_damage, knockback (_knockback_vel), focus gain, reddish hit flash,
     is_dead flag. SPAWN invincible. Deferred death: state=DEAD only when grounded + settled.
   - Resources: HP, energy, focus — all math in stats.gd. ability.gd delegates to stats methods.
@@ -138,9 +148,11 @@ Zone 2 implementation       → after Zone 2 story
   - DEBUG: K key → receive_hit(10.0) — remove before release.
 - Stats: full stats.gd (STR/AGI/STA/DEF/BMS, derived patk/pdef/mspd, regen, take_damage)
 - Abilities: punch (damage_mult=1.0, range=1.5, cooldown=1.0) + rat_bite in registry
-- Rat creature: collision + sprite (idle_neutral) + receive_hit() print — no AI
+- entity.gd: base class (Entity extends CharacterBody3D). Shared: PIXEL_SIZE, HIT_FLASH_DURATION,
+  sprite, stats, hit_half_height, is_dead, _last_damage, _flash_sprite(), receive_hit().
+- Rat creature (extends Entity): BODY_ORIGIN_Y=0.75, hit_half_height=0.75, capsule h=1.2 r=0.3,
+  sprite idle_neutral, receive_hit() calls super then prints. No AI yet.
 - Blue box obstacle at (54,2,50) for camera clip testing
-- Red dummy target (StaticBody3D, Stats STA=100, set_meta("stats")) for combat testing
 
 ### Incremental Rebuild Plan (active approach)
 Each stage read and understood by the developer before wiring in the next.
@@ -153,7 +165,7 @@ Stage 4  — Player sprite       : sprite + billboard + directional anims + jump
 Stage 5  — Stats skeleton      : stats.gd full + ability.gd + abilities.gd        [✓]
 Stage 6  — Player combat       : attack state, hitbox, dummy target, receive_hit   [✓]
 Stage 7  — Terrain height      : terrain_generator.gd, HeightMapShape3D           [ ]
-Stage 8  — One creature no AI  : creature.gd (spawned hardcoded, takes damage)    [~] partial
+Stage 8  — One creature no AI  : creature.gd (spawned hardcoded, takes damage)    [✓]
 Stage 9  — Creature AI         : wander → notice → chase → attack, one at a time  [ ]
 Stage 10 — Pathfinding         : port pathfinder.gd XZ-plane A* into creature     [ ]
 Stage 11 — Status effects      : status_effect.gd, statuses.gd                    [ ]

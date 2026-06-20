@@ -1,24 +1,15 @@
 class_name Creature
-extends CharacterBody3D
+extends Entity
+
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-# Sprite-to-world scale. 1 tile = 32px = 1.0 world unit. Sprite is 96px = 3.0 world units.
-# Shared contract with player — all entity sprites use the same pixel_size.
-const PIXEL_SIZE : float = 3.0 / 32.0
-
-
-# ---------------------------------------------------------------------------
-# State
-# ---------------------------------------------------------------------------
-
-# All creature stat values. Set in init() with creature-specific values.
-var stats  : Stats
-
-# The visual AnimatedSprite3D child. Handles animation playback.
-var sprite : AnimatedSprite3D
+# Y height of the body origin above the ground plane.
+# Body origin sits at the visual center of the rat's drawn pixels.
+# Spawn position and sprite offset in main.gd and init() are derived from this value.
+const BODY_ORIGIN_Y : float = 0.75
 
 
 # ===========================================================================
@@ -56,14 +47,20 @@ func init() -> void:
 
 	add_to_group("creatures")
 
+	# hit_half_height = BODY_ORIGIN_Y — rat drawn sprite is ~1.5u, center at 0.75u.
+	# Body origin is at center so hit_half_height equals the origin height above ground.
+	hit_half_height = BODY_ORIGIN_Y
+
 	# --- Collision ---
-	# Capsule centered at y=1.0 so its base sits flush with the ground plane.
+	# Body origin is at visual center (0.75u above ground) so local offset is 0.
+	# Capsule sized to the drawn body: height=1.2, radius=0.3 — smaller than the
+	# full 1.5u drawn area to avoid snagging on geometry above the rat's head.
 	var col : CollisionShape3D = CollisionShape3D.new()
 	var shp : CapsuleShape3D   = CapsuleShape3D.new()
-	shp.radius   = 0.4
-	shp.height   = 1.8
+	shp.radius   = 0.3
+	shp.height   = 1.2
 	col.shape    = shp
-	col.position = Vector3(0.0, 1.0, 0.0)
+	col.position = Vector3(0.0, 0.0, 0.0)
 	add_child(col)
 
 	# --- Sprite ---
@@ -77,8 +74,10 @@ func init() -> void:
 	sprite.billboard      = BaseMaterial3D.BILLBOARD_FIXED_Y
 	sprite.alpha_cut      = SpriteBase3D.ALPHA_CUT_DISABLED
 	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	# Lift anchor to sprite vertical center so the sprite base sits on the ground.
-	sprite.position.y     = 32.0 * PIXEL_SIZE * 0.5
+	# Body origin is at 0.75u above ground (visual center). Sprite anchor is at
+	# its frame center, so shift up by half the frame world height minus the body offset
+	# to keep the sprite base on the ground: (32 * PIXEL_SIZE * 0.5) - 0.75 = 0.75.
+	sprite.position.y     = 32.0 * PIXEL_SIZE * 0.5 - BODY_ORIGIN_Y
 	sprite.sprite_frames  = _load_sprite_frames()
 	sprite.play("idle_neutral")
 	add_child(sprite)
@@ -92,10 +91,10 @@ func init() -> void:
 # COMBAT
 # ===========================================================================
 
-# Called: player._attack_check() when the player's raycast hits this body.
+# Called: player._attack_check() when the player's attack reaches this creature.
 # damage : raw damage value from ability.calc_damage().
-# _dir   : flat direction vector from player to this creature — unused now, reserved for knockback.
-func receive_hit(damage: float, _dir: Vector3) -> void:
+# dir    : flat direction vector from player to this creature — reserved for knockback.
+func receive_hit(damage: float, dir: Vector3) -> void:
 
-	var actual : float = stats.take_damage(damage)
-	print("rat hit for ", actual, " — hp: ", stats.hp, "/", stats.hp_max)
+	super.receive_hit(damage, dir)
+	print("rat hit for ", _last_damage, " — hp: ", stats.hp, "/", stats.hp_max)

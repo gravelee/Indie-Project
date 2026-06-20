@@ -1,9 +1,15 @@
-extends CharacterBody3D
+class_name Player
+extends Entity
 
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
+
+# Y height of the body origin above the ground plane.
+# Body origin sits at fist/chest height so global_position.y reflects strike height.
+# Capsule offset and sprite position in main.gd and init() are derived from this value.
+const BODY_ORIGIN_Y      : float = 1.5
 
 # Seconds regen is held off after the player starts any swing (even against props).
 # Prevents the player from recovering energy mid-combo by spam-attacking walls.
@@ -32,9 +38,6 @@ const JUMP_VEL           : float = 7.75
 # Frame 0 = prep (windup on ground), frame 1 = ascent begins (launch here).
 const JUMP_LAUNCH_FRAME  : int   = 1
 
-# Seconds the sprite stays over-bright white after taking a hit before tweening back to normal.
-const HIT_FLASH_DURATION : float = 0.1
-
 # Duration of one animation frame in seconds at 8 fps.
 # Used by _jump_update() to pace frame 0 (WINDUP) and frames 3-4 (LAND) at the
 # correct rate without calling play() — jump frames are driven by physics phase.
@@ -60,14 +63,6 @@ const FADE_ZOOM_MAX : float = 5.0
 
 # Zoom distance at which the player sprite is fully transparent (at or below this).
 const FADE_ZOOM_MIN : float = 2.0
-
-# Y offset from the player's feet used as the raycast origin for attacks.
-# Chest height — keeps the ray clear of the ground collision shape.
-const ATTACK_ORIGIN_HEIGHT        : float = 1.0
-
-# Maximum Y difference between player and target for an attack to connect.
-# Prevents hitting creatures on ledges directly above or below the player.
-const ATTACK_MAX_HEIGHT           : float = 1.5
 
 # Minimum dot product between facing direction and player→target vector for a hit to land.
 # dot = cos(angle) — so 0.7071 = cos(45°) = ±45° cone (90° total arc).
@@ -135,20 +130,14 @@ var h_angle    : float = 0.0
 # Sprite
 # ---------------------------------------------------------------------------
 
-# The visual AnimatedSprite3D child. Handles all directional animation playback.
-var player_sprite : AnimatedSprite3D
-
 # Last resolved facing direction ("north", "south", "east", "west").
 # Persists when the player stops moving so the idle animation faces the right way.
-var last_dir      : String = "south"
+var last_dir : String = "south"
 
 
 # ---------------------------------------------------------------------------
-# Stats & state
+# State
 # ---------------------------------------------------------------------------
-
-# All player stat values (HP, energy, patk, pdef, mspd, etc). Set in init().
-var stats : Stats
 
 # Current movement/action state.
 # IDLE/WALK/RUN: movement states, driven by input each frame.
@@ -185,9 +174,6 @@ var _focus_combat_timer   : float = 0.0
 # Held constant during RISE and FALL so there is no mid-air steering — the player commits
 # to a direction at launch. Set on voluntary jumps, ledge falls, and creature throw-backs.
 var _jump_locked_vel  : Vector2 = Vector2.ZERO
-
-# True once HP reaches zero. Read by creatures to stop chasing a dead player.
-var is_dead : bool = false
 
 
 # ---------------------------------------------------------------------------
@@ -347,8 +333,8 @@ func _anim_apply(input: Vector2) -> void:
 
 	# Only switch animation when the name actually changes.
 	# Calling play() on the active animation would restart it from frame 0.
-	if player_sprite.animation != anim_name:
-		player_sprite.play(anim_name)
+	if sprite.animation != anim_name:
+		sprite.play(anim_name)
 
 
 # Called: _physics_process().
@@ -359,9 +345,9 @@ func _anim_apply(input: Vector2) -> void:
 func _fade_update() -> void:
 
 	if state == State.SPAWN or state == State.DEAD:
-		player_sprite.modulate.a = 1.0
+		sprite.modulate.a = 1.0
 		return
-	player_sprite.modulate.a = clampf(
+	sprite.modulate.a = clampf(
 		inverse_lerp(FADE_ZOOM_MIN, FADE_ZOOM_MAX, camera_rig.get("zoom_effective")),
 		0.0, 1.0)
 
@@ -372,11 +358,9 @@ func _fade_update() -> void:
 
 # Called: _attack_update().
 # Iterates all nodes in the "creatures" group and applies damage to every valid target.
-# Each creature gets its own independent damage roll — own crit chance, own focus gain.
-# Sets _combat_timer on the first hit. No arc cone yet — front hemisphere only (dot > 0).
-# Tune to a tight arc cone (ATTACK_ARC_DOT) after combat feel is confirmed in testing.
-# NOTE: test dummy no longer supported here — add it to the "creatures" group or give it
-# a receive_hit() method at Stage 8 when real creatures land.
+# Height gate uses each target's hit_half_height — attack connects when the player's
+# global_position.y (fist height) falls within the target's hittable Y range.
+# Each target gets its own independent damage roll — own crit chance, own focus gain.
 func _attack_check() -> void:
 
 	# Reconstruct the world-space facing direction from last_dir + current camera angle.
@@ -390,8 +374,9 @@ func _attack_check() -> void:
 
 	for node : Node in get_tree().get_nodes_in_group("creatures"):
 		var diff : Vector3 = node.global_position - global_position
-		# Height gate — rejects targets on ledges too far above or below.
-		if absf(diff.y) > ATTACK_MAX_HEIGHT:
+		# Height gate — player origin (fist height) must fall within the target's hittable Y range.
+		# Each entity defines its own hit_half_height matching its drawn pixel area.
+		if absf(diff.y) > node.get("hit_half_height"):
 			continue
 		# XZ distance gate — flat plane only, height already handled above.
 		var flat : Vector3 = Vector3(diff.x, 0.0, diff.z)
@@ -414,52 +399,38 @@ func _attack_check() -> void:
 func _attack_update() -> void:
 
 	# Animation finished — swing is over, return to normal state.
-	if not player_sprite.is_playing():
+	if not sprite.is_playing():
 		state = State.IDLE
 		return
 
 	# Apply damage once when the animation reaches the designated hit frame.
 	# _hit_applied guards against the raycast firing multiple times if the
 	# game runs at a frame rate where the same animation frame is visited twice.
-	var frame : int = player_sprite.get_frame()
+	var frame : int = sprite.get_frame()
 	if frame >= _active_ability.hit_frame and not _hit_applied:
 		_hit_applied = true
 		_attack_check()
 
 
-# Called: receive_hit().
-# Snaps the sprite to a red tint, then tweens it back to normal over HIT_FLASH_DURATION seconds.
-# Red tint instead of overbright white because GL Compatibility clamps modulate to [0,1] —
-# Color(2,2,2) looks identical to Color(1,1,1) in that renderer so the flash is invisible.
-# Alpha is preserved from the current modulate so it does not fight _fade_update().
-# Works on any hit — stacks correctly because create_tween() creates a fresh tween each time.
-func _flash_sprite() -> void:
-
-	var a : float = player_sprite.modulate.a
-	player_sprite.modulate = Color(1.0, 0.15, 0.15, a)
-	var tween : Tween = create_tween()
-	tween.tween_property(player_sprite, "modulate", Color(1.0, 1.0, 1.0, a), HIT_FLASH_DURATION)
-
-
-# Called: creature._attack_check() when a creature's raycast hits the player.
+# Called: creature._attack_check() when a creature's attack reaches the player.
 # damage : raw damage value from the creature's ability.calc_damage().
-# _dir   : flat direction from creature to player — unused now, reserved for knockback.
-# Getting hit resets both gates: regen pauses and combat window refreshes.
+# dir    : flat direction from creature to player — used for knockback direction.
+# Gets hit resets both gates: regen pauses and combat window refreshes.
 func receive_hit(damage: float, dir: Vector3) -> void:
 
-	if is_dead or state == State.SPAWN:
+	if state == State.SPAWN:
 		return
-	var actual : float = stats.take_damage(damage)
+	# super handles: is_dead guard, take_damage, gain_focus_on_receive, flash, death flag.
+	super.receive_hit(damage, dir)
+	if _last_damage == 0.0:
+		return  # super returned early (was already dead)
+	print("player hit for ", _last_damage, " — hp: ", stats.hp, "/", stats.hp_max)
 	_regen_timer   = REGEN_PAUSE
 	_combat_timer  = COMBAT_TIMEOUT
 	# Push the player away from the attacker. dir points from creature to player
 	# so it's already the correct knockback direction.
 	_knockback_vel = dir.normalized() * KNOCKBACK_STRENGTH
-	stats.gain_focus_on_receive()
-	_flash_sprite()
-	print("player hit for ", actual, " — hp: ", stats.hp, "/", stats.hp_max)
-	if not stats.is_alive():
-		is_dead = true
+	if is_dead:
 		print("player died")
 
 
@@ -502,20 +473,20 @@ func _jump_update(delta: float) -> void:
 				velocity.y          = JUMP_VEL
 				_jump_launched      = true
 				_jump_phase         = JumpPhase.RISE
-				player_sprite.frame = 1
+				sprite.frame = 1
 
 		JumpPhase.RISE:
 			# Hold ascent frame until apex — velocity.y turns zero then negative.
 			if velocity.y <= 0.0:
 				_jump_phase         = JumpPhase.FALL
-				player_sprite.frame = 2
+				sprite.frame = 2
 
 		JumpPhase.FALL:
 			# Hold descent frame until grounded. Start the landing timer on contact.
 			if is_on_floor():
 				velocity.y          = 0.0
 				_jump_phase         = JumpPhase.LAND
-				player_sprite.frame = 3
+				sprite.frame = 3
 				# Reserve time for frame 3 (contact) + frame 4 (absorption).
 				_jump_frame_timer   = ANIM_FRAME_DUR * 2.0
 
@@ -523,9 +494,9 @@ func _jump_update(delta: float) -> void:
 			# Count down through the two landing frames then hand control back.
 			_jump_frame_timer -= delta
 			if _jump_frame_timer > ANIM_FRAME_DUR:
-				player_sprite.frame = 3
+				sprite.frame = 3
 			elif _jump_frame_timer > 0.0:
-				player_sprite.frame = 4
+				sprite.frame = 4
 			else:
 				_jump_phase          = JumpPhase.WINDUP
 				_jump_launched       = false
@@ -533,12 +504,12 @@ func _jump_update(delta: float) -> void:
 				# If the player died mid-air, trigger death now that they have landed.
 				if is_dead:
 					state = State.DEAD
-					player_sprite.play("death")
+					sprite.play("death")
 				else:
 					state = State.IDLE
 					var idle : String = "idle_attack_" + _weapon_style() + "_" + last_dir \
 						if _is_in_combat() else "idle_neutral_" + last_dir
-					player_sprite.play(idle)
+					sprite.play(idle)
 
 
 # ===========================================================================
@@ -550,9 +521,9 @@ func _jump_update(delta: float) -> void:
 # The player is invincible during SPAWN — receive_hit() returns early.
 func _spawn_update() -> void:
 
-	if not player_sprite.is_playing():
+	if not sprite.is_playing():
 		state = State.IDLE
-		player_sprite.play("idle_neutral_" + last_dir)
+		sprite.play("idle_neutral_" + last_dir)
 
 
 # Called: _physics_process() while state == DEAD.
@@ -571,21 +542,24 @@ func _dead_update() -> void:
 # Called: main._build_player().
 # Receives external references from main.gd and finishes building the player.
 # Sprite frames are built here (expensive) so they only load once.
-func init(p_camera_rig: Node3D, p_player_sprite: AnimatedSprite3D) -> void:
+func init(p_camera_rig: Node3D, p_sprite: AnimatedSprite3D) -> void:
 
 	camera_rig = p_camera_rig
 	cam = camera_rig.get("cam")
 
-	player_sprite = p_player_sprite
-	player_sprite.sprite_frames = _load_sprite_frames()
+	sprite = p_sprite
+	sprite.sprite_frames = _load_sprite_frames()
 
-	# Lift the sprite so its base sits on the ground.
-	# Sprite origin is at its center, so shift up by half the world-unit height.
-	# Read the actual texture height from the loaded frames — using a hardcoded value
-	# would be wrong whenever the sprite size changes.
-	var frame_h : int            = player_sprite.sprite_frames \
+	# Body origin is at 1.5u above ground (fist height). Sprite anchor is at its frame
+	# center, so shift by half the frame world height minus the body offset so the
+	# sprite base stays on the ground: (frame_h * pixel_size * 0.5) - 1.5.
+	var frame_h : int = sprite.sprite_frames \
 		.get_frame_texture("idle_neutral_south", 0).get_height()
-	player_sprite.position.y = float(frame_h) * player_sprite.pixel_size * 0.5
+	sprite.position.y = float(frame_h) * sprite.pixel_size * 0.5 - BODY_ORIGIN_Y
+
+	# hit_half_height = BODY_ORIGIN_Y — player drawn sprite is 3u tall, center at 1.5u.
+	# Body origin is at center so hit_half_height equals the origin height above ground.
+	hit_half_height = BODY_ORIGIN_Y
 
 	# STR=1 AGI=1 STA=1 DEF=1 BMS=3 — minimal stats for combat testing.
 	stats = Stats.new(1, 1, 1, 1, 3)
@@ -593,7 +567,7 @@ func init(p_camera_rig: Node3D, p_player_sprite: AnimatedSprite3D) -> void:
 
 	# Begin in SPAWN — player is invincible until the animation completes.
 	state = State.SPAWN
-	player_sprite.play("spawn")
+	sprite.play("spawn")
 
 
 # ===========================================================================
@@ -625,7 +599,7 @@ func _input(event: InputEvent) -> void:
 				_active_ability = punch
 				state           = State.ATTACK
 				_active_ability.spend(stats)
-				player_sprite.play("attack_" + _weapon_style() + "_" + last_dir)
+				sprite.play("attack_" + _weapon_style() + "_" + last_dir)
 
 		elif event.keycode == KEY_SPACE:
 			# Space starts a jump. Must be grounded, not mid-attack or mid-jump, have energy,
@@ -644,9 +618,9 @@ func _input(event: InputEvent) -> void:
 				# Set animation and hold frame 0 — do NOT call play().
 				# _jump_update() drives each frame manually from physics phase so each
 				# frame holds as long as the physics state lasts, not just 0.125s each.
-				player_sprite.animation = "jump_" + last_dir
-				player_sprite.frame     = 0
-				player_sprite.pause()
+				sprite.animation = "jump_" + last_dir
+				sprite.frame     = 0
+				sprite.pause()
 
 
 # ===========================================================================
@@ -696,14 +670,14 @@ func _physics_process(delta: float) -> void:
 		_jump_locked_vel        = Vector2(velocity.x, velocity.z)
 		state                   = State.JUMP
 		_jump_launched          = true
-		player_sprite.animation = "jump_" + last_dir
-		player_sprite.pause()
+		sprite.animation = "jump_" + last_dir
+		sprite.pause()
 		if velocity.y > 0.0:
 			_jump_phase         = JumpPhase.RISE
-			player_sprite.frame = 1
+			sprite.frame = 1
 		else:
 			_jump_phase         = JumpPhase.FALL
-			player_sprite.frame = 2
+			sprite.frame = 2
 
 	# Rotate the 2D input vector by h_angle into a flat 3D world direction.
 	# This keeps WASD camera-relative regardless of which way the camera is orbiting.
@@ -745,7 +719,7 @@ func _physics_process(delta: float) -> void:
 	if is_dead and state != State.DEAD and state != State.JUMP:
 		if is_on_floor() and _knockback_vel.length() < KNOCKBACK_SETTLED_THRESHOLD:
 			state = State.DEAD
-			player_sprite.play("death")
+			sprite.play("death")
 
 	# Sprint energy drain — accumulate real time so tap-sprinting still costs energy
 	# proportional to how long the key was held, not a flat cost per frame.
