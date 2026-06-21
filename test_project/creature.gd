@@ -11,6 +11,10 @@ extends Entity
 # Spawn position and sprite offset in main.gd and init() are derived from this value.
 const BODY_ORIGIN_Y : float = 0.75
 
+# EXP awarded to the player when this creature is killed.
+# Read by player._attack_check() via node.get("exp_reward").
+var exp_reward : int = 5
+
 
 # ===========================================================================
 # SPRITE LOADING

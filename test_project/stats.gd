@@ -81,6 +81,11 @@ var energy : float
 # out of combat. Starts at 0 — never pre-filled.
 var focus  : float
 
+# Accumulated experience points. Increased by gain_exp() on creature death.
+# No exp_max yet — leveling system is Stage future. Tracked now so the value
+# is available when HUD and leveling are added.
+var exp    : float = 0.0
+
 
 # ---------------------------------------------------------------------------
 # Derived stats — recalculated clean by _recalculate_all() whenever base stats change.
@@ -308,6 +313,14 @@ func take_damage(raw_damage: float) -> float:
 	if hp < 1.0:
 		hp = 0.0
 	return actual
+
+
+# Called: player._attack_check() when a creature dies from the player's hit.
+# Adds amount to the player's EXP total. No cap — leveling system is future.
+func gain_exp(amount: float) -> void:
+
+	exp += amount
+	print("exp +", int(amount), " — total exp: ", int(exp))
 
 
 # ===========================================================================

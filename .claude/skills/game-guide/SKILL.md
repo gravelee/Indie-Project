@@ -102,23 +102,40 @@ Zone 2 implementation       → after Zone 2 story
   19. **main.gd script loading** — entity constants (BODY_ORIGIN_Y, PIXEL_SIZE) read from
       runtime load() of each script at builder function start. No preload (parse-time failure),
       no duplicate constants. Single load() call reused for set_script() in same function.
-- **Active work**: Stage 8 complete. Moving to Stage 9 — creature AI.
+- **Active work**: Player file fully updated. Moving to Stage 9 — creature AI.
 - **Next session target**: Creature AI (Stage 9) — wander → notice → chase → attack.
 - **Blocked on**: (1) Does pet have HP and can it die? (2) Is stealth a button or ability-only?
 
-### Player — pending for future sessions (no art/design yet)
-- **Respawn** — DEAD is currently terminal. Design needed: delay, position, resource state.
-- **Collision shape disable on death** — corpse currently blocks creature pathfinding.
-- **Ability bar** — expand `punch` var to `Array[Ability]` (10 slots, KEY_1–KEY_0).
+### Player — updates completed this session
+- ~~**EXP award on creature death**~~ ✓ DONE — stats.gd: `var exp`, `gain_exp()`. creature.gd:
+  `var exp_reward = 5`. player._attack_check(): after receive_hit checks `node.get("is_dead")`,
+  calls `stats.gain_exp(node.get("exp_reward"))`.
+- ~~**Attacker focus gain on hit/crit**~~ ✓ VERIFIED — already implemented in
+  `stats.calc_ability_damage()`: gain_focus(FOCUS_GAIN_CRIT) on crit, gain_focus(FOCUS_GAIN_HIT)
+  on normal hit. No change needed.
+- ~~**Ability bar**~~ ✓ DONE — `punch` var replaced with `_abilities: Array[Ability]`.
+  `_abilities[0]` = punch. `_update_timers()` loops array. Adding KEY_2+ appends to array.
+- ~~**Air knockback scale**~~ ✓ DONE — `KNOCKBACK_AIR_SCALE = 0.1` applied to _knockback_vel
+  in the JUMP branch of `_update_velocity()`. Full knockback on ground, 10% while airborne.
+- ~~**Collision shape disable on death**~~ ✓ DONE — `_col: CollisionShape3D` found in init()
+  via get_children() scan. `_col.set_deferred("disabled", true)` in `_update_death()`.
+  Re-enabled via `set_deferred("disabled", false)` in `_do_respawn()`.
+- ~~**Respawn**~~ ✓ DONE — RESPAWN_DELAY=3.0s. `_dead_update(delta)` counts `_dead_timer`.
+  `_do_respawn()`: clears is_dead, restores _initial_hp/energy/focus, re-enables collision,
+  snaps to _spawn_position, zeros velocity + knockback, enters SPAWN state.
+  SPAWN state provides invincibility via receive_hit() early return — not is_dead.
+  _spawn_position and initial resource snapshot recorded in init() after stats built.
+
+### Player — pending for future sessions
 - **Attack cone** — ATTACK_ARC_DOT=0.7071 (±45°, 90° total) implemented. Tune after combat testing.
-- **Attack Y asymmetry** — currently symmetric (±hit_half_height of each target). Natural
-  asymmetry already exists from body origin offsets: player at 1.5u, rat at 0.75u. Tighter
-  downward limit (separate UP/DOWN consts) is a future design option if needed after testing.
-- **Air knockback scale** — echoes uses 0.10x in air. Test project applies full strength airborne.
-- **Sprite z-sort compensation** — needed at Stage 7: `sprite.position.y = -global_position.y`
-  + `sprite.offset.y = SPRITE_SIZE*0.5 + global_position.y / pixel_size` per frame.
-- **Auto-target on receive_hit** — echoes auto-targets attacker if player has no current target.
-- **Weapon sprite layer, blocking, dodge roll** — all need art + design decisions first.
+- **Attack Y asymmetry** — currently symmetric (±hit_half_height of each target). Tighter
+  downward limit is a future design option if needed after testing.
+- **Sprite z-sort compensation** — defer to Stage 7. Implement when terrain height is visible
+  so the formula can be verified. Needs per-frame sprite.position.y + sprite.offset.y update.
+- **Auto-target on receive_hit** — needs target system first.
+- **Blocking** — input key TBD. BLOCK state needed. Art needed.
+- **Dodge roll** — all design TBD. Art needed.
+- **Weapon sprite layer** — design locked (see Art & Sprite System below). Art needed.
 
 ### What the old echoes_of_the_void project has (reference only — do not modify)
 - Full terrain from CSV tilemap — composite texture + heightmap mesh (grass elevated 0.75u, smooth slopes)
@@ -151,7 +168,13 @@ Zone 2 implementation       → after Zone 2 story
   - Sprite fade: fades at close zoom (2u–5u), exempt during SPAWN/DEAD. Alpha preserved in flash.
   - Animations: walking, running, idle_neutral, idle_attack_unarmed, attack_unarmed, jump (4 dirs),
     spawn, death (non-directional, 29 frames). Sprite offset from actual frame height.
-  - Equipment slots weapon_main/weapon_off declared, unused (art + design pending).
+  - Equipment slots weapon_main/weapon_off declared, unused (art pending).
+  - Ability array: _abilities[0]=punch. KEY_1 → _abilities[0]. Cooldowns ticked via loop.
+  - Air knockback: KNOCKBACK_AIR_SCALE=0.1 applied in JUMP branch of _update_velocity().
+  - Collision shape: _col found in init() via get_children(). Disabled on death (set_deferred).
+  - Respawn: RESPAWN_DELAY=3s. _dead_update() counts timer → _do_respawn(). Resources restored
+    to snapshot taken at init(). Player snaps to _spawn_position. Enters SPAWN (invincible).
+  - EXP: stats.exp accumulates via gain_exp(). creature.exp_reward=5. Awarded in _attack_check().
   - DEBUG: K key → receive_hit(10.0) — remove before release.
 - Stats: full stats.gd (STR/AGI/STA/DEF/BMS, derived patk/pdef/mspd, regen, take_damage)
 - Abilities: punch (damage_mult=1.0, range=1.5, cooldown=1.0) + rat_bite in registry
@@ -190,11 +213,10 @@ These exist in `godot_project/` and need to be brought into 3D — added per sta
   Drawn on a CanvasLayer in screen-space. World-to-screen via player-relative delta + rotation.
   → Add at Stage 13.
 
-**Floating EXP on creature death** — MISSING.
-  Old `combat_feedback._read_creatures()` detects `State.DEATH` and spawns "EXP +N" text.
-  `ability.use()` calls `user_stats.gain_exp(t.stats.exp_reward())` when target dies.
-  Neither the feedback nor exp award is wired in the 3D version.
-  → Add at Stage 13 (feedback) and Stage 6 (exp award in ability.use).
+**Floating EXP on creature death** — PARTIALLY DONE.
+  EXP award wired: stats.gain_exp() called in player._attack_check() on creature death.
+  Floating EXP text feedback still missing — drawn on CanvasLayer in screen-space.
+  → Add feedback at Stage 13.
 
 **Pathfinder stuck detection + teleport recovery** — PARTIALLY MISSING.
   Old `creature._check_wait()` / `_start_teleport()`: if stuck for 27.5s or takes 30% hp
@@ -219,10 +241,9 @@ These exist in `godot_project/` and need to be brought into 3D — added per sta
   Sword flips based on facing direction. Check if 3D player has equivalent.
   → Verify at Stage 4.
 
-**ability.use() rage gain on hit/crit** — NEEDS VERIFY.
-  Old: attacker gains rage on every crit (+2) or normal hit (+1). Target gains rage on being hit (+1).
-  Check 3D ability.gd for this.
-  → Verify at Stage 6.
+**ability.use() focus gain on hit/crit** — VERIFIED DONE.
+  stats.calc_ability_damage() calls gain_focus(FOCUS_GAIN_CRIT) on crit, gain_focus(FOCUS_GAIN_HIT)
+  on normal hit. entity.receive_hit() calls gain_focus_on_receive() for the target. No change needed.
 
 **Ability range_ field used in check_resources** — NEEDS VERIFY.
   Old creature uses `ability.check_resources(stats, dist)` — distance is checked against
@@ -253,50 +274,80 @@ Design philosophy: WoW stat depth applied to Zelda action feel — mobility is a
 
 ### Key Decisions Locked — Art & Sprite System
 
-**Sprite layers (decided 2026-06-14):**
-- Body layer = base character. Two body variants: `default/` (melee/rogue) and `staff/` (caster, staff strapped to back in ALL animations).
-- Weapon/active layer = what's in the hands. Swapped on equip. Each combination is its own sprite set.
-- Face layer = static small sprite, unique per NPC/character. Swapped per person.
-- Staff on back: always visible in every animation. Changes visually per tier but recolored via shader — not redrawn.
-- Shield: offhand slot, not always equipped. Baked into weapon combination sprite (e.g. sword_shield/).
-- Caster has NO weapon swing. Main hand = gestures (WoW spellcast style). Offhand = wand raises and fires projectile.
-- Player is LEFT-HANDED. Main hand = left. Offhand = right.
-- Weapon tiers = same animations, different sprite. Color/glow changes via shader where possible.
+**Layer system (decided 2026-06-21):**
+6 layers rendered in order. Main hand and offhand are independent layers — no combinations drawn together.
+
+| Layer | What | Frames |
+|-------|------|--------|
+| Body | Weapon-free character. 2 variants: default / staff | Full animation set |
+| Main hand — strapped | Weapon on belt/hip, out of combat only | 1 PNG per weapon × 4 directions |
+| Offhand — strapped | Weapon on back/hip, out of combat only | 1 PNG per weapon × 4 directions |
+| Main hand — held | Weapon in hand, in combat only | Full combat animation set |
+| Offhand — held | Weapon in off hand, in combat only | Full combat animation set |
+| Face | Static portrait overlay | 1 PNG per character |
+
+Strapped layers hide on combat entry. Held layers show on combat entry. Swap on equip.
+
+**Body layer animations (4 directions each):**
+- Out of combat: `idle_neutral`, `walk`, `run`
+- In combat: `idle_attack`, `walk_combat`, `run_combat`
+- Actions: `attack_main` (arm swing, no weapon), `attack_off` (arm swing, no weapon)
+- Universal: `jump`, `spawn`, `death`
+
+Body `attack_main` / `attack_off` arm positions are the same regardless of what weapon is held.
+Staff variant (`body/staff/`) shows staff strapped to back in ALL animations above.
+
+**Main hand — strapped (1 PNG × 4 dirs each):** sword, pickaxe, dagger, crossbow
+**Offhand — strapped (1 PNG × 4 dirs each):** shield, dagger, wand
+
+**Main hand — held animations (4 directions each):**
+- `idle_attack`, `walk_combat`, `run_combat` — weapon held at ready
+- `attack` — per weapon: sword slash, pickaxe swing, dagger stab, crossbow fire
+
+**Offhand — held animations (4 directions each):**
+- `idle_attack`, `walk_combat`, `run_combat` — weapon held at ready
+- `attack` — dagger stab
+- `block` — shield raise and hold
+- `cast` — wand raises and fires projectile
+
+**Empty offhand rule:** no offhand equipped → offhand held layer hidden, `attack_off` body animation blocked.
 
 **Weapon slots:**
-- Main hand: fists, sword, pickaxe, dagger, crossbow (one-handed, both slots)
-- Offhand: shield, dagger, wand (offhand only)
-- Two-handed (no offhand): staff (but strapped to back — see caster notes above)
-- Dagger special: valid in both main and offhand simultaneously
+- Main hand: fists, sword, pickaxe, dagger, crossbow (one-handed)
+- Offhand: shield, dagger, wand
+- Two-handed: staff (strapped to back via body/staff/ variant — no held layer)
+- Dagger: valid in both slots simultaneously (dagger main + dagger off = independent animations)
+- Crossbow: one-handed, fireable, has attack animation
+
+**Locked design answers:**
+- All weapons always visible — strapped out of combat, held in combat
+- Dagger dual wield — independent attack animations per hand
+- Shield — always visible when equipped (strapped on back out of combat, raised on block)
+- Wand — held during `idle_attack` and in-combat movement. Holstered during staff casting.
+- Crossbow — fireable, has dedicated attack animation
+- Player is LEFT-HANDED. Main hand = left. Offhand = right.
+- Weapon tiers — same animations, different sprite. Color/glow via shader where possible.
 
 **Non-directional animations (south only, treated as universal):**
 death, spawn, sitting, sits_down, stands_up, talking
 
-**art_source folder structure (decided, not yet implemented):**
+**art_source folder structure (locked 2026-06-21):**
 ```
 art_source/entities/player/ares/
     body/
-        default/{direction}/{animation}/   ← weapon-free body, melee/rogue
-        staff/{direction}/{animation}/     ← staff on back, caster
+        default/{direction}/{animation}/        ← weapon-free body
+        staff/{direction}/{animation}/          ← staff on back, all animations
     weapon/
-        {combination}/{direction}/{animation}/
-        combinations: fists, sword, sword_shield, sword_dagger, sword_wand,
-                      pickaxe, pickaxe_shield, pickaxe_dagger, pickaxe_wand,
-                      dagger, dagger_dagger, dagger_shield, dagger_wand,
-                      crossbow, crossbow_shield, crossbow_dagger, crossbow_wand,
-                      gestures (caster main), wand (caster offhand)
+        main/{weapon}/{direction}/strapped.png  ← single frame, hip/belt position
+        main/{weapon}/{direction}/{animation}/  ← held: idle_attack, walk_combat, run_combat, attack
+        off/{weapon}/{direction}/strapped.png   ← single frame, back/hip position
+        off/{weapon}/{direction}/{animation}/   ← held: idle_attack, walk_combat, run_combat + action
     face/
-        ares.png   ← static, unique per character
+        ares.png
 ```
-**Pending weapon design questions (answer before drawing any weapon sprites):**
-- Crossbow from offhand — fire-able or visual only?
-- Dagger dual wield — alternating or simultaneous strikes?
-- Shield — always passively strapped or raises during block?
-- Wand arm — animates on cast or hangs passively?
-- Empty offhand — natural hang or specific idle pose?
 
-**asset_loader.gd** must support layered sprite loading (body + weapon + face) when built at Stage 8.
-Current player sprites (with sword+shield baked in) are placeholder — need redraw without weapon before real project art pass.
+**asset_loader.gd** must support 6-layer loading when built.
+Current body sprites (sword+shield baked in) are placeholder — redraw weapon-free before art pass.
 
 ### Key Decisions Locked Since Last Code Session (apply to rewrite from day one)
 - Blocking costs NO energy while held — only active shield abilities (e.g. Shield Bash) cost energy
