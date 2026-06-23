@@ -945,6 +945,13 @@ func _update_airborne() -> void:
 # SPAWN/DEAD: no horizontal movement. JUMP: locked velocity + knockback. else: input-driven.
 func _update_velocity(input: Vector2, delta: float) -> void:
 
+	# DEAD: collision shape is disabled so is_on_floor() always returns false and gravity
+	# would accumulate into velocity.y every frame, pulling the corpse through the floor.
+	# No physics is needed while dead — zero everything and return before any gravity or slide.
+	if state == State.DEAD:
+		velocity = Vector3.ZERO
+		return
+
 	var direction : Vector3 = Vector3(
 		input.x * cos(h_angle) + input.y * sin(h_angle), 0.0,
 		input.x * -sin(h_angle) + input.y * cos(h_angle))
@@ -956,7 +963,7 @@ func _update_velocity(input: Vector2, delta: float) -> void:
 	elif not (state == State.JUMP and _jump_launched):
 		velocity.y = 0.0
 
-	if state == State.SPAWN or state == State.DEAD:
+	if state == State.SPAWN:
 		velocity.x = 0.0
 		velocity.z = 0.0
 	elif state == State.ATTACK:
