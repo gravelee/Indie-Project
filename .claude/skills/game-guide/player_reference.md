@@ -37,11 +37,38 @@
                3s timer
                     │
               _do_respawn() ──► SPAWN ──(anim ends)──► IDLE
+
+  § (has shield, from IDLE or WALK, not RUN/JUMP/ATTACK)
+                    │
+                    ▼
+                  BLOCK ──(§ released → LOWERING done)──► IDLE or WALK
+                    │
+              phases below
 ```
 
 ---
 
-## 2. Jump Phases (inside JUMP state)
+## 2. Block Phases (inside BLOCK state)
+
+```
+  RAISING                        HOLDING                        LOWERING
+  ┌──────────────────────┐      ┌──────────────────────┐      ┌──────────────────────┐
+  │ shield_up anim       │      │ shield_stance anim   │      │ shield_up in reverse │
+  │ 7 frames at 8fps     │─────►│ § held               │─────►│ 7 frames at 8fps     │
+  │ player locked        │      │ block check active   │      │ player locked        │
+  │ knockback received   │      │ direction updates    │      │ knockback received   │
+  └──────────────────────┘      │ half-speed walk ok   │      └──────────┬───────────┘
+         ▲                      └──────────────────────┘                 │
+         │  § released                                        _block_frame_progress
+         │  mid-RAISING → immediate LOWERING from             back to 0.0 → IDLE/WALK
+         └──────────────────────────────────────────────────────────────┘
+                              direction reversal mid-phase:
+                              swap shield_up/stance anim, continue from current frame
+```
+
+---
+
+## 3. Jump Phases (inside JUMP state)
 
 ```
   WINDUP (frame 0)          RISE (frame 1)         FALL (frame 2)        LAND (frame 3→4)
@@ -58,7 +85,7 @@
 
 ---
 
-## 3. Per-Frame Call Order (_physics_process)
+## 4. Per-Frame Call Order (_physics_process)
 
 ```
   ┌──────────────────────────────────────────────────────────────────────┐
@@ -77,8 +104,9 @@
   │       IDLE / WALK / RUN → _anim_apply(input)     (ANIMATION)        │
   │       ATTACK            → _attack_update()        (COMBAT)           │
   │       JUMP              → _jump_update(delta)     (JUMP)             │
+  │       BLOCK             → _block_update(delta)    (BLOCK)            │
   │       SPAWN             → _spawn_update()         (LIFECYCLE)        │
-  │       DEAD              → _dead_update(delta)      (LIFECYCLE)        │
+  │       DEAD              → _dead_update(delta)     (LIFECYCLE)        │
   │                                                                      │
   │  10 _fade_update()                  (ANIMATION: sprite alpha)        │
   │  11 _update_timers(delta)           (COMBAT+JUMP: tick + regen)      │
@@ -87,7 +115,7 @@
 
 ---
 
-## 4. Timer Gates
+## 5. Timer Gates
 
 ```
   _regen_timer         set by: any swing (_input), receive_hit
@@ -115,7 +143,7 @@
 
 ---
 
-## 5. Section Ownership
+## 6. Section Ownership
 
 ```
   SECTION     VARS OWNED                              FUNCTIONS OWNED
@@ -131,12 +159,17 @@
   JUMP        _jump_phase, _jump_launched              _jump_update()
               _jump_frame_timer, _jump_cooldown_timer
               _jump_locked_vel
+  BLOCK       _block_phase, _block_frame_progress      _block_update(delta)
+                                                       _enter_block_lowering()
   LIFECYCLE   _spawn_position, _dead_timer             _spawn_update(), _dead_update(delta)
               _initial_hp, _initial_energy             _do_respawn()
               _initial_focus
   MOVEMENT    _run_energy_accum                        —
   STATE       state                                    —
-  EQUIPMENT   weapon_main, weapon_off                  —
+  EQUIPMENT   weapon_main, weapon_off                  _build_shield_sprites()
+              _shield_front, _shield_behind            _load_shield_frames()
+                                                       _has_shield(), _shield_set_z_order()
+                                                       _shield_play()
   INPUT       —                                        _input()
   PROCESS     —                                        _read_input(), _update_state()
                                                        _update_airborne(), _update_velocity()
@@ -147,18 +180,19 @@
 
 ---
 
-## 6. Cross-Section Reads (what each function reaches into)
+## 7. Cross-Section Reads (what each function reaches into)
 
 ```
   FUNCTION              READS FROM SECTIONS
   ───────────────────   ──────────────────────────────────────────────────
-  _input()              STATE (state), COMBAT (_abilities[0]), EQUIPMENT (weapon_main)
+  _input()              STATE (state), COMBAT (_abilities[0]), EQUIPMENT (weapon_main, _has_shield)
                         JUMP (_jump_cooldown_timer, _jump_phase, _jump_launched)
   _read_input()         CAMERA (cam)
   _update_state()       STATE (state), entity stats.energy
   _update_airborne()    STATE (state), JUMP (_jump_phase, _jump_launched)
   _update_velocity()    STATE (state), MOVEMENT (GRAVITY, SPRINT_MULT, KNOCKBACK_AIR_SCALE)
                         JUMP (_jump_locked_vel), COMBAT (_knockback_vel), entity stats.mspd
+                        BLOCK (_block_phase — half-speed in HOLDING, locked in RAISING/LOWERING)
   _update_death()       entity (is_dead), STATE (state), COMBAT (_knockback_vel), INIT (_col)
   _update_sprint()      STATE (state), entity stats
   _update_focus()       COMBAT (_combat_timer), entity stats
@@ -173,7 +207,12 @@
   _attack_update()      COMBAT (_active_ability, _hit_applied)
   _jump_update()        JUMP (all jump vars), ANIMATION (last_dir), COMBAT (_is_in_combat)
                         EQUIPMENT (weapon_main)
-  receive_hit()         STATE (state), COMBAT (timers, _knockback_vel), entity (_last_damage)
+  _block_update()       BLOCK (_block_phase, _block_frame_progress), ANIMATION (last_dir)
+                        EQUIPMENT (_shield_front, _shield_behind, _shield_set_z_order, _shield_play)
+                        STATE (state — exits to IDLE/WALK on LOWERING complete)
+  receive_hit()         STATE (state), BLOCK (_block_phase, stats.block_chance)
+                        COMBAT (timers, _knockback_vel), entity (_last_damage)
+                        on block: halved knockback, focus gain, early return (no damage)
   _dead_update()        LIFECYCLE (_dead_timer, RESPAWN_DELAY)
   _do_respawn()         LIFECYCLE (all lifecycle vars), INIT (_col, _spawn_position)
                         entity (is_dead, stats)
@@ -181,12 +220,12 @@
 
 ---
 
-## 7. Quick Lookup — "Where is X?"
+## 8. Quick Lookup — "Where is X?"
 
 ```
   h_angle               CAMERA  — updated top of every frame from camera_rig
   last_dir              ANIMATION — persists facing when stopped
-  state                 STATE — the 7-value enum driving the whole machine
+  state                 STATE — the 8-value enum driving the whole machine
   is_dead               entity.gd — set in entity.receive_hit when hp hits 0; cleared in _do_respawn
   _knockback_vel        COMBAT — set by receive_hit, decays in _update_velocity
   _jump_locked_vel      JUMP — captured at airborne moment, held for full air time
@@ -198,6 +237,12 @@
   _spawn_position       LIFECYCLE — global_position recorded at init(), respawn target
   _dead_timer           LIFECYCLE — counts up in DEAD state, triggers respawn at 3s
   weapon_main           EQUIPMENT — drives animation name suffix
-  sprite                entity.gd — the AnimatedSprite3D child
-  stats                 entity.gd — the Stats resource (includes stats.exp)
+  weapon_off            EQUIPMENT — drives shield presence (_has_shield checks != "")
+  _shield_front         EQUIPMENT — AnimatedSprite3D rendered in front of player
+  _shield_behind        EQUIPMENT — AnimatedSprite3D rendered behind player
+  _block_phase          BLOCK — current BlockPhase (RAISING/HOLDING/LOWERING)
+  _block_frame_progress BLOCK — float 0.0–6.0 tracking position in shield_up animation
+  block_chance          stats.gd — probability [0.0–1.0] that a hit is blocked in HOLDING
+  sprite                entity.gd — the AnimatedSprite3D child (body layer)
+  stats                 entity.gd — the Stats resource (includes stats.exp, stats.block_chance)
 ```

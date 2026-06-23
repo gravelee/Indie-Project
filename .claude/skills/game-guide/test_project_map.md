@@ -12,7 +12,7 @@ type: reference
 |------|------|---------|
 | `main.gd` | Scene builder — spawns everything, wires references | Node3D |
 | `entity.gd` | Shared entity base — PIXEL_SIZE, sprite, stats, hit_half_height, is_dead, flash, receive_hit | CharacterBody3D |
-| `player.gd` | Input, movement, jump, sprint, attack, regen, fade, respawn | Entity |
+| `player.gd` | Input, movement, jump, sprint, attack, block, regen, fade, respawn | Entity |
 | `creature.gd` | Rat collision/sprite setup, receive_hit print, exp_reward | Entity |
 | `stats.gd` | All stat math — HP/energy/focus/exp, damage, regen, crit | RefCounted |
 | `ability.gd` | One ability instance — cooldown timer, can_use, spend, calc_damage | RefCounted |
@@ -40,6 +40,8 @@ Godot engine
   │     │     │     └── _attack_check() → creature.receive_hit()
   │     │     │           └── if creature.is_dead → stats.gain_exp(creature.exp_reward)
   │     │     ├── JUMP          → _jump_update()
+  │     │     ├── BLOCK         → _block_update(delta)
+  │     │     │     └── § released → LOWERING → exits to IDLE or WALK
   │     │     ├── SPAWN         → _spawn_update()
   │     │     └── DEAD          → _dead_update(delta)
   │     │           └── _dead_timer >= RESPAWN_DELAY → _do_respawn()
@@ -48,7 +50,8 @@ Godot engine
   │
   ├── _input(event)            →  player.gd
   │     ├── KEY_1 → _abilities[0] → ability.can_use() → ability.spend() → ATTACK state
-  │     └── SPACE → jump → JUMP state
+  │     ├── SPACE → jump → JUMP state
+  │     └── § (KEY_SECTION) → _has_shield() → BLOCK state (from IDLE/WALK only)
   │
   └── _physics_process(delta)  →  creature.gd  (Stage 9 — not yet implemented)
         └── _extend_combat_timer() → player.gd  (keeps combat window alive)
@@ -101,6 +104,11 @@ IDLE ──(input)──► WALK ──(shift+energy)──► RUN
         │ is_dead + grounded + settled
         ▼
        DEAD ──(3s timer)──► _do_respawn() ──► SPAWN
+
+  § from IDLE or WALK (shield equipped, not RUN/JUMP/ATTACK):
+        ▼
+      BLOCK ──(§ released → LOWERING done)──► IDLE or WALK
+        (3 phases: RAISING→HOLDING→LOWERING)
 ```
 
 ---
@@ -121,6 +129,9 @@ IDLE ──(input)──► WALK ──(shift+energy)──► RUN
 | COMBAT_TIMEOUT | player.gd | 3.0 | seconds combat window stays open |
 | FOCUS_COMBAT_INTERVAL | player.gd | 5.0 | seconds between passive focus ticks |
 | RESPAWN_DELAY | player.gd | 3.0 | seconds after death before respawn |
+| KNOCKBACK_STRENGTH | player.gd | 8.0 | base knockback magnitude; blocked hits use × 0.5 |
+| SHIELD_UP_FRAMES | player.gd | 7 | frames in shield_up animation (raise and lower) |
+| block_chance | stats.gd | 0.5 | probability a hit is blocked while in HOLDING |
 | exp_reward | creature.gd | 5 | EXP awarded to player on kill |
 
 ---

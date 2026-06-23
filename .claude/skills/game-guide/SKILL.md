@@ -133,7 +133,7 @@ Zone 2 implementation       → after Zone 2 story
 - **Sprite z-sort compensation** — defer to Stage 7. Implement when terrain height is visible
   so the formula can be verified. Needs per-frame sprite.position.y + sprite.offset.y update.
 - **Auto-target on receive_hit** — needs target system first.
-- **Blocking** — input key TBD. BLOCK state needed. Art needed.
+- **Blocking** — ~~DONE~~ BLOCK state implemented (§ key). Shield layer art drawn (wooden_shield). BlockPhase (RAISING/HOLDING/LOWERING), manual frame control, block_chance roll, halved knockback on block. Walking while blocking not yet implemented.
 - **Dodge roll** — all design TBD. Art needed.
 - **Weapon sprite layer** — design locked (see Art & Sprite System below). Art needed.
 
