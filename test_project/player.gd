@@ -37,6 +37,11 @@ func init(p_camera_rig: Node3D, p_sprite: AnimatedSprite3D) -> void:
 	# Body origin is at center so hit_half_height equals the origin height above ground.
 	hit_half_height = BODY_ORIGIN_Y
 
+	# TEST — set weapon_off here until the equipment system is built.
+	weapon_off = "wooden_shield"
+	if weapon_off != "":
+		_build_shield_sprites()
+
 	for child : Node in get_children():
 		if child is CollisionShape3D:
 			_col = child
@@ -56,6 +61,9 @@ func init(p_camera_rig: Node3D, p_sprite: AnimatedSprite3D) -> void:
 	# Begin in SPAWN — player is invincible until the animation completes.
 	state = State.SPAWN
 	sprite.play("spawn")
+	_shield_set_flip(last_dir)
+	_shield_set_z_order(last_dir)
+	_shield_play("spawn")
 
 
 # ===========================================================================
@@ -217,6 +225,9 @@ func _anim_apply(input: Vector2) -> void:
 	# Calling play() on the active animation would restart it from frame 0.
 	if sprite.animation != anim_name:
 		sprite.play(anim_name)
+		_shield_set_flip(last_dir)
+		_shield_set_z_order(last_dir)
+		_shield_play(anim_name)
 
 
 # Called: _physics_process().
@@ -228,10 +239,97 @@ func _fade_update() -> void:
 
 	if state == State.SPAWN or state == State.DEAD:
 		sprite.modulate.a = 1.0
+		if _has_shield():
+			_shield_front.modulate.a  = 1.0
+			_shield_behind.modulate.a = 1.0
 		return
-	sprite.modulate.a = clampf(
+	var alpha : float = clampf(
 		inverse_lerp(FADE_ZOOM_MIN, FADE_ZOOM_MAX, camera_rig.get("zoom_effective")),
 		0.0, 1.0)
+	sprite.modulate.a = alpha
+	if _has_shield():
+		_shield_front.modulate.a  = alpha
+		_shield_behind.modulate.a = alpha
+
+
+# Called: all shield helper functions.
+# Returns false when no shield is equipped — callers skip silently.
+# Asserts when weapon_off is set but nodes were not built — that is always a bug.
+func _has_shield() -> bool:
+
+	if weapon_off == "":
+		return false
+	assert(_shield_front != null, "weapon_off is set but _build_shield_sprites() was not called")
+	return true
+
+
+# Called: any function that changes last_dir.
+# Sets flip_h on both shield nodes — west loads east frames and mirrors them horizontally.
+func _shield_set_flip(dir: String) -> void:
+
+	if not _has_shield():
+		return
+	var flip : bool        = (dir == "west")
+	_shield_front.flip_h  = flip
+	_shield_behind.flip_h = flip
+
+
+# Called: any function that changes the body animation via play().
+# Mirrors the animation name on both shield nodes without restarting if already playing.
+func _shield_play(anim_name: String) -> void:
+
+	if not _has_shield():
+		return
+	if _shield_front.animation != anim_name:
+		_shield_front.play(anim_name)
+		_shield_behind.play(anim_name)
+
+
+# Called: _jump_update(), _update_airborne(), _input() jump setup.
+# Sets animation name, frame, and pauses — mirrors manual jump frame control on body sprite.
+func _shield_set_anim_frame(anim_name: String, frame: int) -> void:
+
+	if not _has_shield():
+		return
+	_shield_front.animation  = anim_name
+	_shield_front.frame      = frame
+	_shield_front.pause()
+	_shield_behind.animation = anim_name
+	_shield_behind.frame     = frame
+	_shield_behind.pause()
+
+
+# Called: _jump_update() when advancing jump phases.
+# Sets frame index only — animation name is already correct from _shield_set_anim_frame().
+func _shield_set_frame(frame: int) -> void:
+
+	if not _has_shield():
+		return
+	_shield_front.frame  = frame
+	_shield_behind.frame = frame
+
+
+# Called: any function that resolves last_dir (static mode),
+# and per-frame during the BLOCK state shield_up animation (frame mode, Stage D).
+# Static mode  (frame == -1): z-order from direction only.
+# Frame mode   (frame >= 0):  z-order from direction + current animation frame (shield_up).
+#   south: frames 0-3 behind → frames 4-6 front. north: opposite. east: always behind. west: always front.
+func _shield_set_z_order(dir: String, frame: int = -1) -> void:
+
+	if not _has_shield():
+		return
+	var want_front : bool
+	if frame >= 0:
+		match dir:
+			"south": want_front = frame >= 4
+			"north": want_front = frame <  4
+			"east":  want_front = false
+			"west":  want_front = false
+			_:       want_front = false
+	else:
+		want_front = (dir == "north")
+	_shield_front.visible  = want_front
+	_shield_behind.visible = not want_front
 
 
 # ===========================================================================
@@ -466,12 +564,14 @@ func _jump_update(delta: float) -> void:
 				_jump_launched      = true
 				_jump_phase         = JumpPhase.RISE
 				sprite.frame        = JUMP_FRAME_RISE
+				_shield_set_frame(JUMP_FRAME_RISE)
 
 		JumpPhase.RISE:
 			# Hold ascent frame until apex — velocity.y turns zero then negative.
 			if velocity.y <= 0.0:
 				_jump_phase  = JumpPhase.FALL
 				sprite.frame = JUMP_FRAME_FALL
+				_shield_set_frame(JUMP_FRAME_FALL)
 
 		JumpPhase.FALL:
 			# Hold descent frame until grounded. Start the landing timer on contact.
@@ -479,6 +579,7 @@ func _jump_update(delta: float) -> void:
 				velocity.y          = 0.0
 				_jump_phase         = JumpPhase.LAND
 				sprite.frame        = JUMP_FRAME_CONTACT
+				_shield_set_frame(JUMP_FRAME_CONTACT)
 				# Reserve time for CONTACT + LAND frames.
 				_jump_frame_timer   = ANIM_FRAME_DUR * 2.0
 
@@ -487,8 +588,10 @@ func _jump_update(delta: float) -> void:
 			_jump_frame_timer -= delta
 			if _jump_frame_timer > ANIM_FRAME_DUR:
 				sprite.frame = JUMP_FRAME_CONTACT
+				_shield_set_frame(JUMP_FRAME_CONTACT)
 			elif _jump_frame_timer > 0.0:
 				sprite.frame = JUMP_FRAME_LAND
+				_shield_set_frame(JUMP_FRAME_LAND)
 			else:
 				_jump_phase          = JumpPhase.WINDUP
 				_jump_launched       = false
@@ -499,6 +602,9 @@ func _jump_update(delta: float) -> void:
 				var idle : String = "idle_attack_" + _weapon_style() + "_" + last_dir \
 					if _is_in_combat() else "idle_neutral_" + last_dir
 				sprite.play(idle)
+				_shield_set_flip(last_dir)
+				_shield_set_z_order(last_dir)
+				_shield_play(idle)
 
 
 # ===========================================================================
@@ -528,6 +634,9 @@ func _spawn_update() -> void:
 	if not sprite.is_playing():
 		state = State.IDLE
 		sprite.play("idle_neutral_" + last_dir)
+		_shield_set_flip(last_dir)
+		_shield_set_z_order(last_dir)
+		_shield_play("idle_neutral_" + last_dir)
 
 
 # Called: _physics_process() while state == DEAD.
@@ -555,6 +664,9 @@ func _do_respawn() -> void:
 	_dead_timer     = 0.0
 	state           = State.SPAWN
 	sprite.play("spawn")
+	_shield_set_flip(last_dir)
+	_shield_set_z_order(last_dir)
+	_shield_play("spawn")
 
 
 # ===========================================================================
@@ -600,9 +712,109 @@ var state : State = State.IDLE
 # Drives animation names — "attack_unarmed_*", "attack_sword_*", etc.
 var weapon_main : String = ""
 
-# Off-hand weapon slot identifier. Not used for animation routing currently;
-# reserved for future shield-block and dagger dual-wield logic.
+# Off-hand weapon slot identifier. Drives shield layer loading and block logic.
 var weapon_off  : String = ""
+
+# Shield layer sprite nodes — created by _build_shield_sprites() when weapon_off is set.
+# _shield_front  renders in front of the player body (sorting_offset > body sprite).
+# _shield_behind renders behind the player body (sorting_offset < body sprite).
+# Exactly one is visible at a time — _shield_set_z_order() picks the correct node per direction.
+var _shield_front  : AnimatedSprite3D
+var _shield_behind : AnimatedSprite3D
+
+
+# Called: init() when weapon_off != "".
+# Creates the two shield layer AnimatedSprite3D nodes and loads their frames.
+# sorting_offset controls render order for transparent sprites at the same position:
+# a greater value sorts in front. Body sprite sorting_offset defaults to 0.
+func _build_shield_sprites() -> void:
+
+	var shield_frames : SpriteFrames = _load_shield_frames()
+
+	_shield_front                  = AnimatedSprite3D.new()
+	_shield_front.pixel_size       = PIXEL_SIZE
+	_shield_front.billboard        = BaseMaterial3D.BILLBOARD_FIXED_Y
+	_shield_front.alpha_cut        = SpriteBase3D.ALPHA_CUT_DISABLED
+	_shield_front.texture_filter   = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_shield_front.position.y       = sprite.position.y
+	_shield_front.sorting_offset   = 0.01
+	_shield_front.sprite_frames    = shield_frames
+	add_child(_shield_front)
+
+	_shield_behind                 = AnimatedSprite3D.new()
+	_shield_behind.pixel_size      = PIXEL_SIZE
+	_shield_behind.billboard       = BaseMaterial3D.BILLBOARD_FIXED_Y
+	_shield_behind.alpha_cut       = SpriteBase3D.ALPHA_CUT_DISABLED
+	_shield_behind.texture_filter  = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_shield_behind.position.y      = sprite.position.y
+	_shield_behind.sorting_offset  = -0.01
+	_shield_behind.sprite_frames   = shield_frames
+	add_child(_shield_behind)
+
+
+# Called: _build_shield_sprites().
+# Loads all shield layer animations from the weapon_off asset folder.
+# West direction loads east frames — flip_h is applied at runtime by _shield_set_flip().
+func _load_shield_frames() -> SpriteFrames:
+
+	var frames : SpriteFrames = SpriteFrames.new()
+	var base   : String       = "res://assets/player/ares/weapon/off/" + weapon_off + "/"
+
+	var anims : Array = [
+		["walking_south",             base + "south/walking/",             6],
+		["walking_north",             base + "north/walking/",             6],
+		["walking_east",              base + "east/walking/",              6],
+		["walking_west",              base + "east/walking/",              6],
+		["running_south",             base + "south/running/",             6],
+		["running_north",             base + "north/running/",             6],
+		["running_east",              base + "east/running/",              6],
+		["running_west",              base + "east/running/",              6],
+		["idle_neutral_south",        base + "south/idle_neutral/",        10],
+		["idle_neutral_north",        base + "north/idle_neutral/",        10],
+		["idle_neutral_east",         base + "east/idle_neutral/",         10],
+		["idle_neutral_west",         base + "east/idle_neutral/",         10],
+		["idle_attack_unarmed_south", base + "south/idle_attack/unarmed/", 6],
+		["idle_attack_unarmed_north", base + "north/idle_attack/unarmed/", 6],
+		["idle_attack_unarmed_east",  base + "east/idle_attack/unarmed/",  6],
+		["idle_attack_unarmed_west",  base + "east/idle_attack/unarmed/",  6],
+		["attack_unarmed_south",      base + "south/attack/unarmed/",      5],
+		["attack_unarmed_north",      base + "north/attack/unarmed/",      5],
+		["attack_unarmed_east",       base + "east/attack/unarmed/",       5],
+		["attack_unarmed_west",       base + "east/attack/unarmed/",       5],
+		["jump_south",                base + "south/jump/",                5],
+		["jump_north",                base + "north/jump/",                5],
+		["jump_east",                 base + "east/jump/",                 5],
+		["jump_west",                 base + "east/jump/",                 5],
+		["shield_up_south",           base + "south/shield_up/",           7],
+		["shield_up_north",           base + "north/shield_up/",           7],
+		["shield_up_east",            base + "east/shield_up/",            7],
+		["shield_up_west",            base + "east/shield_up/",            7],
+		["shield_stance_south",       base + "south/shield_stance/",       5],
+		["shield_stance_north",       base + "north/shield_stance/",       5],
+		["shield_stance_east",        base + "east/shield_stance/",        5],
+		["shield_stance_west",        base + "east/shield_stance/",        5],
+		["spawn",                     base + "spawn/",                     29],
+		["death",                     base + "death/",                     29]]
+
+	for anim : Array in anims:
+		var anim_name   : String = anim[0]
+		var path        : String = anim[1]
+		var frame_count : int    = anim[2]
+		frames.add_animation(anim_name)
+		frames.set_animation_speed(anim_name, 8.0)
+		for i : int in range(frame_count):
+			var tex : Texture2D = load(path + str(i) + ".png")
+			frames.add_frame(anim_name, tex)
+
+	# Must match the body sprite loop settings exactly.
+	for suffix : String in ["south", "north", "east", "west"]:
+		frames.set_animation_loop("attack_unarmed_" + suffix, false)
+		frames.set_animation_loop("jump_"           + suffix, false)
+		frames.set_animation_loop("shield_up_"      + suffix, false)
+	frames.set_animation_loop("spawn",  false)
+	frames.set_animation_loop("death",  false)
+
+	return frames
 
 
 # ===========================================================================
@@ -635,6 +847,7 @@ func _input(event: InputEvent) -> void:
 				state           = State.ATTACK
 				_active_ability.spend(stats)
 				sprite.play("attack_" + _weapon_style() + "_" + last_dir)
+				_shield_play("attack_" + _weapon_style() + "_" + last_dir)
 
 		elif event.keycode == KEY_SPACE:
 			# Space starts a jump. Must be grounded, not mid-attack or mid-jump, have energy,
@@ -656,6 +869,9 @@ func _input(event: InputEvent) -> void:
 				sprite.animation = "jump_" + last_dir
 				sprite.frame     = JUMP_FRAME_WINDUP
 				sprite.pause()
+				_shield_set_flip(last_dir)
+				_shield_set_z_order(last_dir)
+				_shield_set_anim_frame("jump_" + last_dir, JUMP_FRAME_WINDUP)
 
 
 # ===========================================================================
@@ -712,12 +928,16 @@ func _update_airborne() -> void:
 	_jump_launched   = true
 	sprite.animation = "jump_" + last_dir
 	sprite.pause()
+	_shield_set_flip(last_dir)
+	_shield_set_z_order(last_dir)
 	if velocity.y > 0.0:
 		_jump_phase  = JumpPhase.RISE
 		sprite.frame = JUMP_FRAME_RISE
+		_shield_set_anim_frame("jump_" + last_dir, JUMP_FRAME_RISE)
 	else:
 		_jump_phase  = JumpPhase.FALL
 		sprite.frame = JUMP_FRAME_FALL
+		_shield_set_anim_frame("jump_" + last_dir, JUMP_FRAME_FALL)
 
 
 # Called: _physics_process().
@@ -763,6 +983,7 @@ func _update_death() -> void:
 	if is_on_floor() and _knockback_vel.length() < KNOCKBACK_SETTLED_THRESHOLD:
 		state = State.DEAD
 		sprite.play("death")
+		_shield_play("death")
 		_col.set_deferred("disabled", true)
 
 

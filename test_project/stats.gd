@@ -84,7 +84,11 @@ var focus  : float
 # Accumulated experience points. Increased by gain_exp() on creature death.
 # No exp_max yet — leveling system is Stage future. Tracked now so the value
 # is available when HUD and leveling are added.
-var exp    : float = 0.0
+var exp         : float = 0.0
+
+# Block chance [0.0–1.0]. Probability that an incoming hit is blocked while in
+# shield stance. On success knockback is halved. Talent tree increases this value.
+var block_chance : float = 0.5
 
 
 # ---------------------------------------------------------------------------
