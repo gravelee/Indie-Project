@@ -140,6 +140,15 @@ func _load_sprite_frames() -> SpriteFrames:
 		["jump_south",           base + "south/jump/",           5],
 		["jump_east",            base + "east/jump/",            5],
 		["jump_west",            base + "west/jump/",            5],
+		# Block animations — shield_up plays once on raise/lower, shield_stance loops while held.
+		["shield_up_north",      base + "north/shield_up/",      7],
+		["shield_up_south",      base + "south/shield_up/",      7],
+		["shield_up_east",       base + "east/shield_up/",       7],
+		["shield_up_west",       base + "west/shield_up/",       7],
+		["shield_stance_north",  base + "north/shield_stance/",  5],
+		["shield_stance_south",  base + "south/shield_stance/",  5],
+		["shield_stance_east",   base + "east/shield_stance/",   5],
+		["shield_stance_west",   base + "west/shield_stance/",   5],
 		# Non-directional animations — no direction suffix, same clip for all facing directions.
 		["spawn",                base + "spawn/",                29],
 		["death",                base + "death/",                29]]
@@ -165,6 +174,13 @@ func _load_sprite_frames() -> SpriteFrames:
 	frames.set_animation_loop("jump_south", false)
 	frames.set_animation_loop("jump_east",  false)
 	frames.set_animation_loop("jump_west",  false)
+
+	# Shield raise plays once — _block_update() waits for it to finish before entering stance.
+	# shield_stance is left looping (default) — it runs until the key is released.
+	frames.set_animation_loop("shield_up_north", false)
+	frames.set_animation_loop("shield_up_south", false)
+	frames.set_animation_loop("shield_up_east",  false)
+	frames.set_animation_loop("shield_up_west",  false)
 
 	# Lifecycle animations play once and hold the last frame.
 	frames.set_animation_loop("spawn", false)
@@ -310,11 +326,12 @@ func _shield_set_frame(frame: int) -> void:
 
 
 # Called: any function that resolves last_dir (static mode),
-# and per-frame during the BLOCK state shield_up animation (frame mode, Stage D).
-# Static mode  (frame == -1): z-order from direction only.
-# Frame mode   (frame >= 0):  z-order from direction + current animation frame (shield_up).
-#   south: frames 0-3 behind → frames 4-6 front. north: opposite. east: always behind. west: always front.
-func _shield_set_z_order(dir: String, frame: int = -1) -> void:
+# and per-frame during the BLOCK state shield_up animation (frame mode).
+# Static mode  (frame == -1, block_mode == false): regular animations — shield front only when north.
+# Static mode  (frame == -1, block_mode == true):  shield_stance — shield front when south or west.
+# Frame mode   (frame >= 0): shield_up per-frame — south 0-3 behind/4-6 front, north opposite,
+#                             east always behind, west always front.
+func _shield_set_z_order(dir: String, frame: int = -1, block_mode: bool = false) -> void:
 
 	if not _has_shield():
 		return
@@ -324,12 +341,17 @@ func _shield_set_z_order(dir: String, frame: int = -1) -> void:
 			"south": want_front = frame >= 4
 			"north": want_front = frame <  4
 			"east":  want_front = false
-			"west":  want_front = false
+			"west":  want_front = true
 			_:       want_front = false
+	elif block_mode:
+		# Shield_stance: player holds shield out — visible in front when facing camera (south or west).
+		want_front = (dir == "south" or dir == "west")
 	else:
+		# All other animations: shield only peeks in front when facing north (back to camera).
 		want_front = (dir == "north")
 	_shield_front.visible  = want_front
 	_shield_behind.visible = not want_front
+
 
 
 # ===========================================================================
@@ -469,7 +491,24 @@ func receive_hit(damage: float, dir: Vector3) -> void:
 
 	if state == State.SPAWN:
 		return
-	# super handles: is_dead guard, take_damage, gain_focus_on_receive, flash, death flag.
+
+	# Block check runs before damage is applied — a successful block absorbs the hit entirely.
+	# RAISING and LOWERING do not block, only HOLDING (shield stance) does.
+	# On success: no damage taken, knockback halved, flash fires for feedback, focus still awarded.
+	# Crit-forced drop deferred to Stage 9 — requires is_crit flag from creature.calc_damage().
+	if state == State.BLOCK and _block_phase == BlockPhase.HOLDING:
+		if randf() < stats.block_chance:
+			_regen_timer   = REGEN_PAUSE
+			_combat_timer  = COMBAT_TIMEOUT
+			_knockback_vel = dir.normalized() * KNOCKBACK_STRENGTH * 0.5
+			stats.gain_focus_on_receive()
+			_flash_sprite()
+			print("hit BLOCKED — no damage (block_chance: ", stats.block_chance, ")")
+			return
+		else:
+			print("block FAILED (block_chance: ", stats.block_chance, ")")
+
+	# Unblocked hit — super handles take_damage, gain_focus_on_receive, flash, death flag.
 	super.receive_hit(damage, dir)
 	if _last_damage == 0.0:
 		return  # super returned early (was already dead)
@@ -608,6 +647,104 @@ func _jump_update(delta: float) -> void:
 
 
 # ===========================================================================
+# BLOCK
+# ===========================================================================
+
+# Tracks which sub-phase the player is in during a block.
+# RAISING : advancing through shield_up frames — player locked, cannot move.
+# HOLDING : shield_stance looping — player can move at half speed, blocks incoming hits.
+# LOWERING: stepping back through shield_up frames — player locked, cannot move.
+enum BlockPhase { RAISING, HOLDING, LOWERING }
+var _block_phase : BlockPhase = BlockPhase.RAISING
+
+# Frame count for the shield_up animation. Must match _load_sprite_frames() and _load_shield_frames().
+const SHIELD_UP_FRAMES : int = 7
+
+# Fractional frame position within shield_up (0.0 = first frame, SHIELD_UP_FRAMES-1 = last frame).
+# Driven by delta in RAISING (counts up) and LOWERING (counts down).
+# Preserved across direction changes so transitions always start from the current position.
+var _block_frame_progress : float = 0.0
+
+
+# Called: _physics_process(delta) while state == BLOCK.
+# Drives all three block phases. All animation is manual — play() is never called in RAISING or
+# LOWERING so transitions always start from the current frame, not from the ends.
+# Transitions:
+#   RAISING  → HOLDING  : progress reaches last frame AND key still held
+#   RAISING  → LOWERING : key released mid-raise — reverses from current frame
+#   HOLDING  → LOWERING : key released (polled each frame)
+#   LOWERING → RAISING  : key re-pressed mid-lower — reverses from current frame
+#   LOWERING → IDLE     : progress reaches frame 0
+func _block_update(delta: float, input: Vector2) -> void:
+
+	match _block_phase:
+
+		BlockPhase.RAISING:
+			_block_frame_progress  = minf(_block_frame_progress + 8.0 * delta, float(SHIELD_UP_FRAMES - 1))
+			var frame : int        = int(_block_frame_progress)
+			sprite.animation       = "shield_up_" + last_dir
+			sprite.frame           = frame
+			sprite.pause()
+			_shield_set_anim_frame("shield_up_" + last_dir, frame)
+			_shield_set_z_order(last_dir, frame)
+			if not Input.is_key_pressed(KEY_SECTION):
+				_block_phase = BlockPhase.LOWERING
+			elif _block_frame_progress >= float(SHIELD_UP_FRAMES - 1):
+				_block_phase      = BlockPhase.HOLDING
+				var anim : String = "shield_stance_" + last_dir
+				sprite.play(anim)
+				_shield_set_z_order(last_dir, -1, true)
+				_shield_play(anim)
+
+		BlockPhase.HOLDING:
+			# Update facing direction from movement input.
+			# Suppressed while RMB is held — camera orbit should not change block direction.
+			var new_dir : String = _get_dir(input)
+			if new_dir != last_dir and not Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+				last_dir          = new_dir
+				var anim : String = "shield_stance_" + last_dir
+				sprite.play(anim)
+				_shield_set_flip(last_dir)
+				_shield_set_z_order(last_dir, -1, true)
+				_shield_play(anim)
+			if not Input.is_key_pressed(KEY_SECTION):
+				_block_frame_progress = float(SHIELD_UP_FRAMES - 1)
+				_block_phase          = BlockPhase.LOWERING
+				var frame : int       = SHIELD_UP_FRAMES - 1
+				sprite.animation      = "shield_up_" + last_dir
+				sprite.frame          = frame
+				sprite.pause()
+				_shield_set_anim_frame("shield_up_" + last_dir, frame)
+				_shield_set_z_order(last_dir, frame)
+
+		BlockPhase.LOWERING:
+			_block_frame_progress  = maxf(_block_frame_progress - 8.0 * delta, 0.0)
+			var frame : int        = int(_block_frame_progress)
+			sprite.animation       = "shield_up_" + last_dir
+			sprite.frame           = frame
+			sprite.pause()
+			_shield_set_anim_frame("shield_up_" + last_dir, frame)
+			_shield_set_z_order(last_dir, frame)
+			if Input.is_key_pressed(KEY_SECTION):
+				# Re-pressed during lower — reverse back to raising from current frame.
+				_block_phase = BlockPhase.RAISING
+			elif _block_frame_progress <= 0.0:
+				state             = State.IDLE
+				var idle : String = "idle_attack_" + _weapon_style() + "_" + last_dir \
+					if _is_in_combat() else "idle_neutral_" + last_dir
+				sprite.play(idle)
+				_shield_set_z_order(last_dir)
+				_shield_play(idle)
+
+
+# Called: receive_hit() on forced crit drop (Stage 9).
+# Drops directly into LOWERING from whatever frame the shield is currently at.
+func _enter_block_lowering() -> void:
+
+	_block_phase = BlockPhase.LOWERING
+
+
+# ===========================================================================
 # LIFECYCLE
 # ===========================================================================
 
@@ -700,7 +837,7 @@ var _run_energy_accum : float = 0.0
 # JUMP: owned by _input and _jump_update — covers voluntary jumps, ledge falls, throw-backs.
 # SPAWN: invincible, full animation plays, no input accepted.
 # DEAD: invincible, full animation plays to last frame then holds, terminal.
-enum State { IDLE, WALK, RUN, ATTACK, JUMP, SPAWN, DEAD }
+enum State { IDLE, WALK, RUN, ATTACK, JUMP, SPAWN, DEAD, BLOCK }
 var state : State = State.IDLE
 
 
@@ -826,7 +963,7 @@ func _load_shield_frames() -> SpriteFrames:
 # via the continuous Input.get_vector() poll — not here.
 func _input(event: InputEvent) -> void:
 
-	if is_dead or state == State.SPAWN:
+	if is_dead or state == State.SPAWN or state == State.BLOCK:
 		return
 
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -848,6 +985,21 @@ func _input(event: InputEvent) -> void:
 				_active_ability.spend(stats)
 				sprite.play("attack_" + _weapon_style() + "_" + last_dir)
 				_shield_play("attack_" + _weapon_style() + "_" + last_dir)
+
+		elif event.keycode == KEY_SECTION:
+			# § holds the shield up. Must have a shield equipped and not be mid-action.
+			# ATTACK, JUMP, and RUN block entry — must be standing or walking to raise shield.
+			if _has_shield() and state != State.ATTACK and state != State.JUMP \
+					and state != State.RUN and state != State.BLOCK:
+				state                 = State.BLOCK
+				_block_phase          = BlockPhase.RAISING
+				_block_frame_progress = 0.0
+				sprite.animation      = "shield_up_" + last_dir
+				sprite.frame          = 0
+				sprite.pause()
+				_shield_set_flip(last_dir)
+				_shield_set_z_order(last_dir, 0)
+				_shield_set_anim_frame("shield_up_" + last_dir, 0)
 
 		elif event.keycode == KEY_SPACE:
 			# Space starts a jump. Must be grounded, not mid-attack or mid-jump, have energy,
@@ -901,7 +1053,8 @@ func _read_input() -> Vector2:
 func _update_state(input: Vector2) -> void:
 
 	if state == State.ATTACK or state == State.JUMP \
-			or state == State.SPAWN or state == State.DEAD:
+			or state == State.SPAWN or state == State.DEAD \
+			or state == State.BLOCK:
 		return
 	var is_moving  : bool = input.length() >= 0.1
 	var can_sprint : bool = stats.energy >= 1.0
@@ -969,6 +1122,15 @@ func _update_velocity(input: Vector2, delta: float) -> void:
 	elif state == State.ATTACK:
 		velocity.x = _knockback_vel.x
 		velocity.z = _knockback_vel.z
+	elif state == State.BLOCK:
+		if _block_phase == BlockPhase.HOLDING:
+			# Shield stance — player can move at half speed. Knockback still stacks.
+			velocity.x = direction.x * speed * 0.5 + _knockback_vel.x
+			velocity.z = direction.z * speed * 0.5 + _knockback_vel.z
+		else:
+			# RAISING or LOWERING — no voluntary movement. Knockback still applies.
+			velocity.x = _knockback_vel.x
+			velocity.z = _knockback_vel.z
 	elif state == State.JUMP:
 		# Knockback is scaled down while airborne — no ground friction to stop it mid-air.
 		velocity.x = _jump_locked_vel.x + _knockback_vel.x * KNOCKBACK_AIR_SCALE
@@ -1062,6 +1224,7 @@ func _physics_process(delta: float) -> void:
 		State.IDLE, State.WALK, State.RUN: _anim_apply(input)
 		State.ATTACK:                      _attack_update()
 		State.JUMP:                        _jump_update(delta)
+		State.BLOCK:                       _block_update(delta, input)
 		State.SPAWN:                       _spawn_update()
 		State.DEAD:                        _dead_update(delta)
 
