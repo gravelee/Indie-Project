@@ -76,7 +76,7 @@ Zone 2 implementation       → after Zone 2 story
       damage roll. _attack_check() reads node.get("hit_half_height") — no global Y constant.
   11. **Regen condition** — blocked by: _regen_timer>0 (recent swing), _combat_timer>0
       (creature chasing — _extend_combat_timer() keeps this alive past _regen_timer),
-      sprint (RUN state), jump (JUMP state).
+      sprint (RUN state), jump (JUMP state), shield held (BLOCK state).
   12. **Hit flash** — reddish tween (Color 1.0/0.15/0.15 → white). GL Compatibility clamps
       modulate to [0,1] so overbright white (2,2,2) was invisible. Alpha preserved from
       current modulate so it does not fight _fade_update().

@@ -240,6 +240,87 @@ talent points like any other chain. Tier A unlocks Tier B, Tier B unlocks Tier C
   Implementation note: when push/pull is built, add `push_speed_mult` and `push_energy_mult`
   to the player's stat modifier layer.
 
+### Talent Tree Design Notes — Defence
+
+**Philosophy**: Defence talents deepen the shield system. Each talent rewards a more active,
+committed blocker — reducing disruption, shortening lock windows, and eventually letting
+a skilled player punish attackers for hitting the shield at all.
+
+All defence talents are in a single tree. No class gate — any build with a shield can invest.
+Tier A unlocks Tier B, Tier B unlocks Tier C (where chains have multiple tiers).
+
+**Blocked knockback reduction** *(code: `KNOCKBACK_STRENGTH * 0.5` in `receive_hit()` block path)*
+- A successful block currently applies `KNOCKBACK_STRENGTH * 0.5` — half the normal knockback.
+- This talent further reduces that blocked knockback. Never reaches 0 — some pushback always
+  remains to give feedback that the hit landed.
+- Tier A: blocked knockback × 0.5 → × 0.35 (65% reduction from full)
+- Tier B: blocked knockback × 0.35 → × 0.2 (80% reduction from full)
+- Tier C: blocked knockback × 0.2 → × 0.1 (90% reduction from full — barely moves on block)
+- Implementation: add `block_kb_mult : float = 0.5` to Stats. Talent tiers lower this value.
+  In `receive_hit()` block path: `_knockback_vel = dir.normalized() * KNOCKBACK_STRENGTH * stats.block_kb_mult`
+- Design note: a Tier C blocker against a fast-attacking enemy is nearly immovable. The 0.1
+  floor is intentional — zero knockback would remove all combat weight from blocked hits.
+
+**Early block — last 2 frames of raise** *(code: block check in `receive_hit()`, currently gated on `BlockPhase.HOLDING`)*
+- Normally block chance only activates when the shield is fully raised (BlockPhase.HOLDING).
+  During RAISING the player takes full damage.
+- This talent (single tier) extends block chance to the last 2 frames of the shield_up
+  animation (frames 5–6 of the 7-frame raise).
+- Implementation: when this talent is active, the block check condition becomes:
+  `_block_phase == BlockPhase.HOLDING or (_block_phase == BlockPhase.RAISING and sprite.frame >= SHIELD_UP_FRAMES - 2)`
+- Design note: rewards players who time their raise to meet an incoming hit. Pairs well
+  with Early block — full raise (below) as a prerequisite chain.
+
+**Early block — full raise** *(code: same block check, requires Early block — last 2 frames)*
+- Extends block chance to the entire RAISING phase (all 7 frames of shield_up).
+- Implementation: when this talent is active, the block check condition becomes:
+  `_block_phase == BlockPhase.HOLDING or _block_phase == BlockPhase.RAISING`
+- Design note: the natural upgrade of the previous talent. A player with both talents
+  can start a raise and already be protected. Combined with blocked knockback reduction
+  Tier C, raising the shield into a hit barely staggers the player.
+
+**Counter-knockback on perfect block** *(new: enemy knockback from player block)*
+- If a hit is blocked in the first 2 frames of entering shield_stance (HOLDING), the player
+  knocks the enemy back in the direction they came from.
+- The "first 2 frames" window is tracked by a frame counter that resets each time
+  BlockPhase transitions from RAISING → HOLDING.
+- Tier A: enemy knocked back at 25% of KNOCKBACK_STRENGTH
+- Tier B: 50%
+- Tier C: 75%
+- Tier D: 100% — full knockback returned to attacker
+- Implementation: in `receive_hit()` block path, if the talent is active and the
+  "perfect block" window is open, call `creature.receive_knockback(dir * -1.0, strength)`
+  (knockback direction is reversed — push attacker away from player).
+- Design note: Tier D effectively stuns melee attackers who hit a perfect block. Punishes
+  aggressive enemies and rewards patient, timed defensive play. The 2-frame window is tight
+  enough that it cannot be spammed — it requires reading the enemy's attack timing.
+
+**Quicken shield** *(code: `SHIELD_UP_FRAMES` and frame accumulator speed in `_block_update()`)*
+- The shield_up animation locks the player for 7 frames. This talent reduces the lock window
+  by removing frames from both the raise and lower animations. Currently undecided on tiers —
+  needs playtesting to know how many frames feel right to cut.
+- Design note: this talent is about reducing the commitment cost of blocking. A player who
+  never invests feels slow to raise; a player who invests deeply can snap the shield up and
+  down quickly, weaving it between actions more fluidly.
+- Implementation placeholder: add a `shield_raise_frame_skip : int = 0` to Stats. Increase
+  per tier. In `_block_update()`, advance `_block_frame_progress` faster when this is set,
+  or skip frames entirely (jump directly to frame `shield_raise_frame_skip` on raise start).
+- Tiers: TBD after combat testing.
+
+**Crit block drop resistance** *(code: crit drop logic in `receive_hit()` — not yet implemented)*
+- A critical hit while blocking ALWAYS drops the block state (forced BlockPhase transition
+  to LOWERING). This cannot be avoided by default.
+- This talent gives a percentage chance to resist the crit-forced drop and stay in HOLDING.
+- Tier A: 20% chance to resist
+- Tier B: 40%
+- Tier C: 60%
+- Tier D: 80% — a Tier D player will hold their block through most crits
+- Design note: intentionally does not reach 100% — a crit should always have a chance to
+  break through. The 20% floor per tier means a Tier D player still drops on 1 in 5 crits.
+- Implementation: in `receive_hit()` crit-drop path (when the hit is a crit and block is
+  active and block check fails), roll `randf() < stats.block_crit_resist` — on success,
+  stay in HOLDING instead of entering LOWERING. Add `block_crit_resist : float = 0.0` to Stats.
+
 ### Boss Ability Scroll Drops
 - Every dungeon boss has a chance to drop one or more talent ability scrolls.
 - Scrolls are class-influenced: a player with Weaponmaster tendencies (high AGI/STR, physical

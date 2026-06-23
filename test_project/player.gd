@@ -452,7 +452,7 @@ func _attack_check() -> void:
 			continue
 		# Facing gate — target must be within the attack cone.
 		# ATTACK_ARC_DOT = cos(45°) = 0.7071 → ±45° from facing direction (90° total arc).
-		if flat.length_squared() > 0.001 and flat.normalized().dot(dir_vec) <= ATTACK_ARC_DOT:
+		if flat.length_squared() > 0.001 and flat.normalized().dot(dir_vec) < ATTACK_ARC_DOT:
 			continue
 		# Each creature gets its own damage roll — crit is independent per target.
 		var damage : float = _active_ability.calc_damage(stats)
@@ -1203,7 +1203,7 @@ func _update_timers(delta: float) -> void:
 	# _combat_timer check is not redundant — _extend_combat_timer() keeps it alive
 	# past _regen_timer so a chasing creature blocks regen even between swings.
 	if _regen_timer <= 0.0 and _combat_timer <= 0.0 \
-			and state != State.RUN and state != State.JUMP:
+			and state != State.RUN and state != State.JUMP and state != State.BLOCK:
 		stats.regen(delta)
 
 
