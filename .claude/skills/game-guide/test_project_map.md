@@ -12,8 +12,9 @@ type: reference
 |------|------|---------|
 | `main.gd` | Scene builder — spawns everything, wires references | Node3D |
 | `entity.gd` | Shared entity base — PIXEL_SIZE, sprite, stats, hit_half_height, is_dead, flash, receive_hit | CharacterBody3D |
-| `player.gd` | Input, movement, jump, sprint, attack, block, regen, fade, respawn | Entity |
+| `player.gd` | Input, movement, jump, sprint, attack, block, grab/push/pull, regen, fade, respawn | Entity |
 | `creature.gd` | Rat collision/sprite setup, receive_hit print, exp_reward | Entity |
+| `pushable_block.gd` | Pushable physics block — _driven flag, gravity+friction when free | CharacterBody3D |
 | `stats.gd` | All stat math — HP/energy/focus/exp, damage, regen, crit | RefCounted |
 | `ability.gd` | One ability instance — cooldown timer, can_use, spend, calc_damage | RefCounted |
 | `abilities.gd` | Ability registry — _DATA dictionary, get_ability() factory | RefCounted |
@@ -42,6 +43,14 @@ Godot engine
   │     │     ├── JUMP          → _jump_update()
   │     │     ├── BLOCK         → _block_update(delta)
   │     │     │     └── § released → LOWERING → exits to IDLE or WALK
+  │     │     ├── GRAB          → _do_grab_idle(input)
+  │     │     │     └── input dot > 0.3  → PUSH / input dot < -0.3 → PULL / SHIFT release → IDLE
+  │     │     ├── PUSH          → _do_push_movement(delta)
+  │     │     │     └── drives block first → player follows / input reverse → direct PULL
+  │     │     │           / input drop → GRAB (block vel zeroed) / stuck → freeze in PUSH
+  │     │     ├── PULL          → _do_pull_movement(delta) → _drive_pulled_block(delta)
+  │     │     │     └── player moves first → block follows / input reverse → direct PUSH
+  │     │     │           / input drop → GRAB (block vel zeroed) / grip loss (dist > 2.8) → IDLE
   │     │     ├── SPAWN         → _spawn_update()
   │     │     └── DEAD          → _dead_update(delta)
   │     │           └── _dead_timer >= RESPAWN_DELAY → _do_respawn()
@@ -52,6 +61,7 @@ Godot engine
   │     ├── KEY_1 → _abilities[0] → ability.can_use() → ability.spend() → ATTACK state
   │     ├── SPACE → jump → JUMP state
   │     └── § (KEY_SECTION) → _has_shield() → BLOCK state (from IDLE/WALK only)
+  │         (GRAB/PUSH/PULL block all _input events)
   │
   └── _physics_process(delta)  →  creature.gd  (Stage 9 — not yet implemented)
         └── _extend_combat_timer() → player.gd  (keeps combat window alive)
@@ -109,6 +119,13 @@ IDLE ──(input)──► WALK ──(shift+energy)──► RUN
         ▼
       BLOCK ──(§ released → LOWERING done)──► IDLE or WALK
         (3 phases: RAISING→HOLDING→LOWERING)
+
+  SHIFT held (any of IDLE/WALK/RUN, block in reach + facing arc):
+        ▼
+      GRAB ──(input toward block)──► PUSH ──(SHIFT release or stuck)──► IDLE
+        │    (input away from block)──► PULL ──(SHIFT release or stuck)──► IDLE
+        │    (SHIFT release)──► IDLE
+        └── receiving a hit → _release_grab() → IDLE
 ```
 
 ---
@@ -135,6 +152,15 @@ IDLE ──(input)──► WALK ──(shift+energy)──► RUN
 | block_dir_threshold | stats.gd | 0.5 | dot floor for block arc (±60°); talent reduces to 0.0 (±90°) |
 | last_hit_was_crit | stats.gd | false | set by calc_ability_damage(), read by defender receive_hit() |
 | exp_reward | creature.gd | 5 | EXP awarded to player on kill |
+| GRAB_REACH | player.gd | 1.3 | max flat distance (player→block) for grab to land |
+| PUSH_SPEED | player.gd | 1.8 | world units/s while pushing a block |
+| PULL_SPEED | player.gd | 1.3 | world units/s while pulling a block |
+| GRAB_FACE_DOT | player.gd | 0.5 | min dot product facing→block for grab (±60° arc) |
+| PUSH_PULL_DOT | player.gd | 0.3 | input dot threshold to enter PUSH (positive) or PULL (negative) |
+| STUCK_FRAMES | player.gd | 2 | consecutive low-movement frames before freezing (PUSH) or grip loss (PULL) |
+| GRIP_LOSE_DIST | player.gd | 2.8 | player→block distance above which grab releases during PULL or GRAB idle |
+| PUSH_PULL_ENERGY_COST | player.gd | 1.0 | energy drained per second while pushing or pulling |
+| HALF_SIZE | pushable_block.gd | 0.5 | block half-size on XZ const; half_size var mirrors it for runtime get() |
 
 ---
 

@@ -44,6 +44,17 @@
                   BLOCK ──(§ released → LOWERING done)──► IDLE or WALK
                     │
               phases below
+
+  SHIFT held from IDLE/WALK/RUN + pushable block in reach + facing arc:
+                    │
+                    ▼
+                  GRAB  ──(input toward block  → dot >  0.3)──► PUSH
+                    │   ──(input away from block → dot < -0.3)──► PULL
+                    │   ──(SHIFT released)──► IDLE
+                    │
+              PUSH/PULL revert to GRAB on input drop or 2 stuck frames
+              PUSH/PULL → IDLE on SHIFT release
+              any state → GRAB/PUSH/PULL blocked on hit (→ _release_grab() → IDLE)
 ```
 
 ---
@@ -105,6 +116,9 @@
   │       ATTACK            → _attack_update()        (COMBAT)           │
   │       JUMP              → _jump_update(delta)     (JUMP)             │
   │       BLOCK             → _block_update(delta)    (BLOCK)            │
+  │       GRAB              → _do_grab_idle(input)    (GRAB)             │
+  │       PUSH              → _do_push_movement(delta)(GRAB)             │
+  │       PULL              → _do_pull_movement(delta)(GRAB)             │
   │       SPAWN             → _spawn_update()         (LIFECYCLE)        │
   │       DEAD              → _dead_update(delta)     (LIFECYCLE)        │
   │                                                                      │
@@ -166,6 +180,9 @@
               _initial_focus
   MOVEMENT    _run_energy_accum                        —
   STATE       state                                    —
+  GRAB        _grabbed_obj, _grab_approach_dir          _try_grab(), _release_grab()
+              _stuck_frames                            _do_grab_idle(), _do_push_movement()
+                                                       _do_pull_movement()
   EQUIPMENT   weapon_main, weapon_off                  _build_shield_sprites()
               _shield_front, _shield_behind            _load_shield_frames()
                                                        _has_shield(), _shield_set_z_order()
@@ -249,6 +266,9 @@
   block_dir_threshold   stats.gd — dot product floor for block arc (0.5=±60°, 0.0=±90°). Talent reduces it.
   last_hit_was_crit     stats.gd — set by calc_ability_damage(), read by defender to trigger crit block drop
   _block_crit_forced    BLOCK — true during crit-forced LOWERING; disables § re-raise until animation ends
+  _grabbed_obj          GRAB — the CharacterBody3D block currently being held (null when free)
+  _grab_approach_dir    GRAB — unit Vector3 from player toward block at grab time; defines push/pull axis
+  _stuck_frames         GRAB — consecutive low-movement frame counter; reverts to GRAB idle at 2
   sprite                entity.gd — the AnimatedSprite3D child (body layer)
   stats                 entity.gd — the Stats resource (includes stats.exp, stats.block_chance)
 ```

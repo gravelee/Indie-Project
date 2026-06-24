@@ -59,11 +59,7 @@ func init(p_camera_rig: Node3D, p_sprite: AnimatedSprite3D) -> void:
 	_initial_focus  = stats.focus
 
 	# Begin in SPAWN — player is invincible until the animation completes.
-	state = State.SPAWN
-	sprite.play("spawn")
-	_shield_set_flip(last_dir)
-	_shield_set_z_order(last_dir)
-	_shield_play("spawn")
+	_set_state(State.SPAWN)
 
 
 # ===========================================================================
@@ -471,7 +467,7 @@ func _attack_update() -> void:
 
 	# Animation finished — swing is over, return to normal state.
 	if not sprite.is_playing():
-		state = State.IDLE
+		_set_state(State.IDLE)
 		return
 
 	# Apply damage once when the animation reaches the designated hit frame.
@@ -652,13 +648,7 @@ func _jump_update(delta: float) -> void:
 				_jump_cooldown_timer = JUMP_COOLDOWN
 				# If the player died mid-air, next frame will trigger death.
 				# For now we transition to Idle state.
-				state = State.IDLE
-				var idle : String = "idle_attack_" + _weapon_style() + "_" + last_dir \
-					if _is_in_combat() else "idle_neutral_" + last_dir
-				sprite.play(idle)
-				_shield_set_flip(last_dir)
-				_shield_set_z_order(last_dir)
-				_shield_play(idle)
+				_set_state(State.IDLE)
 
 
 # ===========================================================================
@@ -749,12 +739,7 @@ func _block_update(delta: float, input: Vector2) -> void:
 				_block_phase = BlockPhase.RAISING
 			elif _block_frame_progress <= 0.0:
 				_block_crit_forced = false
-				state              = State.IDLE
-				var idle : String  = "idle_attack_" + _weapon_style() + "_" + last_dir \
-					if _is_in_combat() else "idle_neutral_" + last_dir
-				sprite.play(idle)
-				_shield_set_z_order(last_dir)
-				_shield_play(idle)
+				_set_state(State.IDLE)
 
 
 # Called: receive_hit() on crit-forced block drop.
@@ -791,11 +776,7 @@ var _initial_focus  : float   = 0.0
 func _spawn_update() -> void:
 
 	if not sprite.is_playing():
-		state = State.IDLE
-		sprite.play("idle_neutral_" + last_dir)
-		_shield_set_flip(last_dir)
-		_shield_set_z_order(last_dir)
-		_shield_play("idle_neutral_" + last_dir)
+		_set_state(State.IDLE)
 
 
 # Called: _physics_process() while state == DEAD.
@@ -821,11 +802,7 @@ func _do_respawn() -> void:
 	velocity        = Vector3.ZERO
 	_knockback_vel  = Vector3.ZERO
 	_dead_timer     = 0.0
-	state           = State.SPAWN
-	sprite.play("spawn")
-	_shield_set_flip(last_dir)
-	_shield_set_z_order(last_dir)
-	_shield_play("spawn")
+	_set_state(State.SPAWN)
 
 
 # ===========================================================================
@@ -859,8 +836,43 @@ var _run_energy_accum : float = 0.0
 # JUMP: owned by _input and _jump_update — covers voluntary jumps, ledge falls, throw-backs.
 # SPAWN: invincible, full animation plays, no input accepted.
 # DEAD: invincible, full animation plays to last frame then holds, terminal.
-enum State { IDLE, WALK, RUN, ATTACK, JUMP, SPAWN, DEAD, BLOCK }
+enum State { IDLE, WALK, RUN, ATTACK, JUMP, SPAWN, DEAD, BLOCK, GRAB, PUSH, PULL }
 var state : State = State.IDLE
+
+
+# Called: any code path that changes the current player state.
+# Sets state, resolves the correct animation name, and plays it on both sprite layers.
+# Returns without playing when state is manually managed (JUMP/BLOCK/ATTACK return "").
+# Guard prevents restarting a clip that is already playing — avoids frame-zero flash.
+func _set_state(new_state: State) -> void:
+
+	state = new_state
+	var anim : String = _state_anim()
+	if anim == "":
+		return
+	if sprite.animation != anim:
+		sprite.play(anim)
+	_shield_set_flip(last_dir)
+	_shield_set_z_order(last_dir)
+	_shield_play(anim)
+
+
+# Called: _set_state().
+# Returns the animation name owned by the given state.
+# Returns "" for states that drive their own animation manually (ATTACK, JUMP, BLOCK,
+# GRAB, PUSH, PULL) — _set_state() skips play() when it receives an empty string.
+func _state_anim() -> String:
+
+	match state:
+		State.IDLE:
+			if _is_in_combat():
+				return "idle_attack_" + _weapon_style() + "_" + last_dir
+			return "idle_neutral_" + last_dir
+		State.WALK:  return "walking_" + last_dir
+		State.RUN:   return "running_" + last_dir
+		State.SPAWN: return "spawn"
+		State.DEAD:  return "death"
+	return ""  # ATTACK, JUMP, BLOCK, GRAB, PUSH, PULL — manually managed
 
 
 # ===========================================================================
@@ -1071,12 +1083,14 @@ func _read_input() -> Vector2:
 
 # Called: _physics_process().
 # Resolves IDLE/WALK/RUN from input and shift key.
-# ATTACK, JUMP, SPAWN, and DEAD are owned by their update functions — never overwritten here.
+# ATTACK, JUMP, SPAWN, DEAD, BLOCK, GRAB, PUSH, and PULL are owned by their update
+# functions — movement state must never overwrite them.
 func _update_state(input: Vector2) -> void:
 
 	if state == State.ATTACK or state == State.JUMP \
 			or state == State.SPAWN or state == State.DEAD \
-			or state == State.BLOCK:
+			or state == State.BLOCK or state == State.GRAB \
+			or state == State.PUSH or state == State.PULL:
 		return
 	var is_moving  : bool = input.length() >= 0.1
 	var can_sprint : bool = stats.energy >= 1.0
@@ -1092,9 +1106,11 @@ func _update_state(input: Vector2) -> void:
 # Detects going airborne without a voluntary jump — ledge fall or creature throw-back.
 # velocity.y > 0 → thrown upward → RISE. velocity.y <= 0 → falling → FALL.
 # No energy cost — involuntary air time is never gated on resources.
+# GRAB/PUSH/PULL are skipped — grab releases when the player is hit, not when airborne.
 func _update_airborne() -> void:
 
-	if state == State.JUMP or state == State.SPAWN or state == State.DEAD:
+	if state == State.JUMP or state == State.SPAWN or state == State.DEAD \
+			or state == State.GRAB or state == State.PUSH or state == State.PULL:
 		return
 	if is_on_floor():
 		return
@@ -1172,9 +1188,7 @@ func _update_death() -> void:
 	if not is_dead or state == State.DEAD or state == State.JUMP:
 		return
 	if is_on_floor() and _knockback_vel.length() < KNOCKBACK_SETTLED_THRESHOLD:
-		state = State.DEAD
-		sprite.play("death")
-		_shield_play("death")
+		_set_state(State.DEAD)
 		_col.set_deferred("disabled", true)
 
 
