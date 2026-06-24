@@ -210,9 +210,12 @@
   _block_update()       BLOCK (_block_phase, _block_frame_progress), ANIMATION (last_dir)
                         EQUIPMENT (_shield_front, _shield_behind, _shield_set_z_order, _shield_play)
                         STATE (state — exits to IDLE/WALK on LOWERING complete)
-  receive_hit()         STATE (state), BLOCK (_block_phase, stats.block_chance)
+  receive_hit()         STATE (state), BLOCK (_block_phase, stats.block_chance, stats.block_dir_threshold)
+                        CAMERA (h_angle — rotates DIR_MAP facing into world space for arc check)
+                        ANIMATION (last_dir — source of facing vector)
                         COMBAT (timers, _knockback_vel), entity (_last_damage)
-                        on block: halved knockback, focus gain, early return (no damage)
+                        on block success: halved knockback, focus gain, early return (no damage)
+                        on arc miss: full damage + full knockback (block bypassed entirely)
   _dead_update()        LIFECYCLE (_dead_timer, RESPAWN_DELAY)
   _do_respawn()         LIFECYCLE (all lifecycle vars), INIT (_col, _spawn_position)
                         entity (is_dead, stats)
@@ -243,6 +246,7 @@
   _block_phase          BLOCK — current BlockPhase (RAISING/HOLDING/LOWERING)
   _block_frame_progress BLOCK — float 0.0–6.0 tracking position in shield_up animation
   block_chance          stats.gd — probability [0.0–1.0] that a hit is blocked in HOLDING
+  block_dir_threshold   stats.gd — dot product floor for block arc (0.5=±60°, 0.0=±90°). Talent reduces it.
   sprite                entity.gd — the AnimatedSprite3D child (body layer)
   stats                 entity.gd — the Stats resource (includes stats.exp, stats.block_chance)
 ```

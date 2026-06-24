@@ -90,6 +90,12 @@ var exp         : float = 0.0
 # shield stance. On success knockback is halved. Talent tree increases this value.
 var block_chance : float = 0.5
 
+# Directional block threshold [dot product]. A hit is blockable only when the
+# incoming attack direction aligns with the player facing within this dot threshold.
+# 0.5 = ±60° arc (default). Talent reduces toward 0.0 = ±90° (full frontal hemisphere).
+# Uses 6 talent points: each point reduces threshold by ~0.083 (0.5 / 6).
+var block_dir_threshold : float = 0.5
+
 
 # ---------------------------------------------------------------------------
 # Derived stats — recalculated clean by _recalculate_all() whenever base stats change.
@@ -165,6 +171,11 @@ var mspd       : float
 # ---------------------------------------------------------------------------
 # Internal
 # ---------------------------------------------------------------------------
+
+# Set by calc_ability_damage() each swing — true if that hit was a crit.
+# Read by the defender's receive_hit() to trigger crit-forced block drop.
+# Cleared to false at the start of every calc_ability_damage() call.
+var last_hit_was_crit : bool = false
 
 # Counts down the global cooldown. Ability use is blocked while above zero.
 var gcd_timer : float = 0.0
@@ -277,8 +288,8 @@ func spend_resources(hp_cost: int, energy_cost: int, focus_cost: int) -> void:
 func calc_ability_damage(mult: float) -> float:
 
 	var base    : float = patk * mult # patk = 0 means no damage.
-	var is_crit : bool  = randf() < agi * AGI_CRIT
-	if is_crit:
+	last_hit_was_crit   = randf() < agi * AGI_CRIT
+	if last_hit_was_crit:
 		base *= CRIT_MULT
 		gain_focus(FOCUS_GAIN_CRIT)
 		print("focus +", FOCUS_GAIN_CRIT, " (crit) — focus: ", int(focus), "/", focus_max)

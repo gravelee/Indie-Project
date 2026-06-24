@@ -307,6 +307,17 @@ Tier A unlocks Tier B, Tier B unlocks Tier C (where chains have multiple tiers).
   or skip frames entirely (jump directly to frame `shield_raise_frame_skip` on raise start).
 - Tiers: TBD after combat testing.
 
+**Shield arc** *(code: `stats.block_dir_threshold` in `receive_hit()` directional gate)*
+- By default the block arc is ±60° (dot > 0.5). Attacks outside this arc bypass block entirely —
+  full damage and full knockback regardless of block state.
+- This talent widens the arc toward ±90° (dot > 0.0 — full frontal hemisphere).
+- 6 talent points total. Each point reduces `block_dir_threshold` by ~0.083 (0.5 / 6).
+  Point 1: 0.417 / Point 2: 0.333 / Point 3: 0.25 / Point 4: 0.167 / Point 5: 0.083 / Point 6: 0.0
+- Implementation: talent system writes to `stats.block_dir_threshold` directly.
+- Design note: at 6 points the player blocks any frontal hit regardless of exact angle.
+  This matters most against fast creatures that circle-strafe — at max investment the player
+  just has to face roughly toward the attacker. Without investment, precise facing is required.
+
 **Crit block drop resistance** *(code: crit drop logic in `receive_hit()` — not yet implemented)*
 - A critical hit while blocking ALWAYS drops the block state (forced BlockPhase transition
   to LOWERING). This cannot be avoided by default.

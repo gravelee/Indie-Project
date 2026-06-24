@@ -455,9 +455,9 @@ func _attack_check() -> void:
 		if flat.length_squared() > 0.001 and flat.normalized().dot(dir_vec) < ATTACK_ARC_DOT:
 			continue
 		# Each creature gets its own damage roll — crit is independent per target.
-		var damage : float = _active_ability.calc_damage(stats)
-		var kb_dir : Vector3 = flat.normalized() if flat.length_squared() > 0.001 else dir_vec
-		node.call("receive_hit", damage, kb_dir)
+		var damage  : float = _active_ability.calc_damage(stats)
+		var kb_dir  : Vector3 = flat.normalized() if flat.length_squared() > 0.001 else dir_vec
+		node.call("receive_hit", damage, kb_dir, stats.last_hit_was_crit)
 		_combat_timer = COMBAT_TIMEOUT
 		# Award EXP if this hit killed the creature.
 		if node.get("is_dead"):
@@ -485,31 +485,46 @@ func _attack_update() -> void:
 
 # Called: creature._attack_check() when a creature's attack reaches the player.
 # damage : raw damage value from the creature's ability.calc_damage().
-# dir    : flat direction from creature to player — used for knockback direction.
+# dir     : flat direction from creature to player — used for knockback direction.
+# is_crit : true if the incoming hit was a critical strike — forces block drop on HOLDING.
 # Gets hit resets both gates: regen pauses and combat window refreshes.
-func receive_hit(damage: float, dir: Vector3) -> void:
+func receive_hit(damage: float, dir: Vector3, is_crit: bool = false) -> void:
 
 	if state == State.SPAWN:
 		return
 
 	# Block check runs before damage is applied — a successful block absorbs the hit entirely.
 	# RAISING and LOWERING do not block, only HOLDING (shield stance) does.
-	# On success: no damage taken, knockback halved, flash fires for feedback, focus still awarded.
-	# Crit-forced drop deferred to Stage 9 — requires is_crit flag from creature.calc_damage().
+	# Directional gate: attack must come from within the block arc (facing dot incoming > threshold).
+	# Arc is ±60° by default (dot > 0.5). Talent reduces threshold toward 0.0 (±90°).
+	# Attacks outside the arc bypass block entirely — full damage + full knockback.
+	# Crit-forced drop: a crit always forces LOWERING. Block cannot absorb a critical hit.
+	# After LOWERING completes the player must re-press § to raise the shield again (Option A).
 	if state == State.BLOCK and _block_phase == BlockPhase.HOLDING:
-		if randf() < stats.block_chance:
-			_regen_timer   = REGEN_PAUSE
-			_combat_timer  = COMBAT_TIMEOUT
-			_knockback_vel = dir.normalized() * KNOCKBACK_STRENGTH * 0.5
-			stats.gain_focus_on_receive()
-			_flash_sprite()
-			print("hit BLOCKED — no damage (block_chance: ", stats.block_chance, ")")
-			return
+		if is_crit:
+			_enter_block_lowering()
+			print("block DROPPED — crit forced shield down")
 		else:
-			print("block FAILED (block_chance: ", stats.block_chance, ")")
+			var inp     : Vector2 = DIR_MAP[last_dir]
+			var facing  : Vector3 = Vector3(
+				inp.x * cos(h_angle) + inp.y * sin(h_angle), 0.0,
+				-inp.x * sin(h_angle) + inp.y * cos(h_angle)).normalized()
+			var in_arc  : bool = facing.dot(dir.normalized()) > stats.block_dir_threshold
+			if in_arc and randf() < stats.block_chance:
+				_regen_timer   = REGEN_PAUSE
+				_combat_timer  = COMBAT_TIMEOUT
+				_knockback_vel = dir.normalized() * KNOCKBACK_STRENGTH * 0.5
+				stats.gain_focus_on_receive()
+				_flash_sprite()
+				print("hit BLOCKED — no damage (block_chance: ", stats.block_chance, ")")
+				return
+			elif not in_arc:
+				print("block BYPASSED — attack outside shield arc")
+			else:
+				print("block FAILED (block_chance: ", stats.block_chance, ")")
 
 	# Unblocked hit — super handles take_damage, gain_focus_on_receive, flash, death flag.
-	super.receive_hit(damage, dir)
+	super.receive_hit(damage, dir, is_crit)
 	if _last_damage == 0.0:
 		return  # super returned early (was already dead)
 	print("player hit for ", _last_damage, " — hp: ", stats.hp, "/", stats.hp_max)
@@ -665,6 +680,10 @@ const SHIELD_UP_FRAMES : int = 7
 # Preserved across direction changes so transitions always start from the current position.
 var _block_frame_progress : float = 0.0
 
+# True when LOWERING was forced by a crit hit — blocks the § re-raise shortcut.
+# Cleared when LOWERING completes. Voluntary LOWERING (§ released) never sets this.
+var _block_crit_forced : bool = false
+
 
 # Called: _physics_process(delta) while state == BLOCK.
 # Drives all three block phases. All animation is manual — play() is never called in RAISING or
@@ -725,23 +744,26 @@ func _block_update(delta: float, input: Vector2) -> void:
 			sprite.pause()
 			_shield_set_anim_frame("shield_up_" + last_dir, frame)
 			_shield_set_z_order(last_dir, frame)
-			if Input.is_key_pressed(KEY_SECTION):
-				# Re-pressed during lower — reverse back to raising from current frame.
+			if Input.is_key_pressed(KEY_SECTION) and not _block_crit_forced:
+				# Re-pressed during voluntary lower — reverse back to raising from current frame.
 				_block_phase = BlockPhase.RAISING
 			elif _block_frame_progress <= 0.0:
-				state             = State.IDLE
-				var idle : String = "idle_attack_" + _weapon_style() + "_" + last_dir \
+				_block_crit_forced = false
+				state              = State.IDLE
+				var idle : String  = "idle_attack_" + _weapon_style() + "_" + last_dir \
 					if _is_in_combat() else "idle_neutral_" + last_dir
 				sprite.play(idle)
 				_shield_set_z_order(last_dir)
 				_shield_play(idle)
 
 
-# Called: receive_hit() on forced crit drop (Stage 9).
+# Called: receive_hit() on crit-forced block drop.
 # Drops directly into LOWERING from whatever frame the shield is currently at.
+# Sets _block_crit_forced so the § re-raise shortcut is disabled for this lowering cycle.
 func _enter_block_lowering() -> void:
 
-	_block_phase = BlockPhase.LOWERING
+	_block_phase       = BlockPhase.LOWERING
+	_block_crit_forced = true
 
 
 # ===========================================================================

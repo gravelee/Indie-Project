@@ -47,7 +47,7 @@ var _last_damage    : float = 0.0
 # Applies damage, awards focus, flashes the sprite, and marks the entity dead
 # if HP reaches zero. Child classes must guard their own state-specific early
 # returns (e.g. SPAWN) before calling super.
-func receive_hit(damage: float, _dir: Vector3) -> void:
+func receive_hit(damage: float, _dir: Vector3, _is_crit: bool = false) -> void:
 
 	if is_dead:
 		return

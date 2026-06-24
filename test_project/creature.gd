@@ -96,9 +96,10 @@ func init() -> void:
 # ===========================================================================
 
 # Called: player._attack_check() when the player's attack reaches this creature.
-# damage : raw damage value from ability.calc_damage().
-# dir    : flat direction vector from player to this creature — reserved for knockback.
-func receive_hit(damage: float, dir: Vector3) -> void:
+# damage  : raw damage value from ability.calc_damage().
+# dir     : flat direction vector from player to this creature — reserved for knockback.
+# is_crit : true if the hit was a critical strike — passed through to entity base.
+func receive_hit(damage: float, dir: Vector3, is_crit: bool = false) -> void:
 
-	super.receive_hit(damage, dir)
+	super.receive_hit(damage, dir, is_crit)
 	print("rat hit for ", _last_damage, " — hp: ", stats.hp, "/", stats.hp_max)
