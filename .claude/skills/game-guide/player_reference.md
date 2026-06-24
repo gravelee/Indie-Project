@@ -247,6 +247,8 @@
   _block_frame_progress BLOCK — float 0.0–6.0 tracking position in shield_up animation
   block_chance          stats.gd — probability [0.0–1.0] that a hit is blocked in HOLDING
   block_dir_threshold   stats.gd — dot product floor for block arc (0.5=±60°, 0.0=±90°). Talent reduces it.
+  last_hit_was_crit     stats.gd — set by calc_ability_damage(), read by defender to trigger crit block drop
+  _block_crit_forced    BLOCK — true during crit-forced LOWERING; disables § re-raise until animation ends
   sprite                entity.gd — the AnimatedSprite3D child (body layer)
   stats                 entity.gd — the Stats resource (includes stats.exp, stats.block_chance)
 ```

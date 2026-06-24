@@ -132,6 +132,8 @@ IDLE ──(input)──► WALK ──(shift+energy)──► RUN
 | KNOCKBACK_STRENGTH | player.gd | 8.0 | base knockback magnitude; blocked hits use × 0.5 |
 | SHIELD_UP_FRAMES | player.gd | 7 | frames in shield_up animation (raise and lower) |
 | block_chance | stats.gd | 0.5 | probability a hit is blocked while in HOLDING |
+| block_dir_threshold | stats.gd | 0.5 | dot floor for block arc (±60°); talent reduces to 0.0 (±90°) |
+| last_hit_was_crit | stats.gd | false | set by calc_ability_damage(), read by defender receive_hit() |
 | exp_reward | creature.gd | 5 | EXP awarded to player on kill |
 
 ---
