@@ -850,15 +850,15 @@ Also guard `receive_hit()` against double-death: check `state == State.DEATH` at
 **Sprint/exertion energy drain** — accumulate active-time across state transitions to prevent
 tap-exploit. Applies to RUN, PUSH, and PULL equally (all cost 1 energy/second):
 ```gdscript
-var _run_energy_accum : float = 0.0   # persists; shared across RUN/PUSH/PULL
+var _energy_drain_accum : float = 0.0   # persists; shared across RUN/PUSH/PULL
 
 # In _physics_process, after _handle_movement():
 if state == State.RUN or state == State.PUSH or state == State.PULL:
-    _run_energy_accum += delta
-    if _run_energy_accum >= 1.0:
-        var ticks : int = int(_run_energy_accum)
+    _energy_drain_accum += delta
+    if _energy_drain_accum >= 1.0:
+        var ticks : int = int(_energy_drain_accum)
         stats.energy      = maxf(0.0, stats.energy - SPRINT_ENERGY_COST * ticks)
-        _run_energy_accum -= float(ticks)   # keep remainder — never reset to 0
+        _energy_drain_accum -= float(ticks)   # keep remainder — never reset to 0
 ```
 Accumulator persists between exertion bursts — tap-running and tap-pushing both accumulate.
 

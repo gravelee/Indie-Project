@@ -108,7 +108,7 @@
   │  4  _update_airborne()              (JUMP: catches ledge falls)      │
   │  5  _update_velocity(input, delta)  (MOVEMENT: gravity + slide)     │
   │  6  _update_death()                 (COMBAT: fires DEAD when settled)│
-  │  7  _update_sprint(delta)           (MOVEMENT: drains energy)        │
+  │  7  _update_energy_drain(delta)      (MOVEMENT: drains energy RUN/PUSH/PULL)│
   │  8  _update_focus(delta)            (COMBAT: passive focus ticks)    │
   │                                                                      │
   │  9  match state:                                                     │
@@ -152,6 +152,9 @@
   │   state != RUN                                        │
   │   state != JUMP                                       │
   │   state != BLOCK                                      │
+  │   state != GRAB                                       │
+  │   state != PUSH                                       │
+  │   state != PULL                                       │
   └───────────────────────────────────────────────────────┘
 ```
 
@@ -178,11 +181,11 @@
   LIFECYCLE   _spawn_position, _dead_timer             _spawn_update(), _dead_update(delta)
               _initial_hp, _initial_energy             _do_respawn()
               _initial_focus
-  MOVEMENT    _run_energy_accum                        —
+  MOVEMENT    _energy_drain_accum                      —
   STATE       state                                    —
   GRAB        _grabbed_obj, _grab_approach_dir          _try_grab(), _release_grab()
-              _stuck_frames                            _do_grab_idle(), _do_push_movement()
-                                                       _do_pull_movement()
+              _locked_move_dir, _stuck_frames          _do_grab_idle(), _do_push_movement()
+              _push_blocked, _pull_blocked             _do_pull_movement(), _drive_pulled_block()
   EQUIPMENT   weapon_main, weapon_off                  _build_shield_sprites()
               _shield_front, _shield_behind            _load_shield_frames()
                                                        _has_shield(), _shield_set_z_order()
@@ -190,9 +193,9 @@
   INPUT       —                                        _input()
   PROCESS     —                                        _read_input(), _update_state()
                                                        _update_airborne(), _update_velocity()
-                                                       _update_death(), _update_sprint()
+                                                       _update_death(), _update_energy_drain()
                                                        _update_focus(), _update_timers()
-                                                       _physics_process()
+                                                       _drive_pulled_block(), _physics_process()
 ```
 
 ---
@@ -211,7 +214,7 @@
                         JUMP (_jump_locked_vel), COMBAT (_knockback_vel), entity stats.mspd
                         BLOCK (_block_phase — half-speed in HOLDING, locked in RAISING/LOWERING)
   _update_death()       entity (is_dead), STATE (state), COMBAT (_knockback_vel), INIT (_col)
-  _update_sprint()      STATE (state), entity stats
+  _update_energy_drain() STATE (state), entity stats
   _update_focus()       COMBAT (_combat_timer), entity stats
   _update_timers()      COMBAT (_regen_timer, _combat_timer, _abilities loop)
                         JUMP (_jump_cooldown_timer), STATE (state)
@@ -245,7 +248,7 @@
 ```
   h_angle               CAMERA  — updated top of every frame from camera_rig
   last_dir              ANIMATION — persists facing when stopped
-  state                 STATE — the 8-value enum driving the whole machine
+  state                 STATE — the 11-value enum driving the whole machine (IDLE/WALK/RUN/ATTACK/JUMP/SPAWN/DEAD/BLOCK/GRAB/PUSH/PULL)
   is_dead               entity.gd — set in entity.receive_hit when hp hits 0; cleared in _do_respawn
   _knockback_vel        COMBAT — set by receive_hit, decays in _update_velocity
   _jump_locked_vel      JUMP — captured at airborne moment, held for full air time
@@ -268,7 +271,11 @@
   _block_crit_forced    BLOCK — true during crit-forced LOWERING; disables § re-raise until animation ends
   _grabbed_obj          GRAB — the CharacterBody3D block currently being held (null when free)
   _grab_approach_dir    GRAB — unit Vector3 from player toward block at grab time; defines push/pull axis
+  _locked_move_dir      GRAB — current move direction (= _grab_approach_dir for PUSH, negated for PULL)
+  _push_blocked         GRAB — true when PUSH stalled STUCK_FRAMES; freezes player velocity
+  _pull_blocked         GRAB — true when PULL stalled STUCK_FRAMES; freezes player velocity
   _stuck_frames         GRAB — consecutive low-movement frame counter; reverts to GRAB idle at 2
+  _energy_drain_accum   MOVEMENT — float accumulator shared by RUN/PUSH/PULL; drains 1 energy/s
   sprite                entity.gd — the AnimatedSprite3D child (body layer)
   stats                 entity.gd — the Stats resource (includes stats.exp, stats.block_chance)
 ```

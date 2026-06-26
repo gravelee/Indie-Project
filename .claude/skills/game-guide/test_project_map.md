@@ -33,7 +33,7 @@ Godot engine
   │     ├── _update_velocity()     (direction, gravity, knockback)
   │     │     └── move_and_slide()
   │     ├── _update_death()        (deferred death trigger)
-  │     ├── _update_sprint()       (energy drain accumulator)
+  │     ├── _update_energy_drain() (energy drain accumulator — RUN/PUSH/PULL share one accum)
   │     ├── _update_focus()        (passive combat tick)
   │     ├── match state → update functions
   │     │     ├── IDLE/WALK/RUN → _anim_apply()
@@ -160,7 +160,7 @@ IDLE ──(input)──► WALK ──(shift+energy)──► RUN
 | STUCK_FRAMES | player.gd | 2 | consecutive low-movement frames before freezing (PUSH) or grip loss (PULL) |
 | GRIP_LOSE_DIST | player.gd | 2.8 | player→block distance above which grab releases during PULL or GRAB idle |
 | PUSH_PULL_ENERGY_COST | player.gd | 1.0 | energy drained per second while pushing or pulling |
-| HALF_SIZE | pushable_block.gd | 0.5 | block half-size on XZ const; half_size var mirrors it for runtime get() |
+| HALF_SIZE | pushable.gd | 0.5 | block half-size on XZ const; half_size var mirrors it for runtime get() |
 
 ---
 
