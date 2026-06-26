@@ -102,6 +102,17 @@ Zone 2 implementation       → after Zone 2 story
   19. **main.gd script loading** — entity constants (BODY_ORIGIN_Y, PIXEL_SIZE) read from
       runtime load() of each script at builder function start. No preload (parse-time failure),
       no duplicate constants. Single load() call reused for set_script() in same function.
+  20. **_set_state() / _state_anim()** — centralized state transition helpers. `_set_state(new_state)`
+      sets `state`, calls `_state_anim()` to get the animation name, plays it if it changed.
+      `_state_anim()` returns "" for ATTACK/JUMP/BLOCK (manually driven) — play() is skipped.
+      All state transitions use `_set_state(State.X)` — never write `state = X` directly.
+  21. **Push / pull / grab mechanic** — GRAB/PUSH/PULL states added to enum. pushable.gd
+      (CharacterBody3D, group "pushable") with `_driven` flag suppresses its own physics while
+      player drives it. Player: GRAB (frozen idle) → PUSH (toward block) ↔ PULL (away from block).
+      Energy: 1/s via shared `_energy_drain_accum` (same accumulator as sprint). Regen blocked in
+      GRAB, PUSH, PULL. SHIFT release or receive_hit() releases grab → IDLE.
+      main.gd: `_build_pushable_block()` spawns at (47,0.5,50); `_build_box()` accepts optional
+      `body: Node3D = null` param — passes the CharacterBody3D in to reuse it.
 - **Active work**: Player file fully updated. Moving to Stage 9 — creature AI.
 - **Next session target**: Creature AI (Stage 9) — wander → notice → chase → attack.
 - **Blocked on**: (1) Does pet have HP and can it die? (2) Is stealth a button or ability-only?
@@ -150,7 +161,7 @@ Zone 2 implementation       → after Zone 2 story
 - camera_rig.gd: orbit (RMB drag + Q/E keys), pitch (Shift+=/- keys), zoom (scroll/=/- keys),
   wall clip avoidance, indoor/outdoor presets
 - Player (CharacterBody3D + AnimatedSprite3D BILLBOARD_FIXED_Y):
-  - States: IDLE, WALK, RUN, ATTACK, JUMP, SPAWN, DEAD
+  - States: IDLE, WALK, RUN, ATTACK, JUMP, SPAWN, DEAD, BLOCK, GRAB, PUSH, PULL
   - WASD movement (camera-relative, WASD + arrows via CameraSettings), sprint (Shift),
     gravity, cliff fall auto-detection, frames driven by physics not play()
   - Jump: WINDUP/RISE/FALL/LAND phases, JUMP_VEL=7.75, energy cost 1, cooldown 0.3s,
@@ -183,6 +194,9 @@ Zone 2 implementation       → after Zone 2 story
 - Rat creature (extends Entity): BODY_ORIGIN_Y=0.75, hit_half_height=0.75, capsule h=1.2 r=0.3,
   sprite idle_neutral, receive_hit() calls super then prints. No AI yet.
 - Blue box obstacle at (54,2,50) for camera clip testing
+- Pushable block at (47,0.5,50) — pushable.gd (CharacterBody3D, group "pushable"). SHIFT held +
+  block in reach → GRAB (frozen idle). Input toward block → PUSH; away → PULL. SHIFT release or
+  receive_hit() → IDLE. Placed 3 tiles west of player spawn. half_size=0.5.
 
 ### Incremental Rebuild Plan (active approach)
 Each stage read and understood by the developer before wiring in the next.
@@ -638,11 +652,9 @@ Key rules:
 - `_pull_block_frames >= 2` required before freezing player (prevents false positive on first frame).
 - Camera-sync fix: `_snap_cam(v: Vector2)` uses Y-tiebreaker (matches `_set_facing_from_input`)
   so direction validity and animation change fire at the exact same camera rotation angle.
-- Grab alignment: `D = PLAYER_CAPSULE_RADIUS * 1.5` (0.60). Player center must be within
-  `half - D` of block face center. Snap-to-grab: if on-face but misaligned, player nudges the
-  minimum distance needed to pass the threshold (not a full centering snap).
-  Applies to all 4 approach directions.
-- `PUSH_SPEED = 2.5`, `PULL_SPEED = 1.8` (pull is noticeably slower).
+- Grab reach: `flat.length() > GRAB_REACH + block.half_size` (0.5 + 0.5 = 1.0 max to block center).
+  Player must be nearly touching the block face. No snap-to-grab — player must walk into reach.
+- `PUSH_SPEED = 1.8`, `PULL_SPEED = 1.3` (pull is noticeably slower).
 
 **Two-timer system (combat idle vs regen)** — player.gd uses two independent timers:
 - `_combat_timer` (`COMBAT_TIMEOUT = 3.0s`): set by (a) player landing a hit on a creature in

@@ -14,7 +14,7 @@ type: reference
 | `entity.gd` | Shared entity base — PIXEL_SIZE, sprite, stats, hit_half_height, is_dead, flash, receive_hit | CharacterBody3D |
 | `player.gd` | Input, movement, jump, sprint, attack, block, grab/push/pull, regen, fade, respawn | Entity |
 | `creature.gd` | Rat collision/sprite setup, receive_hit print, exp_reward | Entity |
-| `pushable_block.gd` | Pushable physics block — _driven flag, gravity+friction when free | CharacterBody3D |
+| `pushable.gd` | Pushable physics block — _driven flag, gravity+friction when free | CharacterBody3D |
 | `stats.gd` | All stat math — HP/energy/focus/exp, damage, regen, crit | RefCounted |
 | `ability.gd` | One ability instance — cooldown timer, can_use, spend, calc_damage | RefCounted |
 | `abilities.gd` | Ability registry — _DATA dictionary, get_ability() factory | RefCounted |
@@ -152,7 +152,7 @@ IDLE ──(input)──► WALK ──(shift+energy)──► RUN
 | block_dir_threshold | stats.gd | 0.5 | dot floor for block arc (±60°); talent reduces to 0.0 (±90°) |
 | last_hit_was_crit | stats.gd | false | set by calc_ability_damage(), read by defender receive_hit() |
 | exp_reward | creature.gd | 5 | EXP awarded to player on kill |
-| GRAB_REACH | player.gd | 1.3 | max flat distance (player→block) for grab to land |
+| GRAB_REACH | player.gd | 0.5 | added to block.half_size for reach check (0.5+0.5=1.0 max) |
 | PUSH_SPEED | player.gd | 1.8 | world units/s while pushing a block |
 | PULL_SPEED | player.gd | 1.3 | world units/s while pulling a block |
 | GRAB_FACE_DOT | player.gd | 0.5 | min dot product facing→block for grab (±60° arc) |
