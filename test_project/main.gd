@@ -88,12 +88,14 @@ func _build_rat() -> void:
 	body.call("init")
 
 
-# Called: _ready().
-# Generic helper — spawns a colored static box with collision at the given position.
-# Used to place test geometry (walls, obstacles, ramps) without a full prop system.
-func _build_box(pos: Vector3, size: Vector3, color: Color) -> void:
+# Called: _ready(), _build_pushable_block().
+# Generic helper — builds a colored box mesh and collision onto body at pos.
+# If body is null, creates a StaticBody3D (static geometry).
+# Pass a CharacterBody3D to reuse for dynamic objects (pushable blocks, etc).
+func _build_box(pos: Vector3, size: Vector3, color: Color, body: Node3D = null) -> void:
 
-	var body := StaticBody3D.new()
+	if body == null:
+		body = StaticBody3D.new()
 	var mesh := BoxMesh.new()
 	mesh.size = size
 	var mat := StandardMaterial3D.new()
@@ -111,6 +113,25 @@ func _build_box(pos: Vector3, size: Vector3, color: Color) -> void:
 	body.add_child(col)
 	body.position = pos
 	add_child(body)
+
+
+# Called: _ready().
+# Spawns a pushable block for testing the grab/push/pull mechanic.
+# Placed 3 tiles west of player spawn — walk west to reach it.
+# half_size drives collision shape, mesh size, and spawn height (rests flush on ground).
+func _build_pushable_block() -> void:
+
+	var script : GDScript        = load("res://pushable.gd")
+	# Half-side of this test block in world units. Change here to resize collision and mesh together.
+	var half   : float           = 0.5
+	var side   : float           = half * 2.0
+	var body   : CharacterBody3D = CharacterBody3D.new()
+	body.name  = "PushableBlock"
+	body.add_to_group("pushable")
+	body.set_script(script)
+	body.set("half_size", half)
+	# y = half so the bottom face rests flush on the ground plane (y = 0).
+	_build_box(Vector3(47.0, half, 50.0), Vector3(side, side, side), Color(0.7, 0.5, 0.2), body)
 
 
 # Called: _ready().
@@ -163,5 +184,6 @@ func _ready() -> void:
 	player_body.call("init", camera_rig, player_sprite)
 
 	_build_rat()
+	_build_pushable_block()
 	_build_box(Vector3(54.0, 1.0, 50.0), Vector3(3.0, 3.0, 3.0), Color(0.3, 0.3, 0.8))
 	_build_ground()

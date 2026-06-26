@@ -145,6 +145,19 @@ func _load_sprite_frames() -> SpriteFrames:
 		["shield_stance_south",  base + "south/shield_stance/",  5],
 		["shield_stance_east",   base + "east/shield_stance/",   5],
 		["shield_stance_west",   base + "west/shield_stance/",   5],
+		# Grab/push/pull — directional, loop while held.
+		["grab_north",           base + "north/grab/",           1],
+		["grab_south",           base + "south/grab/",           1],
+		["grab_east",            base + "east/grab/",            1],
+		["grab_west",            base + "west/grab/",            1],
+		["push_north",           base + "north/push/",           6],
+		["push_south",           base + "south/push/",           6],
+		["push_east",            base + "east/push/",            6],
+		["push_west",            base + "west/push/",            6],
+		["pull_north",           base + "north/pull/",           6],
+		["pull_south",           base + "south/pull/",           6],
+		["pull_east",            base + "east/pull/",            6],
+		["pull_west",            base + "west/pull/",            6],
 		# Non-directional animations — no direction suffix, same clip for all facing directions.
 		["spawn",                base + "spawn/",                29],
 		["death",                base + "death/",                29]]
@@ -489,6 +502,10 @@ func receive_hit(damage: float, dir: Vector3, is_crit: bool = false) -> void:
 	if state == State.SPAWN:
 		return
 
+	# Release any active grab — cannot hold a block while taking damage.
+	if state == State.GRAB or state == State.PUSH or state == State.PULL:
+		_release_grab()
+
 	# Block check runs before damage is applied — a successful block absorbs the hit entirely.
 	# RAISING and LOWERING do not block, only HOLDING (shield stance) does.
 	# Directional gate: attack must come from within the block arc (facing dot incoming > threshold).
@@ -817,13 +834,13 @@ const GRAVITY        : float = -20.0
 const SPRINT_MULT    : float = 1.2
 
 # Energy drained per second while the player is sprinting.
-# Accumulates in _run_energy_accum so tap-sprinting costs proportional energy.
+# Accumulates in _energy_drain_accum so brief activity costs proportional energy.
 const SPRINT_ENERGY_COST : float = 1.0
 
-# Accumulates real elapsed time (seconds) while running. Energy is drained
-# in whole-second ticks so brief sprints cost proportional energy rather than
-# a full second on the first frame touched.
-var _run_energy_accum : float = 0.0
+# Accumulates real elapsed time (seconds) while running, pushing, or pulling.
+# Energy is drained in whole-second ticks so brief activity costs proportional
+# energy rather than a full second on the first frame touched.
+var _energy_drain_accum : float = 0.0
 
 
 # ===========================================================================
@@ -859,8 +876,8 @@ func _set_state(new_state: State) -> void:
 
 # Called: _set_state().
 # Returns the animation name owned by the given state.
-# Returns "" for states that drive their own animation manually (ATTACK, JUMP, BLOCK,
-# GRAB, PUSH, PULL) — _set_state() skips play() when it receives an empty string.
+# Returns "" for states that drive their own animation manually (ATTACK, JUMP, BLOCK)
+# — _set_state() skips play() when it receives an empty string.
 func _state_anim() -> String:
 
 	match state:
@@ -868,11 +885,371 @@ func _state_anim() -> String:
 			if _is_in_combat():
 				return "idle_attack_" + _weapon_style() + "_" + last_dir
 			return "idle_neutral_" + last_dir
-		State.WALK:  return "walking_" + last_dir
-		State.RUN:   return "running_" + last_dir
+		State.WALK:  return "walking_"      + last_dir
+		State.RUN:   return "running_"      + last_dir
+		State.GRAB:  return "grab_" + last_dir
+		State.PUSH:  return "push_" + last_dir
+		State.PULL:  return "pull_" + last_dir
 		State.SPAWN: return "spawn"
 		State.DEAD:  return "death"
-	return ""  # ATTACK, JUMP, BLOCK, GRAB, PUSH, PULL — manually managed
+	return ""  # ATTACK, JUMP, BLOCK — manually managed
+
+
+# ===========================================================================
+# GRAB
+# ===========================================================================
+
+# Max flat distance (player→block center) for a grab to land.
+# Reach is measured to the block center — add block.half_size in the check.
+# Physical contact = PLAYER_CAPSULE_RADIUS + block.half_size = 0.4 + 0.5 = 0.9.
+# GRAB_REACH = 0.5 → max grab distance = 1.0 — player must be nearly touching the block.
+const GRAB_REACH             : float = 0.5
+
+# Player capsule radius from main.gd — kept here so grab math is self-contained.
+const PLAYER_CAPSULE_RADIUS  : float = 0.4
+
+# World units/s the player and block move while pushing.
+const PUSH_SPEED             : float = 1.8
+
+# World units/s the player and block move while pulling.
+const PULL_SPEED             : float = 1.3
+
+# Minimum dot product (player facing → block direction) required for grab to land.
+# 0.5 = cos(60°) = ±60° arc (120° total). Block must be roughly in front of the player.
+const GRAB_FACE_DOT          : float = 0.5
+
+# Input dot threshold against _grab_approach_dir to enter PUSH (> threshold)
+# or PULL (< -threshold) from GRAB idle.
+const PUSH_PULL_DOT          : float = 0.3
+
+# Energy drained per second while the player is pushing or pulling a block.
+const PUSH_PULL_ENERGY_COST  : float = 1.0
+
+# Consecutive low-movement frames before PUSH freezes or PULL releases grip.
+const STUCK_FRAMES           : int   = 2
+
+# Player→block flat distance above which GRAB idle and PULL both release the block.
+const GRIP_LOSE_DIST         : float = 2.8
+
+# The pushable block currently being held. Null when no grab is active.
+var _grabbed_obj : CharacterBody3D
+
+# Snapped unit vector from player toward block at the moment of grab.
+# Defines the push axis. PUSH moves along this direction. PULL moves against it.
+var _grab_approach_dir : Vector3 = Vector3.ZERO
+
+# Cardinal direction vector for the current push or pull move.
+# Set on entry to PUSH (= _grab_approach_dir) or PULL (= -_grab_approach_dir).
+# _update_velocity reads this to set player velocity each frame.
+var _locked_move_dir : Vector3 = Vector3.ZERO
+
+# Consecutive frames the block has moved less than 0.01u in the intended direction.
+var _stuck_frames : int = 0
+
+# True when PUSH has stalled for STUCK_FRAMES — suppresses player velocity so the
+# player does not slide against the blocked block. Cleared on any PUSH exit.
+var _push_blocked : bool = false
+
+# True when the pulled block stalled for STUCK_FRAMES — suppresses player velocity so
+# the player does not drift away from a stuck block. Cleared when block moves again or
+# on any PULL exit. Does NOT release grab — player stays in PULL frozen in place.
+var _pull_blocked : bool = false
+
+
+# Called: _try_grab(), _do_grab_idle(), _do_push_movement(), _do_pull_movement().
+# Snaps a flat Vector3 to the nearest cardinal axis (±X or ±Z). Y is zeroed.
+func _snap_to_cardinal(v: Vector3) -> Vector3:
+
+	if abs(v.x) >= abs(v.z):
+		return Vector3(sign(v.x), 0.0, 0.0)
+	return Vector3(0.0, 0.0, sign(v.z))
+
+
+# Called: _do_grab_idle(), _do_push_movement(), _do_pull_movement().
+# Converts a world-space direction vector to a camera-relative animation direction string.
+# Rotates v into camera space via h_angle before resolving the dominant axis.
+# Without this, pushing west in world space would play walking_west even when the camera
+# is rotated 90° and the player visually walks "north" (into the screen).
+func _world_dir_to_anim_dir(v: Vector3) -> String:
+
+	var cam : Vector2 = Vector2(
+		v.x * cos(h_angle) - v.z * sin(h_angle),
+		v.x * sin(h_angle) + v.z * cos(h_angle))
+	return _get_dir(cam)
+
+
+# Called: _update_state() when SHIFT is held and the player is grounded.
+# Scans the "pushable" group for a block within reach and in the facing arc.
+# On success: snaps _grab_approach_dir to cardinal, sets _driven on the block, enters GRAB.
+func _try_grab() -> void:
+
+	for node : Node in get_tree().get_nodes_in_group("pushable"):
+		var block : CharacterBody3D = node as CharacterBody3D
+		if not is_instance_valid(block):
+			continue
+		var half : float   = block.get("half_size")
+		var diff : Vector3 = block.global_position - global_position
+		var flat : Vector3 = Vector3(diff.x, 0.0, diff.z)
+		if flat.length() > GRAB_REACH + half:
+			continue
+		# Facing gate — block must be within the forward arc.
+		var inp    : Vector2 = DIR_MAP[last_dir]
+		var facing : Vector3 = Vector3(
+			inp.x * cos(h_angle) + inp.y * sin(h_angle), 0.0,
+			inp.x * -sin(h_angle) + inp.y * cos(h_angle)).normalized()
+		if flat.length() > 0.001 and flat.normalized().dot(facing) < GRAB_FACE_DOT:
+			continue
+		_grabbed_obj       = block
+		_grab_approach_dir = _snap_to_cardinal(flat.normalized())
+		_stuck_frames      = 0
+		_push_blocked      = false
+		block.set("_driven", true)
+		_set_state(State.GRAB)
+		return
+
+
+# Called: _do_grab_idle(), _do_push_movement(), _do_pull_movement(), receive_hit().
+# Zeros block velocity, clears _driven flag, nulls reference, resets counters, enters IDLE.
+func _release_grab() -> void:
+
+	if is_instance_valid(_grabbed_obj):
+		_grabbed_obj.velocity.x = 0.0
+		_grabbed_obj.velocity.z = 0.0
+		_grabbed_obj.set("_driven", false)
+	_grabbed_obj   = null
+	_push_blocked  = false
+	_pull_blocked  = false
+	_stuck_frames  = 0
+	_set_state(State.IDLE)
+
+
+# Called: _physics_process() while state == GRAB.
+# Player is frozen (velocity zeroed by _update_velocity). Block is free (_driven=false)
+# so it handles its own gravity while the player holds idle. Polls for SHIFT release (→ IDLE),
+# grip loss (block drifted), and input direction to enter PUSH or PULL.
+func _do_grab_idle(input: Vector2) -> void:
+
+	if not is_instance_valid(_grabbed_obj):
+		_release_grab()
+		return
+
+	# Block is free while in grab idle — its own _physics_process handles gravity and friction.
+	_grabbed_obj.set("_driven", false)
+
+	# Grip loss — block drifted or fell away while idle.
+	var flat_dist : float = Vector3(
+		_grabbed_obj.global_position.x - global_position.x, 0.0,
+		_grabbed_obj.global_position.z - global_position.z).length()
+	if flat_dist > GRIP_LOSE_DIST:
+		_release_grab()
+		return
+
+	if not Input.is_key_pressed(KEY_SHIFT):
+		_release_grab()
+		return
+
+	# Lock facing toward block so the animation aligns with the grab direction.
+	# Call _set_state again in case last_dir just changed — the guard inside prevents
+	# restarting the clip if the name is already correct.
+	last_dir = _world_dir_to_anim_dir(_grab_approach_dir)
+	_set_state(State.GRAB)
+
+	if input.length() < 0.1:
+		return
+
+	# Dot input against approach dir — positive = toward block (PUSH), negative = away (PULL).
+	var world_input : Vector3 = Vector3(
+		input.x * cos(h_angle) + input.y * sin(h_angle), 0.0,
+		input.x * -sin(h_angle) + input.y * cos(h_angle))
+	var dot : float = world_input.normalized().dot(_grab_approach_dir)
+	if dot > PUSH_PULL_DOT:
+		_locked_move_dir = _grab_approach_dir
+		_stuck_frames    = 0
+		_push_blocked    = false
+		_grabbed_obj.set("_driven", true)
+		_set_state(State.PUSH)
+	elif dot < -PUSH_PULL_DOT:
+		_locked_move_dir = -_grab_approach_dir
+		_stuck_frames    = 0
+		# Set velocity immediately so the player moves this frame before _drive_pulled_block runs.
+		velocity.x = _locked_move_dir.x * PULL_SPEED
+		velocity.z = _locked_move_dir.z * PULL_SPEED
+		_grabbed_obj.set("_driven", true)
+		_set_state(State.PULL)
+
+
+# Called: _physics_process() while state == PUSH.
+# Drives the block in _locked_move_dir first (block.move_and_slide()), then sets player
+# velocity so the shared move_and_slide() at end of _physics_process follows the block.
+# Input drop → GRAB idle; input reversal → PULL directly;
+# SHIFT release → IDLE. If block stalls for STUCK_FRAMES, _push_blocked freezes player.
+func _do_push_movement(input: Vector2, delta: float) -> void:
+
+	if not is_instance_valid(_grabbed_obj):
+		_release_grab()
+		return
+
+	if not Input.is_key_pressed(KEY_SHIFT):
+		_release_grab()
+		return
+
+	# Re-evaluate input against the current camera angle every frame.
+	# If no key is held → GRAB. If the key no longer points toward the block because
+	# the camera rotated (dot ≤ threshold) → GRAB. If fully reversed → PULL directly.
+	if input.length() < 0.1:
+		_grabbed_obj.velocity.x = 0.0
+		_grabbed_obj.velocity.z = 0.0
+		_push_blocked            = false
+		_stuck_frames            = 0
+		_set_state(State.GRAB)
+		return
+	var world_input : Vector3 = Vector3(
+		input.x * cos(h_angle) + input.y * sin(h_angle), 0.0,
+		input.x * -sin(h_angle) + input.y * cos(h_angle))
+	var dot : float = world_input.normalized().dot(_locked_move_dir)
+	if dot <= PUSH_PULL_DOT:
+		_grabbed_obj.velocity.x = 0.0
+		_grabbed_obj.velocity.z = 0.0
+		_push_blocked            = false
+		_stuck_frames            = 0
+		if dot < -PUSH_PULL_DOT:
+			_locked_move_dir = -_grab_approach_dir
+			velocity.x       = _locked_move_dir.x * PULL_SPEED
+			velocity.z       = _locked_move_dir.z * PULL_SPEED
+			_grabbed_obj.set("_driven", true)
+			_set_state(State.PULL)
+		else:
+			_set_state(State.GRAB)
+		return
+
+	# Drive block first — apply gravity when airborne, then set XZ velocity and slide.
+	# Block moves before player so the player follows into space the block just vacated.
+	if not _grabbed_obj.is_on_floor():
+		_grabbed_obj.velocity.y += GRAVITY * delta
+	else:
+		_grabbed_obj.velocity.y = 0.0
+	_grabbed_obj.velocity.x    = _locked_move_dir.x * PUSH_SPEED
+	_grabbed_obj.velocity.z    = _locked_move_dir.z * PUSH_SPEED
+	var prev_pos : Vector3     = _grabbed_obj.global_position
+	_grabbed_obj.move_and_slide()
+	var moved : float = (_grabbed_obj.global_position - prev_pos).dot(_locked_move_dir)
+	# Threshold is 30% of expected movement this frame — scales correctly with frame rate.
+	# A fixed absolute value would be too strict at high fps and too loose at low fps.
+	if moved < PUSH_SPEED * delta * 0.3:
+		_stuck_frames += 1
+		if _stuck_frames >= STUCK_FRAMES:
+			_push_blocked = true
+	else:
+		_stuck_frames = 0
+		_push_blocked = false
+
+	# Face along the push direction. _set_state guard prevents restarting the animation
+	# if last_dir did not change — same pattern as _do_grab_idle.
+	last_dir = _world_dir_to_anim_dir(_locked_move_dir)
+	_set_state(State.PUSH)
+
+	# Set player velocity to follow the block. Zeroed when stuck so the player does not
+	# slide against the wall while the block is blocked.
+	if _push_blocked:
+		velocity.x = 0.0
+		velocity.z = 0.0
+	else:
+		velocity.x = _locked_move_dir.x * PUSH_SPEED
+		velocity.z = _locked_move_dir.z * PUSH_SPEED
+
+
+# Called: _physics_process() while state == PULL.
+# Sets player velocity so the shared move_and_slide() at end of _physics_process moves the
+# player first. _drive_pulled_block() is called from _physics_process after that slide so
+# the block follows into the space the player just cleared.
+# Checks grip loss, input drop (→ GRAB idle), input reversal (→ PUSH), SHIFT release (→ IDLE).
+func _do_pull_movement(input: Vector2, delta: float) -> void:
+
+	if not is_instance_valid(_grabbed_obj):
+		_release_grab()
+		return
+
+	if not Input.is_key_pressed(KEY_SHIFT):
+		_release_grab()
+		return
+
+	# Grip loss — player moved too far from the block.
+	var flat_dist : float = Vector3(
+		_grabbed_obj.global_position.x - global_position.x, 0.0,
+		_grabbed_obj.global_position.z - global_position.z).length()
+	if flat_dist > GRIP_LOSE_DIST:
+		_release_grab()
+		return
+
+	# Re-evaluate input against the current camera angle every frame.
+	# If no key is held → GRAB. If the key no longer points in the pull direction because
+	# the camera rotated (dot ≤ threshold against _locked_move_dir) → GRAB.
+	# If fully reversed (toward block) → PUSH directly.
+	if input.length() < 0.1:
+		_grabbed_obj.velocity.x = 0.0
+		_grabbed_obj.velocity.z = 0.0
+		_stuck_frames            = 0
+		_pull_blocked            = false
+		_set_state(State.GRAB)
+		return
+	var world_input : Vector3 = Vector3(
+		input.x * cos(h_angle) + input.y * sin(h_angle), 0.0,
+		input.x * -sin(h_angle) + input.y * cos(h_angle))
+	var dot : float = world_input.normalized().dot(_locked_move_dir)
+	if dot <= PUSH_PULL_DOT:
+		_grabbed_obj.velocity.x = 0.0
+		_grabbed_obj.velocity.z = 0.0
+		_stuck_frames            = 0
+		_pull_blocked            = false
+		if dot < -PUSH_PULL_DOT:
+			_locked_move_dir = _grab_approach_dir
+			_push_blocked    = false
+			_grabbed_obj.set("_driven", true)
+			_set_state(State.PUSH)
+		else:
+			_set_state(State.GRAB)
+		return
+
+	# Freeze player when the block is stuck — avoids drifting away from a stalled block.
+	# _pull_blocked is set by _drive_pulled_block after STUCK_FRAMES consecutive low-movement
+	# frames. Staying in PULL (not releasing) prevents the PULL→GRAB oscillation that occurs
+	# when an obstacle behind the player blocks the pull path.
+	if _pull_blocked:
+		velocity.x = 0.0
+		velocity.z = 0.0
+	else:
+		# Set player velocity — move_and_slide() at end of _physics_process moves the player
+		# first, then _drive_pulled_block() runs after so the block follows.
+		velocity.x = _locked_move_dir.x * PULL_SPEED
+		velocity.z = _locked_move_dir.z * PULL_SPEED
+	# Face toward the block — update animation if camera rotation changed last_dir.
+	# _set_state guard prevents restarting the animation if direction is unchanged.
+	last_dir = _world_dir_to_anim_dir(_grab_approach_dir)
+	_set_state(State.PULL)
+
+
+# Called: _physics_process() after player move_and_slide() while state == PULL.
+# Applies gravity to the block and drives it in the pull direction.
+# Sets _pull_blocked when the block stalls for STUCK_FRAMES — _do_pull_movement reads
+# this flag to freeze the player in place. Does NOT release grab so there is no
+# PULL→GRAB oscillation when the player is blocked by an obstacle behind them.
+func _drive_pulled_block(delta: float) -> void:
+
+	if not _grabbed_obj.is_on_floor():
+		_grabbed_obj.velocity.y += GRAVITY * delta
+	else:
+		_grabbed_obj.velocity.y = 0.0
+	_grabbed_obj.velocity.x    = -_grab_approach_dir.x * PULL_SPEED
+	_grabbed_obj.velocity.z    = -_grab_approach_dir.z * PULL_SPEED
+	var prev_pos : Vector3     = _grabbed_obj.global_position
+	_grabbed_obj.move_and_slide()
+	var moved : float = (_grabbed_obj.global_position - prev_pos).dot(-_grab_approach_dir)
+	if moved < PULL_SPEED * delta * 0.3:
+		_stuck_frames += 1
+		_pull_blocked  = _stuck_frames >= STUCK_FRAMES
+	else:
+		_stuck_frames = 0
+		_pull_blocked = false
 
 
 # ===========================================================================
@@ -964,6 +1341,18 @@ func _load_shield_frames() -> SpriteFrames:
 		["shield_stance_north",       base + "north/shield_stance/",       5],
 		["shield_stance_east",        base + "east/shield_stance/",        5],
 		["shield_stance_west",        base + "east/shield_stance/",        5],
+		["grab_south",                base + "south/grab/",                1],
+		["grab_north",                base + "north/grab/",                1],
+		["grab_east",                 base + "east/grab/",                 1],
+		["grab_west",                 base + "east/grab/",                 1],
+		["push_south",                base + "south/push/",                6],
+		["push_north",                base + "north/push/",                6],
+		["push_east",                 base + "east/push/",                 6],
+		["push_west",                 base + "east/push/",                 6],
+		["pull_south",                base + "south/pull/",                6],
+		["pull_north",                base + "north/pull/",                6],
+		["pull_east",                 base + "east/pull/",                 6],
+		["pull_west",                 base + "east/pull/",                 6],
 		["spawn",                     base + "spawn/",                     29],
 		["death",                     base + "death/",                     29]]
 
@@ -997,7 +1386,10 @@ func _load_shield_frames() -> SpriteFrames:
 # via the continuous Input.get_vector() poll — not here.
 func _input(event: InputEvent) -> void:
 
-	if is_dead or state == State.SPAWN or state == State.BLOCK:
+	# Grab states block action input (attack, shield, jump) — movement keys are polled
+	# in _read_input() and reach _do_grab_idle() to enter PUSH or PULL.
+	if is_dead or state == State.SPAWN or state == State.BLOCK \
+			or state == State.GRAB or state == State.PUSH or state == State.PULL:
 		return
 
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -1100,6 +1492,11 @@ func _update_state(input: Vector2) -> void:
 		state = State.WALK
 	else:
 		state = State.IDLE
+	# Grab check — SHIFT held + grounded + block in reach and facing arc → GRAB.
+	# Overrides the movement state set above. Requires floor contact so the player
+	# cannot grab from the air.
+	if Input.is_key_pressed(KEY_SHIFT) and is_on_floor():
+		_try_grab()
 
 
 # Called: _physics_process().
@@ -1132,7 +1529,9 @@ func _update_airborne() -> void:
 
 
 # Called: _physics_process().
-# Applies gravity, sets horizontal velocity by state, runs move_and_slide, decays knockback.
+# Applies gravity and sets horizontal velocity by state. Does NOT call move_and_slide —
+# that is owned by _physics_process after the match block so grab states control slide order.
+# GRAB/PUSH/PULL: XZ zeroed here as baseline; each function sets its own velocity.
 # SPAWN/DEAD: no horizontal movement. JUMP: locked velocity + knockback. else: input-driven.
 func _update_velocity(input: Vector2, delta: float) -> void:
 
@@ -1153,6 +1552,14 @@ func _update_velocity(input: Vector2, delta: float) -> void:
 		velocity.y += GRAVITY * delta
 	elif not (state == State.JUMP and _jump_launched):
 		velocity.y = 0.0
+
+	# Grab states own their own velocity and slide order — each function sets velocity
+	# then the single move_and_slide() at the bottom of _physics_process runs for everyone.
+	# XZ is zeroed here so carry-over from previous movement does not persist into grab.
+	if state == State.GRAB or state == State.PUSH or state == State.PULL:
+		velocity.x = 0.0
+		velocity.z = 0.0
+		return
 
 	if state == State.SPAWN:
 		velocity.x = 0.0
@@ -1176,8 +1583,6 @@ func _update_velocity(input: Vector2, delta: float) -> void:
 	else:
 		velocity.x = direction.x * speed + _knockback_vel.x
 		velocity.z = direction.z * speed + _knockback_vel.z
-	move_and_slide()
-	_knockback_vel = _knockback_vel.move_toward(Vector3.ZERO, KNOCKBACK_FRICTION * delta)
 
 
 # Called: _physics_process().
@@ -1193,19 +1598,21 @@ func _update_death() -> void:
 
 
 # Called: _physics_process().
-# Drains energy while sprinting via an accumulator so tap-sprinting costs proportional energy.
+# Drains energy while sprinting, pushing, or pulling via an accumulator so brief activity
+# costs proportional energy rather than a full second on the first frame touched.
 # check_resources guards spend so energy never goes negative.
-func _update_sprint(delta: float) -> void:
+func _update_energy_drain(delta: float) -> void:
 
-	if state != State.RUN:
+	if state != State.RUN and state != State.PUSH and state != State.PULL:
 		return
-	_run_energy_accum += delta
-	if _run_energy_accum >= 1.0:
-		var ticks : int = int(_run_energy_accum)
-		var cost  : int = int(SPRINT_ENERGY_COST * ticks)
+	var cost_rate : float = PUSH_PULL_ENERGY_COST if state != State.RUN else SPRINT_ENERGY_COST
+	_energy_drain_accum += delta
+	if _energy_drain_accum >= 1.0:
+		var ticks : int = int(_energy_drain_accum)
+		var cost  : int = int(cost_rate * float(ticks))
 		if stats.check_resources(0, cost, 0):
 			stats.spend_resources(0, cost, 0)
-		_run_energy_accum -= float(ticks)
+		_energy_drain_accum -= float(ticks)
 
 
 # Called: _physics_process().
@@ -1235,11 +1642,12 @@ func _update_timers(delta: float) -> void:
 	for ability : Ability in _abilities:
 		ability.tick(delta)
 
-	# Regen blocked by: recent swing, active combat, sprinting, jumping.
+	# Regen blocked by: recent swing, active combat, sprinting, jumping, and grab states.
 	# _combat_timer check is not redundant — _extend_combat_timer() keeps it alive
 	# past _regen_timer so a chasing creature blocks regen even between swings.
 	if _regen_timer <= 0.0 and _combat_timer <= 0.0 \
-			and state != State.RUN and state != State.JUMP and state != State.BLOCK:
+			and state != State.RUN and state != State.JUMP and state != State.BLOCK \
+			and state != State.GRAB and state != State.PUSH and state != State.PULL:
 		stats.regen(delta)
 
 
@@ -1253,7 +1661,7 @@ func _physics_process(delta: float) -> void:
 	_update_airborne()
 	_update_velocity(input, delta)
 	_update_death()
-	_update_sprint(delta)
+	_update_energy_drain(delta)
 	_update_focus(delta)
 
 	match state:
@@ -1261,8 +1669,19 @@ func _physics_process(delta: float) -> void:
 		State.ATTACK:                      _attack_update()
 		State.JUMP:                        _jump_update(delta)
 		State.BLOCK:                       _block_update(delta, input)
+		State.GRAB:                        _do_grab_idle(input)
+		State.PUSH:                        _do_push_movement(input, delta)
+		State.PULL:                        _do_pull_movement(input, delta)
 		State.SPAWN:                       _spawn_update()
 		State.DEAD:                        _dead_update(delta)
+
+	# Single shared slide for all states. Grab functions set velocity before this runs;
+	# PUSH drives the block first inside _do_push_movement so block has already moved.
+	move_and_slide()
+	_knockback_vel = _knockback_vel.move_toward(Vector3.ZERO, KNOCKBACK_FRICTION * delta)
+	# PULL: block follows after the player has cleared the path — avoids player-as-obstacle collision.
+	if state == State.PULL:
+		_drive_pulled_block(delta)
 
 	_fade_update()
 	_update_timers(delta)
