@@ -115,6 +115,12 @@ two directions based on stat choices and abilities acquired.
 - Example subclass directions: ranged burst (high INT, long-range spells), AoE control
   (Frost Nova + ground spells), summoner (specific summon scrolls + INT), close-range
   explosive (short-range AoE spells + higher Energy use).
+- Talent notes (pending full talent tree design):
+  Casting resilience — talent chain giving a chance to not lose casting bar
+  progress when hit mid-cast.
+  Channeling resilience — talent chain giving a chance to not lose channel bar
+  progress when hit mid-channel; chance higher than casting resilience because
+  channeling spells are a smaller subset of the spell pool.
 
 ### Race + Playstyle Quest Branches
 Certain quests are triggered by a combination of race AND emergent playstyle.
