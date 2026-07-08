@@ -6,7 +6,7 @@ type: reference
 
 # Player Input — Ares
 
-**See also**: player_mechanics.md (mechanic behavior), SKILL.md (hub)
+**See also**: player_mechanic.md (mechanic behavior), SKILL.md (hub)
 
 * Shared key — same physical key fires different mechanics depending on player
 state. Conflict resolution order listed in Shared Key Priority. Context-only
@@ -128,52 +128,52 @@ Keys marked * in Generic Names appear across multiple rows because the same
 physical key resolves to different actions based on player state and conditions.
 See Shared Key Priority below for explicit resolution order.
 
-| Action                | Keyboard             | Mouse                    | Controller                 |
-|-----------------------|----------------------|--------------------------|----------------------------|
-| **Movement**          |                      |                          |                            |
-| Move                  | WASD / arrows        | LMB+RMB held             | Left stick                 |
-| Sprint                | Shift hold           | —                        | Right trigger hold         |
-| Jump                  | Space                | —                        | Right face btn             |
-| Dodge                 | F + Move dir         | —                        | Bottom face + Stick dir    |
-| Climb Down            | Shift tap            | —                        | Right trigger tap          |
-| Climb: Drop           | F                    | —                        | Bottom face btn            |
-| Climb: Jump Off       | Space                | —                        | Right face btn             |
-| Swim: Descend         | Space hold           | —                        | Right face btn hold        |
-| Sit / Stand Up        | Ctrl                 | —                        | Bottom face btn            |
-| Crouch / Stand Up     | Ctrl hold            | —                        | Bottom face btn hold       |
-| Hang: Sidle           | Move (parallel)      | —                        | Left stick (parallel)      |
-| Hang: Pull Up         | Move (toward)        | —                        | Left stick (toward)        |
-| Hang: Climb/Drop      | Move (to wall)       | —                        | Left stick (to wall)       |
-| **Camera**            |                      |                          |                            |
-| Steer                 | Q / E                | RMB drag X               | Right stick X              |
-| Pitch                 | Shift+- / Shift+=    | RMB drag Y               | Right stick Y              |
-| Zoom                  | - / =                | Scroll                   | Left / Right stick click   |
-| Reset                 | F hold               | Middle mouse hold        | Left bumper hold           |
-| **Combat**            |                      |                          |                            |
-| Stance slot           | §                    | —                        | Left trigger               |
-| Stance combos         | § held + Q/W/E/R     | LMB click combo icon     | Left trigger held + D-pad  |
-| Main hand             | 1                    | LMB click main hand slot | Left face btn              |
-| Main hand combos      | 1 held + Q/W/E/R     | LMB click combo icon     | Left face btn held + D-pad |
-| Off hand              | 2                    | LMB click off hand slot  | Top face btn               |
-| Off hand combos       | 2 held + Q/W/E/R     | LMB click combo icon     | Top face btn held + D-pad  |
-| **Targeting**         |                      |                          |                            |
-| Target / Next         | Tab                  | LMB click entity         | Right bumper               |
-| Prev target           | Shift+Tab            | —                        | Left bumper                |
-| Deselect              | Esc / Shift+Tab      | LMB on empty space       | Menu / Left bumper         |
-| **World Interaction** |                      |                          |                            |
-| Grab                  | Shift hold           | —                        | Right trigger hold         |
-| Push                  | Move toward          | —                        | Left stick toward          |
-| Pull                  | Move away            | —                        | Left stick away            |
-| Put Down              | Shift release        | —                        | Right trigger release      |
-| Throw                 | Shift release + Move | —                        | Release trigger + Stick    |
-| Loot                  | Space                | RMB tap                  | Right face btn             |
-| Acquire (interact)    | Space                | RMB tap                  | Right face btn             |
-| Open / Cross / Talk   | Space                | RMB tap                  | Right face btn             |
-| **Equipment**         |                      |                          |                            |
-| Inventory             | I                    | —                        | Select btn                 |
-| **UI**                |                      |                          |                            |
-| Item slots            | Z / X / C / V        | LMB click item slot      | D-pad                      |
-| Menu/pause            | Esc                  | —                        | Menu/pause                 |
+| Action              | Keyboard             | Mouse                    | Controller               |
+|---------------------|----------------------|--------------------------|--------------------------|
+| **Movement**        |                      |                          |                          |
+| Move                | WASD / arrows        | LMB+RMB held             | Left stick               |
+| Sprint              | Shift hold           | —                        | Right trigger hold       |
+| Jump                | Space                | —                        | Right face btn           |
+| Dodge               | F + Move dir         | —                        | Bottom face + Stick dir  |
+| Climb Down          | Shift tap            | —                        | Right trigger tap        |
+| Climb: Drop         | F                    | —                        | Bottom face btn          |
+| Climb: Jump Off     | Space                | —                        | Right face btn           |
+| Swim: Descend       | Space hold           | —                        | Right face btn hold      |
+| Sit / Stand Up      | Ctrl                 | —                        | Bottom face btn          |
+| Crouch / Stand Up   | Ctrl hold            | —                        | Bottom face btn hold     |
+| Hang: Sidle         | Move (parallel)      | —                        | Left stick (parallel)    |
+| Hang: Pull Up       | Move (toward)        | —                        | Left stick (toward)      |
+| Hang: Climb/Drop    | Move (to wall)       | —                        | Left stick (to wall)     |
+| **Camera**          |                      |                          |                          |
+| Steer               | Q / E                | RMB drag X               | Right stick X            |
+| Pitch               | Shift+- / Shift+=    | RMB drag Y               | Right stick Y            |
+| Zoom                | - / =                | Scroll                   | Left / Right stick click |
+| Reset               | F hold               | Middle mouse hold        | Left bumper hold         |
+| **Combat**          |                      |                          |                          |
+| Stance slot         | §                    | —                        | Left trigger             |
+| Stance combos       | § held + Q/W/E/R     | LMB click combo icon     | Left trigger held+D-pad  |
+| Main hand           | 1                    | LMB click main hand slot | Left face btn            |
+| Main hand combos    | 1 held + Q/W/E/R     | LMB click combo icon     | Left face btn held+D-pad |
+| Off hand            | 2                    | LMB click off hand slot  | Top face btn             |
+| Off hand combos     | 2 held + Q/W/E/R     | LMB click combo icon     | Top face btn held+D-pad  |
+| **Targeting**       |                      |                          |                          |
+| Target / Next       | Tab                  | LMB click entity         | Right bumper             |
+| Prev target         | Shift+Tab            | —                        | Left bumper              |
+| Deselect            | Esc / Shift+Tab      | LMB on empty space       | Menu / Left bumper       |
+| **W. Interaction**  |                      |                          |                          |
+| Grab                | Shift hold           | —                        | Right trigger hold       |
+| Push                | Move toward          | —                        | Left stick toward        |
+| Pull                | Move away            | —                        | Left stick away          |
+| Put Down            | Shift release        | —                        | Right trigger release    |
+| Throw               | Shift release + Move | —                        | Release trigger + Stick  |
+| Loot                | Space                | RMB tap                  | Right face btn           |
+| Acquire (interact)  | Space                | RMB tap                  | Right face btn           |
+| Open / Cross / Talk | Space                | RMB tap                  | Right face btn           |
+| **Equipment**       |                      |                          |                          |
+| Inventory           | I                    | —                        | Select btn               |
+| **UI**              |                      |                          |                          |
+| Item slots          | Z / X / C / V        | LMB click item slot      | D-pad                    |
+| Menu/pause          | Esc                  | —                        | Menu/pause               |
 
 ---
 
@@ -193,7 +193,7 @@ dispatching.
 
 1. On climbable surface                          → Climb: Jump Off
 2. Hold + underwater                             → Swim: Descend
-3. Near corpse                                   → Loot
+3. Near body                                     → Loot
 4. Near chest or container, facing               → Open
 5. Near door or passage, facing                  → Cross
 6. Near NPC, facing                              → Talk
@@ -228,7 +228,7 @@ priority needed there — the game resolves them naturally.
 
 ## Mechanic Map
 
-Maps each mechanic (player_mechanics.md) to the input action that triggers it.
+Maps each mechanic (player_mechanic.md) to the input action that triggers it.
 [auto] entries have no dedicated input — condition listed in Active when column.
 
 | Mechanic                   | Input action                | Active when                           |
@@ -288,7 +288,7 @@ Maps each mechanic (player_mechanics.md) to the input action that triggers it.
 | Prev target                | prev target key             | target active                         |
 | Deselect (menu key)        | menu key                    | target active                         |
 | Deselect (prev target)     | prev target key             | alone in pool                         |
-| Auto-deselect              | — [auto]                    | target death or out of range          |
+| Auto-deselect              | — [auto]                    | target fainted or out of range        |
 | Receive damage             | — [auto]                    | hit by attack                         |
 | **Abilities — Mobility**   |                             |                                       |
 | Draw                       | weapon key + combo key      | target selected, line of sight        |
@@ -327,7 +327,7 @@ Maps each mechanic (player_mechanics.md) to the input action that triggers it.
 | Hold (carry)               | — [auto]                    | pull on small object while grabbing   |
 | Put Down                   | Put Down                    | carrying, no move input               |
 | Throw                      | Throw                       | carrying, move input active           |
-| Loot                       | Loot                        | near corpse                           |
+| Loot                       | Loot                        | near body                             |
 | Acquire (interact)         | interact key                | near item                             |
 | Acquire (auto)             | — [auto]                    | player contacts item                  |
 | Boost item                 | — [auto]                    | player contacts boost item            |
@@ -343,8 +343,8 @@ Maps each mechanic (player_mechanics.md) to the input action that triggers it.
 | Weather debuff             | — [auto]                    | in hazardous environment, lacking gear|
 | **Lifecycle**              |                             |                                       |
 | Spawn (silent)             | — [auto]                    | world transition                      |
-| Spawn (arrival)            | — [auto]                    | game start / load / teleport / respawn|
-| Die                        | — [auto]                    | HP reaches zero                       |
-| Respawn                    | — [auto]                    | player dead, respawn triggered        |
+| Spawn (arrival)            | — [auto]                    | game start / load / teleport / recover|
+| Faint                      | — [auto]                    | HP reaches zero                       |
+| Recover                    | — [auto]                    | player fainted, recover triggered     |
 | **Expressive**             |                             |                                       |
 | Bow                        | — [auto]                    | quest completed                       |

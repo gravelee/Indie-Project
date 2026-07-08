@@ -1,24 +1,38 @@
 ---
 name: Old Mine Dungeon Design
-description: Full design for Zone 1's dungeon — Old Mine + River Cave. Rooms, progression sequence, boss design, companion dynamics, post-cave sequence. Load this when working on the Old Mine dungeon specifically.
+description: >
+  Full design for Zone 1's dungeon — Old Mine + River Cave. Rooms, progression
+  sequence, boss design, companion dynamics, post-cave sequence.
+  Load this when working on the Old Mine dungeon specifically.
 type: reference
 ---
 
 # Old Mine + River Cave — Full Design
 
-**See also**: zone1_design.md (Zone 1 story/NPCs/companion system), dungeon_design.md (general dungeon rules, AI, props, puzzles), systems_design.md (talent drops, boss philosophy)
+**See also**: zone1_design.md (Zone 1 story/NPCs/companion system),
+  dungeon_design.md (general dungeon rules, AI, props, puzzles),
+  systems_design.md (talent drops, boss philosophy)
 
-## TL;DR [NEEDS REVIEW]
-- Two separate systems: Old Mine (human-cut) + River Cave (natural). Share one wall. Connected by a hidden crack.
+## TL;DR
+- Two separate systems: Old Mine (human-cut) + River Cave (natural). Share one wall.
+  Connected by a hidden crack.
 - Player can enter either first. Mike takes whichever entrance Ares doesn't.
-- Dungeon progression: Mine → blocker (cave-in) → River Cave → Spider Queen → blasting powder + Vinie freed → reunite → Mine together → consuming race member fight → well chamber.
-- Blasting powder: permanent effect, lit with lantern directly. Weapon master needs pouch from Lulu (post-cave). Spellcaster gets magic blast alternative later. Spellcaster cannot carry pouch (weight restriction).
-- Spider Queen encounter 1: retreats through ceiling crack. No kill. Vinie found in web, cut free. Powder found in chamber debris.
-- Spider Queen encounter 2 (future): crack blown open, no escape route, full kill. This completes the river cave.
-- Consuming race member: two-phase fight. Retreats through the well crack: "I will return. With help." Does NOT die in Zone 1.
+- Dungeon progression: Mine → blocker (cave-in) → River Cave → Spider Queen →
+  blasting powder + Vinie freed → reunite → Mine together → consuming race member
+  fight → well chamber.
+- Blasting powder: permanent effect, lit with lantern directly. Weapon master
+  needs pouch from Lulu (post-cave). Spellcaster gets magic blast alternative
+  later. Spellcaster cannot carry pouch (weight restriction).
+- Spider Queen encounter 1: retreats through ceiling crack. No kill. Vinie found
+  in web, cut free. Powder found in chamber debris.
+- Spider Queen encounter 2 (future): crack blown open, no escape route, full kill.
+  This completes the river cave.
+- Consuming race member: two-phase fight. Retreats through the well crack:
+  "I will return. With help." Does NOT die in Zone 1.
 - The well cannot be closed in Zone 1. It shrinks slowly without maintenance but not fast enough.
 - Faint mechanic applies to all escort sequences.
-- Graveyard (south of village): blast rock secret accessible by both weapon master (powder) and spellcaster (blast spell). What's behind it: TBD.
+- Graveyard (south of village): blast rock secret accessible by both weapon
+  master (powder) and spellcaster (blast spell). What's behind it: TBD.
 
 **Year 1 starter dungeon — tutorial mechanics. Build this first.**
 
@@ -144,9 +158,9 @@ life drawn here by Resonance bleeding.
 15. EXIT THE CAVE — escort sequence through all rooms, surface entrance.
     Extra creature spawns on the way out. Player must protect injured companions.
     **Faint mechanic applies**: Any character at 0 HP falls unconscious and must be treated
-    (carried/stabilized) before they can move again. No permanent party death. If Ares himself
+    (carried/stabilized) before they can move again. No permanent party faint. If Ares himself
     reaches 0 HP in a situation where no conscious companion can help him, that is the only
-    true game over. The tension is real: a fainted companion becomes dead weight you carry.
+    true game over. The tension is real: a fainted companion becomes a burden you carry.
 ```
 
 ---

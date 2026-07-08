@@ -144,7 +144,11 @@ Zone 2 implementation       → after Zone 2 story
 - **Sprite z-sort compensation** — defer to Stage 7. Implement when terrain height is visible
   so the formula can be verified. Needs per-frame sprite.position.y + sprite.offset.y update.
 - **Auto-target on receive_hit** — needs target system first.
-- **Blocking** — ~~DONE~~ BLOCK state implemented (§ key). Shield layer art drawn (wooden_shield). BlockPhase (RAISING/HOLDING/LOWERING), manual frame control, block_chance roll, halved knockback on block, walking at half speed in HOLDING. Directional gate: facing dot vs incoming dir, threshold stats.block_dir_threshold (0.5=±60°). Crit-forced drop: crit always forces LOWERING via _block_crit_forced flag, player must re-press § after animation ends.
+- **Blocking** — ~~DONE~~ BLOCK state implemented (§ key). Shield layer art drawn (wooden_shield). 
+    - BlockPhase (RAISING/HOLDING/LOWERING), manual frame control, block_chance roll, halved knockback 
+    - on block, walking at half speed in HOLDING. Directional gate: facing dot vs incoming dir, threshold 
+    - stats.block_dir_threshold (0.5=±60°). Crit-forced drop: crit always forces LOWERING via 
+    - _block_crit_forced flag, player must re-press § after animation ends.
 - **Dodge roll** — all design TBD. Art needed.
 - **Weapon sprite layer** — design locked (see Art & Sprite System below). Art needed.
 
@@ -402,7 +406,8 @@ Current body sprites (sword+shield baked in) are placeholder — redraw weapon-f
 ---
 
 The developer is a solo dev and lifelong gamer with deep knowledge of WoW, Zelda series, Naruto,
-Genetic Disaster, BOTW, Majora's Mask, DnD. Always give practical, scoped advice. Be honest about scope. Flag feature creep immediately. Never decide anything alone — present options and discuss.
+Genetic Disaster, BOTW, Majora's Mask, DnD. Always give practical, scoped advice. Be honest about scope. 
+Flag feature creep immediately. Never decide anything alone — present options and discuss.
 
 ---
 
@@ -430,7 +435,8 @@ the same mechanics; their race and starting life shape what they bring to it, no
 **Camera**: Angled overhead 3D camera, 15°–40° pitch, 360° orbit via RMB drag. WASD is always camera-relative.
 3D world — Z-sorting handled by Godot engine. Camera system complete (see Section 2).
 
-**Visual style**: 2D sprites in a 3D-positioned world. Pixel art. Angled overhead 3D perspective (pitch -15° to -40°).
+**Visual style**: 2D sprites in a 3D-positioned world. Pixel art. Angled overhead 3D perspective 
+(pitch -15° to -40°).
 Sprites use fixed directional animations — they do not rotate to face camera.
 
 **Key design references**:
@@ -905,11 +911,16 @@ through a causal world chain — not by items disappearing. Rocks and hand axe s
 
 | # | Weapon | How to Get | Notes |
 |---|---|---|---|
-| 1 | Wooden Sword | Found in the woods — guard mentions the sword owner lost his sword | Hidden in the overworld. Rewards exploration. |
-| 2 | Wooden Staff | In the old man's house — must be stolen before any game lock | Theft mechanic. Old man does not find out directly. |
-| 3 | Hand Axe (lent) | Go to blacksmith → he gives a creature parts fetch quest first | Guard mentions the blacksmith. Legitimate early path but costs time. |
-| 4 | Rocks | Collected from terrain around the village | Ranged. Combinable with any other weapon. Never mutually exclusive. |
-| 5 | Small Dagger | Purchased from the village's only shop | Requires trading a magical item (not normal barter). |
+| 1 | Wooden Sword | Found in the woods — guard mentions the sword owner lost his sword 
+| Hidden in the overworld. Rewards exploration. |
+| 2 | Wooden Staff | In the old man's house — must be stolen before any game lock 
+| Theft mechanic. Old man does not find out directly. |
+| 3 | Hand Axe (lent) | Go to blacksmith → he gives a creature parts fetch quest first 
+| Guard mentions the blacksmith. Legitimate early path but costs time. |
+| 4 | Rocks | Collected from terrain around the village 
+| Ranged. Combinable with any other weapon. Never mutually exclusive. |
+| 5 | Small Dagger | Purchased from the village's only shop 
+| Requires trading a magical item (not normal barter). |
 
 ### Weapon Tiers (material progression)
 Wooden → Iron/Stone → ?? → ?? — exact tier names TBD. Each tier = better stats, same feel.
@@ -923,7 +934,8 @@ The weapon's mechanical identity never changes between tiers. Only power scales.
 | Axe | Slow | Short | Wide slow arc, high damage | Focus | Commitment. Rewards timing, punishes spam. |
 | Bow | Medium | Long | Aimed projectile, charge option | Energy | Spatial, requires movement discipline. |
 | Staff | Slow | Med-long | Magic projectile or AoE | Flow | Spellcaster entry. Resource heavy. |
-| Daggers | Fast | Very short | Multi-hit combo chain | Energy+Focus | High APM, low per-hit. Rewards aggression. |
+| Daggers | Fast | Very short | Multi-hit combo chain | Energy+Focus | High APM, low per-hit. 
+Rewards aggression. |
 | Greatsword | Very slow | Med | 3-hit charged swing | Focus | Maximum commitment. Every swing counts. |
 | Thrown | Fast | Med | Ricocheting projectile | Energy | Unpredictable angle play. |
 

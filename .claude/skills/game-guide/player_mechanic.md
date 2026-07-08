@@ -1,6 +1,8 @@
 ---
 name: Player Mechanics
-description: All mechanics Ares can do, grouped by category. Source of truth for player behavior.
+description: >
+  All mechanics Ares can do, grouped by category.
+  Source of truth for player behavior.
 type: reference
 ---
 
@@ -33,10 +35,11 @@ Entry format:
 **Combat** — attack combos, parry, stance slot (block/resistance), targeting, receive damage
 **Abilities** — ability framework; categories: mobility, damage,
 control, defensive, recovery, utility
-**World Interaction** — grab, push, pull, hold (carry), loot, acquire, boost item, open, cross, talk
+**World Interaction** — grab, push, pull, hold (carry), loot, acquire,
+  boost item, open, cross, talk
 **Equipment** — weapon slots, armor, inventory
 **Status Effects** — buffs, debuffs
-**Lifecycle** — spawn, die, respawn
+**Lifecycle** — spawn, faint, recover
 **Expressive** — bow
 
 ---
@@ -61,11 +64,11 @@ control, defensive, recovery, utility
 Amounts and rates defined in systems_design.md.
 
 - **HP** [auto] — depleted by incoming damage; restored by regen and healing;
-  zero triggers Die. Regen requires out-of-combat and no recent damage.
+  zero triggers Faint. Regen requires out-of-combat and no recent damage.
 
 - **Energy** [auto] — depleted by sprint, jump, and energy-costing abilities;
   restored by regen; zero prevents further energy use. Regen blocked while
-  sprinting, in combat, or grabbing.
+  sprinting, jumping, in a stance, in combat, or grabbing.
 
 - **Focus** [auto] — gained on landing a hit, crit, or receiving damage;
   passive gain while in combat; decays while out of combat.
@@ -172,7 +175,7 @@ Traverse camera mode active.
   - **Breath** [auto] — submerged; O2 bar depletes; refills on surfacing.
 
   - **Drowning** [auto] — submerged, O2 empty; DOT damage until player
-    surfaces or dies.
+    surfaces or faints.
 
   - **Swim: Descend** [input] — interact key hold; swimming; player actively
     fights buoyancy to go deeper; buoyancy resumes on release.
@@ -254,17 +257,22 @@ combo icons clicked directly on the hotbar.
 
 Holds either a shield or a staff — never both. Equipping one replaces
 the other and determines which defensive mechanic is active.
-Raising and lowering take time — movement locked during both phases,
-knockback still applies. While held: bonuses active, combos available,
-half-speed walk allowed.
+Entered from idle or walking only. Raising and lowering take time —
+no protection until fully raised, movement locked during both phases,
+knockback still applies. Directional — attacks outside the player's
+facing arc bypass the stance entirely (full damage and knockback apply).
+Successful defense halves knockback. While held: bonuses active, combos
+available, half-speed walk allowed, regen blocked. Crit instantly breaks
+the stance — full control returns immediately. Release deferred until
+current action completes.
 
-  - **Block** [input] — stance key; shield equipped; blocks incoming physical
-    attacks while held; block chance roll, crit forces drop. Release
-    deferred until combo completes.
+  - **Block** [input] — stance key; shield equipped; blocks incoming
+    physical attacks while held; block chance roll, no energy cost —
+    only active shield abilities cost energy.
 
   - **Resistance** [input] — stance key; staff equipped; resists incoming
     magical attacks while held; resistance chance roll, drains flow
-    continuously, crit forces drop. Release deferred until spell completes.
+    continuously.
 
 ### Targeting
 
@@ -277,23 +285,25 @@ primary sort; entity type (creature before NPC) is the tiebreak:
 Any neutral entity hit turns hostile, promoted to hostile engaged (tier 1) before
 selection resolves. LMB click selects any entity directly, bypassing
 cycle order. Lock state follows the current target's tier.
+Tab cycling requires line of sight through world geometry; on-screen
+targets are preferred first — falls back to full pool if none visible.
 
   - **Soft-lock** [auto] — target hostile and actively engaged (tier 1);
     camera tracks target, player faces target, movement becomes
     target-relative:
-  
+
       Forward / stick up   = toward target
       Back / stick down    = away from target
       Left / right / stick = strafe around target
-  
+
     Underwater: axes fully 3D — toward/away along player-to-target vector,
     left/right orbits target.
-  
+
     Steering input: camera orbit only, player facing stays on target.
-  
+
     Upgrade: if current target turns hostile and engages, auto-upgrades
     to soft-lock.
-  
+
     Degrade: target exits tier 1, or player switches to tier 2/3/4 target;
     camera stops tracking, movement returns to camera-relative; target ring
     stays visible.
@@ -314,10 +324,13 @@ cycle order. Lock state follows the current target's tier.
     full deselect; soft-lock drops, camera stops tracking, movement returns
     to camera-relative.
 
-  - **Auto-deselect** [auto] — target death or out of range; full deselect.
+  - **Auto-deselect** [auto] — target fainted or out of range; full deselect.
 
-- **Receive damage** [auto] — hit by attack; knockback, brief stagger;
-  ability not consumed on stagger.
+- **Receive damage** [auto] — hit by attack; checks in order: dodge i-frames
+  (miss, DoT still ticks), passive resist (magical), active Resistance
+  (magical), passive block (physical), active Block (physical), damage,
+  crit, status effect; knockback and brief stagger on hit, ability not
+  consumed on stagger.
   Horizontal knockback: force in hit direction, decays over time.
   Vertical knockback: upward force launches player airborne; no energy cost.
 
@@ -469,15 +482,19 @@ cycle order. Lock state follows the current target's tier.
 ## World Interaction
 
 - **Grab** [input] — sprint key held; near object, facing arc met;
-  player grabs object; no energy cost, regen stops while held.
+  player grabs object; no energy cost, regen stops while held;
+  any incoming hit releases grab immediately.
 
   - **Push** [input] — move keys toward object; grab active; drives
-    object away; small object: no energy cost; large object: costs
-    energy per second.
+    object away; object collision stops movement — energy drain continues
+    while input held; small object: no energy cost; large object: costs
+    energy per second — energy depleted reverts to grab idle.
 
-  - **Pull** [input] — move keys away from object; grab active; large
-    object: drags toward player, costs energy per second; small object:
-    player lifts and carries object.
+  - **Pull** [input] — move keys away from object; grab active; drags
+    object toward player; player collision behind stops movement — energy
+    drain continues while input held; large object: costs energy per
+    second — energy depleted reverts to grab idle; small object: player
+    lifts and carries object.
 
   - **Hold (carry)** [auto] — small object grabbed, pull input; player
     carries object; reduced movement speed, regen stopped while carrying.
@@ -488,7 +505,7 @@ cycle order. Lock state follows the current target's tier.
     - **Throw** [input] — sprint key release; carrying, movement input
       active; player throws object in facing direction; costs energy.
 
-- **Loot** [input] — interact key; near corpse, no facing check required;
+- **Loot** [input] — interact key; near body, no facing check required;
   opens loot window; multi-item drops show as list. Small single drops
   auto-collect on contact — see Acquire (auto).
 
@@ -553,12 +570,12 @@ Slot-to-slot navigation.
 - **Spawn (silent)** [auto] — world transition (entering or exiting houses, dungeons,
   or area boundaries); player appears at destination without interruption.
 
-- **Spawn (arrival)** [auto] — game start, load, teleport, or respawn;
+- **Spawn (arrival)** [auto] — game start, load, teleport, or recover;
   brief invincibility period on arrival.
 
-- **Die** [auto] — HP reaches zero; durability lost; screen goes blank.
+- **Faint** [auto] — HP reaches zero; durability lost; screen goes blank.
 
-- **Respawn** [auto] — player dead, respawn triggered; appears at last activated
+- **Recover** [auto] — player fainted, recover triggered; appears at last activated
   checkpoint; creatures in the area reset.
 
 ---

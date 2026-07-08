@@ -1,26 +1,37 @@
 ---
 name: Dungeon Design Reference
-description: General dungeon rules, AI & trap systems, props standards, puzzle design philosophy, creature roster, planned themes, art TODO. Load this when working on any dungeon mechanic, trap, puzzle type, or creature. For Old Mine specific design see dungeon_oldmine.md.
+description: >
+  General dungeon rules, AI & trap systems, props standards, puzzle design philosophy,
+  creature roster, planned themes, art TODO. Load this when working on any dungeon
+  mechanic, trap, puzzle type, or creature. For Old Mine specific design see
+  dungeon_oldmine.md.
 type: reference
 ---
 
 # Dungeon Design Reference
 
-**See also**: SKILL.md (technical/code standards), dungeon_oldmine.md (Old Mine full design), zone1_design.md (Zone 1 story/NPCs), systems_design.md (talent drops, boss design philosophy)
+**See also**: SKILL.md (technical/code standards), dungeon_oldmine.md (Old Mine full design),
+zone1_design.md (Zone 1 story/NPCs), systems_design.md (talent drops, boss design philosophy)
 
-## TL;DR [NEEDS REVIEW]
+## TL;DR
 - Dungeons: 15-25 rooms. Mid-boss + final boss. Locked doors via key items or puzzle solutions.
 - Respawn on re-entry: creatures + boss reset, story events do NOT repeat. Farm-run mode.
 - Creature levels scale per repeat run (capped at player level +5).
-- Dungeon map: paper & pencil style — hand-sketched CanvasLayer, fills in as player explores. Player can annotate.
-- Patrol AI (patrol_ai.gd) and Trap entities (trap_entity.gd) are NEW scripts — separate from creature.gd.
+- Dungeon map: paper & pencil style — hand-sketched CanvasLayer, fills in as player explores.
+  Player can annotate.
+- Patrol AI (patrol_ai.gd) and Trap entities (trap_entity.gd) are NEW scripts — separate from
+  creature.gd.
 - Patrol types: LINE_PATROL, WALL_FOLLOW, AREA_WANDER, ROOM_CHASE.
-- Trap types: spike trap, falling object, cracked tile, dart shooter, hazard tiles (lava/water/ice via tilemap metadata).
+- Trap types: spike trap, falling object, cracked tile, dart shooter, hazard tiles
+  (lava/water/ice via tilemap metadata).
 - Old Mine traps: LINE_PATROL spike movers + falling stalactites.
-- Puzzle types: pressure plates, block push (Z=undo required), switches, sequence, ice slide, enemy-required, environmental trigger, light/mirror (late game only).
-- Zone 1 creatures: rat (hostile), snake (hostile), bat (hostile/cave), cave spider (dungeon only), wolf (neutral), bear (neutral), deer (passive).
+- Puzzle types: pressure plates, block push (Z=undo required), switches, sequence, ice slide,
+  enemy-required, environmental trigger, light/mirror (late game only).
+- Zone 1 creatures: rat (hostile), snake (hostile), bat (hostile/cave), cave spider (dungeon
+  only), wolf (neutral), bear (neutral), deer (passive).
 - Bosses are NOT large versions of common enemies — they are Resonance disturbance made manifest.
-- ⚠ Old Mine mid-boss: UNCONFIRMED. "Stone Golem" noted as final boss candidate but needs decision.
+- ⚠ Old Mine mid-boss: UNCONFIRMED. "Stone Golem" noted as final boss candidate but needs
+  decision.
 - Year 1: Old Mine + Verdant Temple themes only. Do not start themes 3-8.
 
 ## Table of Contents
@@ -145,7 +156,7 @@ Define these before implementing any new prop:
 2. **Collision**: none / circle / rect. Circle radius = 11px × min(cols, rows).
 3. **Type**: destructible → damageable_prop.gd, solid → obstacle_prop.gd,
    decorative → terrain_prop.gd, interactive (chest/door/NPC) → define signal.
-4. **States**: idle_alive always required. bump + death if destructible.
+4. **States**: idle_alive always required. bump + break if destructible.
 5. **Variants**: 3-5 for natural objects, 1-2 for furniture, 1 for mechanical props.
 6. **Z-sort**: canvas padding needed only for tall sprites (trees, tall pillars).
 
@@ -211,15 +222,15 @@ Void's influence, driving it into a frenzied state.
 - Visually: consider a subtle visual tell (slight color shift, eyes glow) — TBD art pass.
 
 **Zone 1 — Deep Forest (Year 1)**
-| Creature | Type | Notes |
-|---|---|---|
-| Rat | hostile | Small, fast, swarm behavior |
-| Snake | hostile | Ambush from tall grass |
-| Bat | hostile | Cave subzone; erratic flight path |
-| Cave Spider | hostile | Dungeon (Old Mine) specific |
-| Wolf | neutral | Attacks if player enters territory or attacks first |
-| Bear | neutral | High HP, strong hit, patrols wide area |
-| Deer | passive | Ambient wildlife. Flees on approach. |
+| Creature     | Type    | Notes                                               |
+|--------------|---------|-----------------------------------------------------|
+| Rat          | hostile | Small, fast, swarm behavior                         |
+| Snake        | hostile | Ambush from tall grass                              |
+| Bat          | hostile | Cave subzone; erratic flight path                   |
+| Cave Spider  | hostile | Dungeon (Old Mine) specific                         |
+| Wolf         | neutral | Attacks if player enters territory or attacks first |
+| Bear         | neutral | High HP, strong hit, patrols wide area              |
+| Deer         | passive | Ambient wildlife. Flees on approach.                |
 
 **Zone 2 — Meadow/Plains (design only, not Year 1)**
 TBD — river/lake creatures, plains fauna, first contact with Zone 2 hostile types.
@@ -245,19 +256,19 @@ Parallel track — work these alongside code when possible. Art is the real bott
 
 Every creature needs the following animations, each in front/back variant (flip_h handles left/right):
 
-| Animation | Loop | Notes |
-|---|---|---|
-| `idle_neutral` | loop | Standing still, no threat awareness |
-| `wander` | loop | Casual slow movement. **NOTE: current "move" files must be renamed to "wander"** |
-| `run` | loop | Fast movement — combat chase, fleeing, returning home |
-| `notice` | once | Alert moment (sees player). Transitions to `neutral_to_attack` |
-| `neutral_to_attack` | once | Entering combat stance |
-| `idle_attack` | loop | Combat idle — in stance, attack on cooldown. Same name for all creatures. |
-| `attack_bite` | once | Attack type — rat: bite. Snake: bite. Not all creatures have this. |
-| `attack_slash` | once | Attack type — rat: slash. Not all creatures have this. |
-| `attack_tail_slam` | once | Attack type — snake only. |
-| `attack_to_neutral` | once | Exiting combat stance (fleeing or player left range) |
-| `death` | once → hold | Plays once, holds last frame = corpse sprite |
+| Animation           | Loop        | Notes                                                          |
+|---------------------|-------------|----------------------------------------------------------------|
+| `idle_neutral`      | loop        | Standing still, no threat awareness                            |
+| `wander`            | loop        | Casual slow movement. **NOTE: "move" files must be renamed**   |
+| `run`               | loop        | Fast movement - combat chase, fleeing, returning home          |
+| `notice`            | once        | Alert moment (sees player). Transitions to `neutral_to_attack` |
+| `neutral_to_attack` | once        | Entering combat stance                                         |
+| `idle_attack`       | loop        | Combat idle - in stance, attack on cooldown. Same name all.    |
+| `attack_bite`       | once        | Rat: bite. Snake: bite. Not all creatures have this.           |
+| `attack_slash`      | once        | Rat: slash. Not all creatures have this.                       |
+| `attack_tail_slam`  | once        | Snake only.                                                    |
+| `attack_to_neutral` | once        | Exiting combat stance (fleeing or player left range)           |
+| `defeat`            | once, hold  | Plays once, holds last frame = body sprite                     |
 
 **Animation state philosophy** (decided): All creatures share the same state machine and animation
 set. Biological differences are expressed through duration tuning and frame count — never by
@@ -267,27 +278,31 @@ removing states or adding code branches per creature. Examples:
 - A bear or wolf can have slow deliberate stance animations — same code, different data
 Rule: states are universal. Art and durations are per-creature data.
 
-**Corpse mechanic** (decided): WoW-style. Death animation plays → creature holds last frame
-as a lying-down corpse for ~90 seconds → then fades out (2.5s fade). Corpse is lootable.
+**Body mechanic** (decided): WoW-style. Defeat animation plays → creature holds last frame
+as a fallen body for ~90 seconds → then fades out (2.5s fade). Body is lootable.
 Art must be clean — no blood, no exposed bones. A rat lying on its side is fine for kids.
 Stardew Valley, Zelda, and Pokémon all do this in E/E10+ rated games. The mechanic is fine;
 the art style is what makes it appropriate. Never add gore.
 
-**Corpse collision** (decided): Corpses keep their collision shape after death (reduced height
+**Body collision** (decided): Bodies keep their collision shape after defeat (reduced height
 but same footprint). Intentional — explore frustration in playtesting first, then solve it
 creatively rather than removing it. Future ideas to explore:
-- Corpses can be pushed / dragged by the player (physics impulse or interact button)
-- Corpses as puzzle elements — block a pressure plate, fill a gap, redirect a creature patrol
-- Corpses as carrirable objects — pick up and throw (similar to boulder carry in Zelda)
-- Stacked corpses alter room traversal in interesting ways
-Do NOT remove corpse collision without a proper design pass. Test first.
+- Bodies can be pushed / dragged by the player (physics impulse or interact button)
+- Bodies as puzzle elements — block a pressure plate, fill a gap, redirect a creature patrol
+- Bodies as carryable objects — pick up and throw (similar to boulder carry in Zelda)
+- Stacked bodies alter room traversal in interesting ways
+Do NOT remove body collision without a proper design pass. Test first.
 
 **Current status per creature**:
 
-| Creature | idle_neutral | wander | run | notice | stances | attacks | death |
-|---|---|---|---|---|---|---|---|
-| Rat | front ✓ back ✓ | front ✓ back ✓ (named move — rename pending) | — | — | — | — | — |
-| Snake | front ✓ back: copy only | — | — | — | — | — | — |
+**Rat**
+- idle_neutral: front ✓ back ✓
+- wander: front ✓ back ✓ (rename pending — "move" → "wander")
+- run / notice / stances / attacks / defeat: —
+
+**Snake**
+- idle_neutral: front ✓ back: copy only
+- wander / run / notice / stances / attacks / defeat: —
 
 **Immediate art task**: Rename rat `move_front` / `move_back` → `wander_front` / `wander_back`
 in LibreSprite, art_source folders, export script, and game asset files.
@@ -296,7 +311,7 @@ Then do snake `wander` front/back (snake currently has no move animation drawn).
 ---
 
 **Player**:
-- Better player animations (all states — idle, walk, run, roll, attack types, death)
+- Better player animations (all states — idle, walk, run, roll, attack types, faint/collapse)
 - Redraw attack_south/north/east/west frames with the wooden sword baked into each frame
   (weapon sprite system removed — sword is now part of the player attack animation art)
 

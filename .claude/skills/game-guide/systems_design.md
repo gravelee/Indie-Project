@@ -1,24 +1,38 @@
 ---
 name: Systems Design Reference
-description: Game systems design — resources (Energy/Flow/Focus), emergent class system, EXP & talent system, combat mechanics, save system, gear & durability, progression, multiplayer scope. Load this when working on any game system, stat design, or progression-related decisions.
+description: >
+  Game systems design — resources (Energy/Flow/Focus), emergent class system,
+  EXP & talent system, combat mechanics, save system, gear & durability,
+  progression, multiplayer scope. Load this when working on any game system,
+  stat design, or progression-related decisions.
 type: reference
 ---
 
 # Systems Design Reference
 
-**See also**: SKILL.md (technical/code standards), world_design.md (lore/world), zone1_design.md (Zone 1 content), dungeon_design.md (dungeon rooms/bosses/puzzles)
+**See also**: SKILL.md (technical/code standards), world_design.md (lore/world),
+  zone1_design.md (Zone 1 content), dungeon_design.md (dungeon rooms/bosses/puzzles)
 
-## TL;DR [NEEDS REVIEW]
-- **Energy**: depletes from running, rolling, jumping, swimming, pushing/throwing, weapon attacks, spells, active shield abilities. Does NOT deplete from passively holding shield. Regens out of combat only.
+## TL;DR
+- **Energy**: depletes from running, rolling, jumping, swimming, pushing/throwing,
+  weapon attacks, spells, active shield abilities. Does NOT deplete from passively
+  holding shield. Regens out of combat only.
 - **Flow** (was mana/mp): used for magic abilities. Regens out of combat only.
-- **Focus** (was rage): builds IN combat from landing hits and taking hits. Decays out of combat. Spent on powerful decisive actions.
-- **Hybrid leveling**: every quest completed = 1 guaranteed stat point (no EXP cost). EXP from combat/exploration buys additional stat points OR talent points — player's choice each time.
+- **Focus** (was rage): builds IN combat from landing hits and taking hits. Decays
+  out of combat. Spent on powerful decisive actions.
+- **Hybrid leveling**: every quest completed = 1 guaranteed stat point (no EXP
+  cost). EXP from combat/exploration buys additional stat points OR talent points
+  — player's choice each time.
 - No class selection screen. Class identity emerges from stat investment + tools found.
-- **Faint mechanic**: party members faint at 0 HP — no permanent death. Game over ONLY if Ares himself is down with no conscious companion to help.
-- EXP accumulated since last autosave is lost on Ares's death. Gear durability -10% on death.
-- Autosave at: puzzle room cleared, dungeon room cleared, boss defeated, quest step complete, new zone/dungeon discovered.
-- Gear: equip slots (weapon, shield, helmet, chest, legs, boots, ring×2, necklace). WoW-style durability — degrades, repaired at blacksmith, never disappears.
-- Talent scrolls: boss drops, class-influenced by current stat profile. Go to talent book. Must spend EXP (talent points) to activate.
+- **Faint mechanic**: party members faint at 0 HP — no permanent death. Game over
+  ONLY if Ares himself is down with no conscious companion to help.
+- EXP accumulated since last autosave is lost on Ares's faint. Gear durability -10% on faint.
+- Autosave at: puzzle room cleared, dungeon room cleared, boss defeated, quest
+  step complete, new zone/dungeon discovered.
+- Gear: equip slots (weapon, shield, helmet, chest, legs, boots, ring×2, necklace).
+  WoW-style durability — degrades, repaired at blacksmith, never disappears.
+- Talent scrolls: boss drops, class-influenced by current stat profile. Go to
+  talent book. Must spend EXP (talent points) to activate.
 
 ## Table of Contents
 1. [Resource System](#resource-system)
@@ -134,7 +148,7 @@ These quests are additive — they don't lock other content, they add to it.
 ## 3. EXP & Talent System {#exp-talent-system}
 
 EXP is the single currency for all progression. It is also at risk — lost since the last save
-on death (see Save System section).
+on faint (see Save System section).
 
 ### Hybrid Leveling (Settled Design)
 Two parallel progression tracks feed into the same stat growth:
@@ -263,17 +277,20 @@ Tier A unlocks Tier B, Tier B unlocks Tier C (where chains have multiple tiers).
 - Tier B: blocked knockback × 0.35 → × 0.2 (80% reduction from full)
 - Tier C: blocked knockback × 0.2 → × 0.1 (90% reduction from full — barely moves on block)
 - Implementation: add `block_kb_mult : float = 0.5` to Stats. Talent tiers lower this value.
-  In `receive_hit()` block path: `_knockback_vel = dir.normalized() * KNOCKBACK_STRENGTH * stats.block_kb_mult`
+  In `receive_hit()` block path:
+  `_knockback_vel = dir.normalized() * KNOCKBACK_STRENGTH * stats.block_kb_mult`
 - Design note: a Tier C blocker against a fast-attacking enemy is nearly immovable. The 0.1
   floor is intentional — zero knockback would remove all combat weight from blocked hits.
 
-**Early block — last 2 frames of raise** *(code: block check in `receive_hit()`, currently gated on `BlockPhase.HOLDING`)*
+**Early block — last 2 frames of raise**
+*(code: block check in `receive_hit()`, currently gated on `BlockPhase.HOLDING`)*
 - Normally block chance only activates when the shield is fully raised (BlockPhase.HOLDING).
   During RAISING the player takes full damage.
 - This talent (single tier) extends block chance to the last 2 frames of the shield_up
   animation (frames 5–6 of the 7-frame raise).
 - Implementation: when this talent is active, the block check condition becomes:
-  `_block_phase == BlockPhase.HOLDING or (_block_phase == BlockPhase.RAISING and sprite.frame >= SHIELD_UP_FRAMES - 2)`
+  `_block_phase == BlockPhase.HOLDING or`
+  `(_block_phase == BlockPhase.RAISING and sprite.frame >= SHIELD_UP_FRAMES - 2)`
 - Design note: rewards players who time their raise to meet an incoming hit. Pairs well
   with Early block — full raise (below) as a prerequisite chain.
 
@@ -407,31 +424,31 @@ Freeze (no movement), Burn (DoT, fire). Each has duration + tick interval.
 **NOT a Year 1 Priority — Design Only.**
 
 ### Faint Mechanic (Party Members — Settled Design)
-- **Party members** (Mike, Felan, Vinie, etc.) do NOT die permanently. At 0 HP they **faint**
-  — they fall unconscious and must be treated (carried, stabilized) before they can move again.
-  A fainted companion becomes dead weight. If you are escorting multiple people, a fainted
-  one forces a hard choice.
+- **Party members** (Mike, Felan, Vinie, etc.) cannot be permanently defeated. At 0 HP they
+  **faint** — they fall unconscious and must be treated (carried, stabilized) before they can
+  move again. A fainted companion becomes a burden. If you are escorting multiple people, a
+  fainted one forces a hard choice.
 - **Game over condition for party members**: There is none. They always recover after the
   encounter ends (or if Ares treats them).
 - **Game over for Ares**: Only if Ares reaches 0 HP in a situation where NO conscious
   companion can help him — i.e., he is alone or all companions are also fainted. If any
   conscious ally is present, Ares is treated and survives.
-- **Design intent**: Permanent party death is removed. Tension comes from management:
+- **Design intent**: Permadeath is removed for party members. Tension comes from management:
   keeping companions alive is harder, costs attention, and a fainted companion cannot help.
   The escort sequences remain genuinely tense without being punishing.
 
-### Death & Respawn — Ares Only (Settled Design)
-- **Lore frame**: The player's soul is commanded by a higher purpose. Death is not the end —
+### Faint & Recover — Ares Only (Settled Design)
+- **Lore frame**: The player's soul is commanded by a higher purpose. Faint is not the end —
   the soul is pulled back. This is not a resurrection mechanic explained as magic. It is the
   world's acknowledgment that the player's mission is unfinished.
-- **Respawn location**: Player respawns at their corpse location (the exact spot they died).
+- **Recover location**: Player recovers at their body location (the exact spot they fainted).
   Not at a checkpoint, not at a town. Their body is there — they must return to themselves.
-- **Respawn cost**: Durability penalty on all gear (-10%) + all EXP accumulated since last
+- **Recover cost**: Durability penalty on all gear (-10%) + all EXP accumulated since last
   autosave is lost. Progress (room clears, puzzle solutions) resets to the last autosave.
 - **Design intent**: Fear of loss drives skill-building. Players who take unnecessary risks
-  and die repeatedly feel the cost accumulate. Players who learn, adapt, and execute cleanly
-  are rewarded by never paying that cost. Skill is the real protection, not a respawn shield.
-- **No death screen punishment beyond the above.** The player is returned immediately.
+  and faint repeatedly feel the cost accumulate. Players who learn, adapt, and execute cleanly
+  are rewarded by never paying that cost. Skill is the real protection, not a recover shield.
+- **No faint screen punishment beyond the above.** The player is returned immediately.
   The grief is in what was lost, not in being lectured at.
 
 ### BOTW-Style Autosave at Milestones
@@ -444,12 +461,12 @@ The game autosaves when the player achieves a meaningful progression point:
 - Specific overworld events
 
 ### Risk Layer
-EXP accumulated since the last save is lost on death. The player can continue from their last
+EXP accumulated since the last save is lost on faint. The player can continue from their last
 autosave or last manual save. This creates tension during long dungeon runs — the further you
 push without a milestone save, the more you risk losing.
 
 ### Mandatory Challenge Sections
-Some dungeon sections require completing without dying for the autosave to trigger. These are
+Some dungeon sections require completing without fainting for the autosave to trigger. These are
 deliberate design choices — not punishment, but a moment where the game demands sustained focus.
 These sections should be telegraphed clearly before they begin.
 
@@ -468,7 +485,7 @@ ring ×2, necklace. Items drop from bosses and creatures. Rarity tiers exist for
 
 ### Durability (WoW-style)
 - Every equipped piece has durability 0-100.
-- Degrades on: death (all gear -10%), taking damage (armor -1 per sustained hits), extended
+- Degrades on: faint (all gear -10%), taking damage (armor -1 per sustained hits), extended
   combat (weapon degrades with heavy use).
 - At 0 durability: item provides zero stat bonus. Player warned before reaching 0.
 - Repaired at: town blacksmith NPC. Repair cost scales with item level and degradation.

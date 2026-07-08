@@ -1,24 +1,33 @@
 ---
 name: Zone 1 Design Reference
-description: Zone 1 full story design — characters, opening sequence, weapon chain, quest log, spellcaster school, bridge puzzle, pre-cave journey, cave companion system. Load this when working on any Zone 1 story, quest, NPC, or content design.
+description: >
+  Zone 1 full story design — characters, opening sequence, weapon chain, quest log,
+  spellcaster school, bridge puzzle, pre-cave journey, cave companion system.
+  Load this when working on any Zone 1 story, quest, NPC, or content design.
 type: reference
 ---
 
 # Zone 1 Design Reference — Vinemore & The Old Mine
 
-**See also**: SKILL.md (technical), world_design.md (lore/main quest), dungeon_design.md (cave rooms/bosses), story_book.md (prose narrative)
+**See also**: SKILL.md (technical), world_design.md (lore/main quest), dungeon_design.md (cave
+rooms/bosses), story_book.md (prose narrative)
 
-## TL;DR [NEEDS REVIEW]
-- 5 weapon paths: sword (found in woods), staff (steal from Kardino), axe (Nathan fetch quest), rocks (terrain), dagger (magical trade at Lulu).
+## TL;DR
+- 5 weapon paths: sword (found in woods), staff (steal from Kardino), axe (Nathan fetch quest),
+  rocks (terrain), dagger (magical trade at Lulu).
 - Kardino's chest NEVER LOCKS under any circumstance. Absolute rule — do not add locking logic.
 - Staff path commits at school entry. All other paths lock at east gate.
-- Dark figure appears ONLY on staff path + did NOT tell Kardino the truth. Never on weaponmaster paths.
+- Dark figure appears ONLY on staff path + did NOT tell Kardino the truth. Never on weaponmaster
+  paths.
 - Bridge: staff path needs 1 helper (Kardino counts as 2); all others need 2 helpers.
-- Cave companion matrix: weaponmaster = Mike injured + Felan OK (can speak); spellcaster = Mike fine + Felan drained (cannot speak).
+- Cave companion matrix: weaponmaster = Mike injured + Felan OK (can speak); spellcaster = Mike
+  fine + Felan drained (cannot speak).
 - Both twins in cave: Felan in SAFE ROOM, Vinie in Spider Queen's web.
-- Spellcaster weight restriction: cannot carry Adventurer's Clothes or powder pouch. Caster's Robe only.
+- Spellcaster weight restriction: cannot carry Adventurer's Clothes or powder pouch. Caster's
+  Robe only.
 - Ring path: Ms. Kathy dies (water sickness + void ring proximity — both causes).
-- Shadow figure returns once post-cave on ring path: at graveyard exit after funeral. Last Zone 1 appearance.
+- Shadow figure returns once post-cave on ring path: at graveyard exit after funeral. Last Zone 1
+  appearance.
 - Chapter 3 beats fully locked — see Section 13.
 - Post-cave: Pontos/Nathan give weapon permanently. Lulu stocks powder pouch + shield after cave.
 
@@ -41,8 +50,10 @@ type: reference
 ## 1. NPCs — Brief Roster {#npcs}
 
 - **Named individuals** with personalities. Not generic types.
-- **Schedules**: Key NPCs follow daily routines (Majora's Mask style). Reserve for significant characters only.
-- **Reactive dialogue**: NPCs respond to story progression. How the player completed a quest changes what they say.
+- **Schedules**: Key NPCs follow daily routines (Majora's Mask style). Reserve for significant
+  characters only.
+- **Reactive dialogue**: NPCs respond to story progression. How the player completed a quest
+  changes what they say.
 - **Exceptional hostility**: Rare. Always story-driven, never accidental.
 
 ---
@@ -53,43 +64,125 @@ type: reference
 to the main themes (heroism, grief, disruption, consequence). English names are used for the
 everyday fabric of village life. The distinction is meaningful — a Greek name signals weight.
 
-| Name | Role | Notes |
-|---|---|---|
-| **Ares** | Player character | Lives in the village. Slightly older than Mark. |
-| **Mark** | Ares's friend / neighbor | Lives next door to Ares's family home. His father is a close friend of Leman. Knocks on Ares's door at game start. |
-| **Miria** | Patient 3 — pregnant woman | Couple with Dario (husband). Fragility: pregnancy (not yet announced). |
-| **Dario** | Miria's husband | Tries to turn Ares away at the door. Tells Ares about Ms. Kathy (patient 1). |
-| **Ms. Kathy** | Patient 1 — old woman | Lives alone. Her name is never used in dialogue — everyone calls her "the old woman who lives alone." First to fall ill. She regularly goes to the river's edge to collect mushrooms and edible vegetables. **Ring path**: She dies. Cause is BOTH — water sickness progressing (oldest, weakest, most exposed) AND the void ring's proximity accelerating her decline. The ring drains from the vulnerable. The shadow figure hints at this after the funeral. |
-| **Derol** | Patient 2 — river man | Was with his son Fredy at the eastern river. Second to fall ill. |
-| **Mr. Gragi** | Derol's father | Answers the door at House 3. "Are you a doctor?" |
-| **Fredy** | Derol's young son | Was with Derol at the river. Called for help when Derol collapsed. |
-| **Vincent** | Witness / helper | Was passing by when Derol collapsed near the river. Helped carry him home. Confirms the spot to Ares in the village square. Only accessible after Ares attempts all 3 patient houses. |
-| **Leman** | Patient 4 — chronic health | Has known, long-standing health problems. Mark's father is his close friend. Mentioned by Mark at game start: "Mr. Leman — with the known health issues." Doctor visits him first before coming to Miria. |
-| **Peter** | Village doctor | Visits patients. Arrives at Miria's house after Ares. Connects all four cases. Leaves to prepare the public meeting. |
-| **Daedalos** | East gate guard | Won't let anyone through without a weapon. Mentions weapon sources. Proud of his spear, Mariane. Introduces the concept of weapon range naturally. |
-| **Pontos** | Sword owner | Lost his wooden sword in the north woods. Offers borrow deal in exchange for creature parts. Hints at other weapons if player seems hesitant. |
-| **Mr. Kardino** | Old man / staff owner | Has a wooden staff in his chest at home. **Kardino's chest NEVER LOCKS — it is always accessible as optional theft. No game event locks it.** Kardino refuses to hand over the staff directly; the chest is always an option the player must discover themselves. |
-| **Mr. Lulu** | General shop owner | Runs the village shop. Has: dagger, wooden shield, rations, rope. Economy starts barter-only. Dagger requires a magical item trade (not standard barter). |
-| **Nathan** | Blacksmith | Will lend the hand axe, but requires a creature parts fetch quest first. Guard mentions the blacksmith. Legitimate early path but costs time. |
-| **Kadmios** | Carpenter / bridge man | Standing at the broken bridge. His shop is closed — expecting a carriage from Roteltree. Close friend of the late Terin. Led the rescue team into the mines. Tells Ares about the missing twins. Before Ares leaves the village, Kadmios tells him he will send his son Mike along. Mike appears and joins Ares when Ares crosses the bridge heading east. |
-| **Mike** | Ares's companion into the cave | Kadmios's son. Returned from a hunt in the south deep forest the evening before. Tired, but joins Ares when his father asks. **Always accompanies Ares into the dungeon — see Companion System for how they meet based on whether Ares carries the ring.** |
-| **Lesen** | Lone mother of the twins | Husband Terin died in the mine accident. She went to Kadmios when Terin disappeared; she goes to him again when the twins go missing. |
-| **Felan** | Twin — missing (BOY) | 15-17 years old. Gifted spellcaster, specific element TBD. Student of Kardino and the spellcaster school. Went missing during the thunderstorm. Found in the SAFE ROOM of the river cave. |
-| **Vinie** | Twin — missing (GIRL) | 15-17 years old. Gifted spellcaster, different element from Felan. Student of Kardino and the spellcaster school. Went missing during the thunderstorm. Found in Spider Queen's web at the end of the river cave. |
-| **Terin** | Lesen's deceased husband | Skilled miner. Continued secretly mining the closed eastern mines after the Aethion closure order. Fell into a deep gap in the tunnels and died. Only Lesen knew about his secret mining. |
-| **Mitri** | Son of Asotos | Lives alone to the west. TBD — a separate character will take the notorious village role. Mitri's role is not yet defined. |
-| **Asotos** | Village hero (deceased) | Defended the village from thieves. Poisoned by a knife, died the next morning. A statue in the village square bears his name and story. |
-| **Dora** | Asotos's wife (deceased) | Died of grief after losing Asotos. |
-| **Joel** | Asotos's child | Sibling of Mitri. Got over the grief, started a family in a nearby village. |
-| **Shadow Figure** | Wanderer / spellcaster | Appears in the north farming woods to spellcaster-path players only. Offers the Void ring. No name ever given. |
+**Ares** — Player character
+Lives in the village. Slightly older than Mark.
+
+**Mark** — Ares's friend / neighbor
+Lives next door to Ares's family home. His father is a close friend of Leman. Knocks on
+Ares's door at game start.
+
+**Miria** — Patient 3 — pregnant woman
+Couple with Dario (husband). Fragility: pregnancy (not yet announced).
+
+**Dario** — Miria's husband
+Tries to turn Ares away at the door. Tells Ares about Ms. Kathy (patient 1).
+
+**Ms. Kathy** — Patient 1 — old woman
+Lives alone. Her name is never used in dialogue — everyone calls her "the old woman who
+lives alone." First to fall ill. She regularly goes to the river's edge to collect mushrooms
+and edible vegetables. **Ring path**: She dies. Cause is BOTH — water sickness progressing
+(oldest, weakest, most exposed) AND the void ring's proximity accelerating her decline. The
+ring drains from the vulnerable. The shadow figure hints at this after the funeral.
+
+**Derol** — Patient 2 — river man
+Was with his son Fredy at the eastern river. Second to fall ill.
+
+**Mr. Gragi** — Derol's father
+Answers the door at House 3. "Are you a doctor?"
+
+**Fredy** — Derol's young son
+Was with Derol at the river. Called for help when Derol collapsed.
+
+**Vincent** — Witness / helper
+Was passing by when Derol collapsed near the river. Helped carry him home. Confirms the spot
+to Ares in the village square. Only accessible after Ares attempts all 3 patient houses.
+
+**Leman** — Patient 4 — chronic health
+Has known, long-standing health problems. Mark's father is his close friend. Mentioned by
+Mark at game start: "Mr. Leman — with the known health issues." Doctor visits him first
+before coming to Miria.
+
+**Peter** — Village doctor
+Visits patients. Arrives at Miria's house after Ares. Connects all four cases. Leaves to
+prepare the public meeting.
+
+**Daedalos** — East gate guard
+Won't let anyone through without a weapon. Mentions weapon sources. Proud of his spear,
+Mariane. Introduces the concept of weapon range naturally.
+
+**Pontos** — Sword owner
+Lost his wooden sword in the north woods. Offers borrow deal in exchange for creature parts.
+Hints at other weapons if player seems hesitant.
+
+**Mr. Kardino** — Old man / staff owner
+Has a wooden staff in his chest at home. **Kardino's chest NEVER LOCKS — it is always
+accessible as optional theft. No game event locks it.** Kardino refuses to hand over the
+staff directly; the chest is always an option the player must discover themselves.
+
+**Mr. Lulu** — General shop owner
+Runs the village shop. Has: dagger, wooden shield, rations, rope. Economy starts barter-only.
+Dagger requires a magical item trade (not standard barter).
+
+**Nathan** — Blacksmith
+Will lend the hand axe, but requires a creature parts fetch quest first. Guard mentions the
+blacksmith. Legitimate early path but costs time.
+
+**Kadmios** — Carpenter / bridge man
+Standing at the broken bridge. His shop is closed — expecting a carriage from Roteltree.
+Close friend of the late Terin. Led the rescue team into the mines. Tells Ares about the
+missing twins. Before Ares leaves the village, Kadmios tells him he will send his son Mike
+along. Mike appears and joins Ares when Ares crosses the bridge heading east.
+
+**Mike** — Ares's companion into the cave
+Kadmios's son. Returned from a hunt in the south deep forest the evening before. Tired, but
+joins Ares when his father asks. **Always accompanies Ares into the dungeon — see Companion
+System for how they meet based on whether Ares carries the ring.**
+
+**Lesen** — Lone mother of the twins
+Husband Terin died in the mine accident. She went to Kadmios when Terin disappeared; she
+goes to him again when the twins go missing.
+
+**Felan** — Twin — missing (BOY)
+15-17 years old. Gifted spellcaster, specific element TBD. Student of Kardino and the
+spellcaster school. Went missing during the thunderstorm. Found in the SAFE ROOM of the
+river cave.
+
+**Vinie** — Twin — missing (GIRL)
+15-17 years old. Gifted spellcaster, different element from Felan. Student of Kardino and
+the spellcaster school. Went missing during the thunderstorm. Found in Spider Queen's web
+at the end of the river cave.
+
+**Terin** — Lesen's deceased husband
+Skilled miner. Continued secretly mining the closed eastern mines after the Aethion closure
+order. Fell into a deep gap in the tunnels and died. Only Lesen knew about his secret mining.
+
+**Mitri** — Son of Asotos
+Lives alone to the west. TBD — a separate character will take the notorious village role.
+Mitri's role is not yet defined.
+
+**Asotos** — Village hero (deceased)
+Defended the village from thieves. Poisoned by a knife, died the next morning. A statue in
+the village square bears his name and story.
+
+**Dora** — Asotos's wife (deceased)
+Died of grief after losing Asotos.
+
+**Joel** — Asotos's child
+Sibling of Mitri. Got over the grief, started a family in a nearby village.
+
+**Shadow Figure** — Wanderer / spellcaster
+Appears in the north farming woods to spellcaster-path players only. Offers the Void ring.
+No name ever given.
 
 ---
 
 ## 3. World Names {#world-names}
 
 - **Vinemore** — the starting village (canon name).
-- **Roteltree** — neighboring village to the east, beyond the cave. Kadmios was expecting a carriage from Roteltree the morning the story begins.
-- **Aethion** — the kingdom's capital city. The order to close the eastern mines came from Aethion years ago.
+- **Roteltree** — neighboring village to the east, beyond the cave. Kadmios was expecting a
+  carriage from Roteltree the morning the story begins.
+- **Aethion** — the kingdom's capital city. The order to close the eastern mines came from
+  Aethion years ago.
 
 ---
 
@@ -283,18 +376,42 @@ without a weapon first.
 
 ## 6. Zone 1 Quest Log {#quest-log}
 
-| Quest | Type | Trigger | Notes |
-|---|---|---|---|
-| Investigate the Sickness | Main Quest | Game start — knock at door | Full path: 3 houses (all attempted) → square (Vincent) → east instinct → guard blocks → weapon chain → east woods → bridge (Kadmios) → return to couple → doctor arrives → conclude water problem → buy rations → bridge puzzle → cave |
-| Find the Missing Twins | Side Quest | Kardino mentions his missing students at the bridge; Kadmios tells the full story | Felan and Vinie — Lesen's twins — went missing during the thunderstorm. Ares adds this to his cave objective. |
-| Return the Sword | Side Quest | Sword owner NPC (unlocks after finding sword) | Keep sword OR return for Adventurer's Clothes + borrow deal |
-| Borrow the Sword | Repeatable | Sword owner, after return | Creature parts as payment |
-| Fetch Parts for Nathan | Side Quest | Nathan (blacksmith) | Required to borrow the hand axe. Player brings creature parts → axe lent. |
-| Creature Hides | Side Quest | Village NPC | Skins → money → rations |
-| Resonance Manipulation | Side Quest (staff only) | Kardino interaction chain — see Spellcaster School | Optional quest for the spellcaster path |
-| Creature Aura Investigation | Side Quest (staff only) | NPC in the woods | Reward: second lesser spell |
-| Creature Bounties | Repeatable | Village shop NPC | Creature parts → barter → shop economy |
-| Buy Rations | Quest-required step | Added to quest log after water conclusion with the doctor | Ares adds buying rations to his plan before heading into the cave. Must visit Mr. Lulu's shop. |
+**Investigate the Sickness** — Main Quest — *Trigger: Game start — knock at door*
+Full path: 3 houses (all attempted) → square (Vincent) → east instinct → guard blocks →
+weapon chain → east woods → bridge (Kadmios) → return to couple → doctor arrives → conclude
+water problem → buy rations → bridge puzzle → cave
+
+**Find the Missing Twins** — Side Quest
+*Trigger: Kardino mentions his missing students at the bridge; Kadmios tells the full story*
+Felan and Vinie — Lesen's twins — went missing during the thunderstorm. Ares adds this to
+his cave objective.
+
+**Return the Sword** — Side Quest — *Trigger: Sword owner NPC (unlocks after finding sword)*
+Keep sword OR return for Adventurer's Clothes + borrow deal
+
+**Borrow the Sword** — Repeatable — *Trigger: Sword owner, after return*
+Creature parts as payment
+
+**Fetch Parts for Nathan** — Side Quest — *Trigger: Nathan (blacksmith)*
+Required to borrow the hand axe. Player brings creature parts → axe lent.
+
+**Creature Hides** — Side Quest — *Trigger: Village NPC*
+Skins → money → rations
+
+**Resonance Manipulation** — Side Quest (staff only)
+*Trigger: Kardino interaction chain — see Spellcaster School*
+Optional quest for the spellcaster path
+
+**Creature Aura Investigation** — Side Quest (staff only) — *Trigger: NPC in the woods*
+Reward: second lesser spell
+
+**Creature Bounties** — Repeatable — *Trigger: Village shop NPC*
+Creature parts → barter → shop economy
+
+**Buy Rations** — Quest-required step
+*Trigger: Added to quest log after water conclusion with the doctor*
+Ares adds buying rations to his plan before heading into the cave. Must visit Mr. Lulu's
+shop.
 
 **Progression path**:
 ```
@@ -464,7 +581,8 @@ Do not add chest-locking logic anywhere in the codebase or design documents.
 **Optional quest triggered**: "Resonance Manipulation"
 - If Ares has NOT yet visited the spellcaster school → quest directs him to visit the school
   first to understand what disruption manipulation is and what tools are needed.
-- If Ares HAS already visited the school → quest updates directly to finding the staff in Kardino's home.
+- If Ares HAS already visited the school → quest updates directly to finding the staff in
+  Kardino's home.
 
 **Kardino's questions** (inside school, if truth was told): Deferred — will be specified when
 the spellcaster system is nearly ready.
@@ -574,15 +692,16 @@ affinity is not useful out there. Visit the school first.
 
 ### Bridge Helpers — By Weapon
 
-| Helper | Available when | Notes |
-|---|---|---|
-| **Kardino** | Staff path + truth told to Kardino | Counts as 2 people (magic). Staff path only needs +1 total. |
-| **Pontos** | Sword returned to him | Available on sword path AND dagger path (if fetch quest done). |
-| **Nathan** | Fetch quest completed for him | Available on axe path AND dagger path (if fetch quest done). |
-| **Mitri** | All paths | Promises future favour (binding obligation). Needed most on ring path. |
+| Helper      | Available when                     | Notes                                            |
+|-------------|------------------------------------|-------------------------------------------------|
+| **Kardino** | Staff path + truth told to Kardino | Counts as 2 (magic). Staff path needs +1 only.  |
+| **Pontos**  | Sword returned to him              | Sword path AND dagger path (if fetch quest done).|
+| **Nathan**  | Fetch quest completed for him      | Axe path AND dagger path (if fetch quest done). |
+| **Mitri**   | All paths                          | Promises future favour. Needed most on ring path.|
 
 **Staff path (truth told)**: Kadmios + Kardino = enough. Kadmios doubts 3 is enough — proven wrong.
-**Staff path + ring (not truth told)**: Kadmios + Mitri (or any 1 helper) + ring = enough. Kadmios doubts 3 is enough — proven wrong.
+**Staff path + ring (not truth told)**: Kadmios + Mitri (or any 1 helper) + ring = enough.
+Kadmios doubts 3 is enough — proven wrong.
 **Sword / axe / dagger paths**: Need Kadmios + any 2 helpers from the table above.
 
 Once the required number of helpers is assembled, no additional helpers can be recruited.
@@ -626,15 +745,15 @@ to her. He says what he needs to say and does not appear again in Zone 1 after t
 **Rule**: Player has exactly 1 weapon when entering the dungeon. Void ring is optional.
 Player NEVER has both Adventurer's Clothes and Caster's Clothes simultaneously.
 
-| Path | Weapon | Armor | Spells |
-|---|---|---|---|
-| Sword returned + borrow deal | Wooden Sword | Adventurer's Clothes | None |
-| Sword returned + axe instead | Hand Axe | Adventurer's Clothes | None |
-| Sword kept (not returned) | Wooden Sword | None | None |
-| Axe path (Nathan) | Hand Axe | Adventurer's Clothes from Pontos (if sword quest done) | None |
-| Dagger path | Small Dagger | Adventurer's Clothes from Pontos (if sword quest done) | None |
-| Staff + school, truth told, ring refused | Wooden Staff | Caster's Clothes | 1+ lesser offensive spell |
-| Staff + school, truth told, ring accepted | Wooden Staff + Void Ring | Caster's Clothes | 1+ lesser offensive spell |
+**Sword returned + borrow deal** — Wooden Sword / Adventurer's Clothes / no spells
+**Sword returned + axe instead** — Hand Axe / Adventurer's Clothes / no spells
+**Sword kept (not returned)** — Wooden Sword / no armor / no spells
+**Axe path (Nathan)** — Hand Axe / Adventurer's Clothes from Pontos (if sword quest done) / none
+**Dagger path** — Small Dagger / Adventurer's Clothes from Pontos (if sword quest done) / none
+**Staff + school, truth told, ring refused** — Wooden Staff / Caster's Clothes /
+  1+ lesser offensive spell
+**Staff + school, truth told, ring accepted** — Wooden Staff + Void Ring / Caster's Clothes /
+  1+ lesser offensive spell
 
 **Notes**:
 - Staff path player must have at least one lesser offensive spell before the guard lets them through.
@@ -670,17 +789,37 @@ The world simply responds differently based on who the player has been.
 
 ### Branch Log — Hard Fork Choices (Zone 1)
 
-| # | Choice Point | Options | Locked Consequence |
-|---|---|---|---|
-| B-01 | Weapon acquired | Sword / Staff / Axe / Rocks / Dagger | Weapon path shapes bridge puzzle options and available helpers; determines Weaponmaster vs. Spellcaster class |
-| B-02 | Staff — taken or not | Steal / Leave alone | Stolen = staff in hand or traded for dagger |
-| B-03 | Old man — truth or not | Tell truth / Say nothing | Truth = Caster's Clothes + full school path. Nothing = no Caster's Clothes, no school training. |
-| B-04 | Sword — return or keep | Return promptly / Delay | Return = Adventurer's Clothes + borrow deal; delay = Pontos goes to woods on his own |
-| B-05 | East gate — passed with sword before returning it? | Yes / No | Yes = Pontos eventually goes to woods on his own (time-based). No = Pontos stays. |
-| B-06 | Dark figure encounter | Appears / Doesn't appear | Appears ONLY if player is on staff path AND did NOT tell Kardino the truth. Never appears on weaponmaster paths or honest staff path. |
-| B-07 | Void ring — accept or refuse | Accept / Refuse | Accept = ring carried, creature encounter triggered on road to mines, affinity shifts toward Void |
-| B-08 | Creature fight — win or lose | Win / Lose | Win = Mike meets Ares at mine entrance; Lose = Mike saves Ares mid-fight, then travels together |
-| B-09 | Cave entrance chosen first | Old Mine / River cave | No locked consequence — both must be explored. Player choice reflects psychology only. |
+**B-01 — Weapon acquired** (Sword / Staff / Axe / Rocks / Dagger)
+Weapon path shapes bridge puzzle options and available helpers; determines Weaponmaster vs.
+Spellcaster class
+
+**B-02 — Staff — taken or not** (Steal / Leave alone)
+Stolen = staff in hand or traded for dagger
+
+**B-03 — Old man — truth or not** (Tell truth / Say nothing)
+Truth = Caster's Clothes + full school path. Nothing = no Caster's Clothes, no school
+training.
+
+**B-04 — Sword — return or keep** (Return promptly / Delay)
+Return = Adventurer's Clothes + borrow deal; delay = Pontos goes to woods on his own
+
+**B-05 — East gate — passed with sword before returning it?** (Yes / No)
+Yes = Pontos eventually goes to woods on his own (time-based). No = Pontos stays.
+
+**B-06 — Dark figure encounter** (Appears / Doesn't appear)
+Appears ONLY if player is on staff path AND did NOT tell Kardino the truth. Never appears
+on weaponmaster paths or honest staff path.
+
+**B-07 — Void ring — accept or refuse** (Accept / Refuse)
+Accept = ring carried, creature encounter triggered on road to mines, affinity shifts toward
+Void
+
+**B-08 — Creature fight — win or lose** (Win / Lose)
+Win = Mike meets Ares at mine entrance; Lose = Mike saves Ares mid-fight, then travels
+together
+
+**B-09 — Cave entrance chosen first** (Old Mine / River cave)
+No locked consequence — both must be explored. Player choice reflects psychology only.
 
 ---
 
@@ -696,13 +835,37 @@ push toward one end. Refusing the ring and clean paths push toward the other. Pe
 and void creatures react to this value. The player can see the bar but has no context for what
 it means until later.
 
-| Trait | Raised by | Lowered by | Future effect (examples) |
-|---|---|---|---|
-| **Honesty** | Telling truth to Kardino, returning sword voluntarily, refusing deceptive choices | Lying, keeping stolen property, misleading NPCs | High → NPCs in future zones trust Ares faster; certain quest branches open |
-| **Boldness** | Attacking the temple creature first without waiting, rushing into combat, taking risks voluntarily | Cautious/patient combat approach, retreating without trying | High → certain villain dialogue changes; how the antihero mirror reads Ares |
-| **Curiosity** | Talking to all villagers voluntarily, exploring off quest path, investigating objects with no prompt, reading signs | Strictly following markers only, skipping optional interactions | NOTE: required quest steps (patient houses, square, etc.) do NOT count — only unguided actions. High → more optional lore scenes, NPCs share extra info unprompted |
-| **Empathy** | Letting NPC dialogue play at natural speed without skipping, engaging optional dialogue, making the wish at the temple | Rapidly skipping through dialogue, ignoring NPC attempts to speak | Tracked via dialogue skip rate. High → Lesen's reaction to Ares changes; twins respond differently during recovery |
-| **Resilience** | Retrying after dying in the same area, returning to a failed puzzle, persisting through a hard fight | Giving up on an area and coming back much later, avoiding encounters | High → certain late-game NPCs recognize Ares's perseverance; affects antihero's assessment |
+**Honesty**
+- Raised by: Telling truth to Kardino, returning sword voluntarily, refusing deceptive choices
+- Lowered by: Lying, keeping stolen property, misleading NPCs
+- Future effect: High → NPCs in future zones trust Ares faster; certain quest branches open
+
+**Boldness**
+- Raised by: Attacking the temple creature first without waiting, rushing into combat, taking
+  risks voluntarily
+- Lowered by: Cautious/patient combat approach, retreating without trying
+- Future effect: High → certain villain dialogue changes; how the antihero mirror reads Ares
+
+**Curiosity**
+- Raised by: Talking to all villagers voluntarily, exploring off quest path, investigating
+  objects with no prompt, reading signs
+- Lowered by: Strictly following markers only, skipping optional interactions
+- Future effect: NOTE: required quest steps (patient houses, square, etc.) do NOT count — only
+  unguided actions. High → more optional lore scenes, NPCs share extra info unprompted
+
+**Empathy**
+- Raised by: Letting NPC dialogue play at natural speed without skipping, engaging optional
+  dialogue, making the wish at the temple
+- Lowered by: Rapidly skipping through dialogue, ignoring NPC attempts to speak
+- Future effect: Tracked via dialogue skip rate. High → Lesen's reaction to Ares changes;
+  twins respond differently during recovery
+
+**Resilience**
+- Raised by: Retrying after dying in the same area, returning to a failed puzzle, persisting
+  through a hard fight
+- Lowered by: Giving up on an area and coming back much later, avoiding encounters
+- Future effect: High → certain late-game NPCs recognize Ares's perseverance; affects
+  antihero's assessment
 
 **Additional traits under consideration** (flag for discussion when psych profile is being built out):
 - *Patience* — does the player wait for openings or rush everything? (Complements Boldness.)
@@ -743,11 +906,17 @@ Both paths show the player that the same problems can be solved through complete
 
 Mike is ALWAYS present in the dungeon. How they meet depends on whether Ares carries the ring:
 
-| Path | How Mike arrives | When they meet |
-|---|---|---|
-| No ring (no creature encounter) | Kadmios told Mike; Mike crosses the bridge with Ares after the puzzle | Together from bridge crossing through mine entrance |
-| Ring, player wins fight | Kadmios sent Mike on a separate route; Mike arrives at mine entrance | They meet at the mine entrance |
-| Ring, player loses fight | Mike arrives mid-fight on the road and helps drive the creature off | Together from fight scene through mine entrance |
+**No ring (no creature encounter)**
+Kadmios told Mike; Mike crosses the bridge with Ares after the puzzle. Together from bridge
+crossing through mine entrance.
+
+**Ring, player wins fight**
+Kadmios sent Mike on a separate route; Mike arrives at mine entrance. They meet at the mine
+entrance.
+
+**Ring, player loses fight**
+Mike arrives mid-fight on the road and helps drive the creature off. Together from fight
+scene through mine entrance.
 
 ---
 
@@ -756,10 +925,11 @@ Mike is ALWAYS present in the dungeon. How they meet depends on whether Ares car
 Felan's condition and Mike's role inside the cave depend on the player's **class path** (weapon
 at cave entry), not the ring:
 
-| Player class | Mike's condition | Felan's condition (safe room) | Primary cave companion |
-|---|---|---|---|
-| Weaponmaster | Gets injured in the cave (fighting to protect Felan) | Okay — can speak, explains story | Felan (magical support) |
-| Spellcaster | Fine — physical support role | Drained — hollow, cannot speak | Mike (physical support) |
+**Weaponmaster path**: Mike gets injured in the cave (protecting Felan). Felan OK — can speak,
+explains story. Primary companion: Felan (magical support).
+
+**Spellcaster path**: Mike fine — physical support role. Felan drained — hollow, cannot speak.
+Primary companion: Mike (physical support).
 
 **Mike (Kadmios's son)** — physical companion. Fights, lifts, moves obstacles. When they reach
 the mine entrance, Mike and Ares discuss the two entrances. The player chooses which one to

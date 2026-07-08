@@ -1,22 +1,31 @@
 ---
 name: World Design Reference
-description: World lore, main quest arc, resonance framework, the consuming race, the dark figure, world zones, technology level, and narrative philosophy. Load this when working on story, lore, world building, or anything beyond Zone 1.
+description: >
+  World lore, main quest arc, resonance framework, the consuming race, the dark figure,
+  world zones, technology level, and narrative philosophy. Load this when working on
+  story, lore, world building, or anything beyond Zone 1.
 type: reference
 ---
 
 # World Design Reference — Aethion and Beyond
 
-**See also**: SKILL.md (technical), zone1_design.md (Zone 1 content), dungeon_design.md (dungeons), story_book.md (prose narrative)
+**See also**: SKILL.md (technical), zone1_design.md (Zone 1 content), dungeon_design.md (dungeons),
+story_book.md (prose narrative)
 
-## TL;DR [NEEDS REVIEW]
+## TL;DR
 - 10 main quest beats locked. Do not change lightly.
-- Consuming race: not evil by nature — were deceived into believing consumption is their only way to survive. Upper class exploits this lie.
-- Dark figure: ancient Void Resonance being. Gave the ring = gave part of himself. Badly wounded in Zone 1. Returns once post-cave (ring path, graveyard).
-- Ring/no-ring is a full-game narrative thread: no-ring = family discovery, no deaths from Ares's choices; ring = Ares eventually kills his father unknowingly, people die as collateral.
+- Consuming race: not evil by nature — were deceived into believing consumption is their only way
+  to survive. Upper class exploits this lie.
+- Dark figure: ancient Void Resonance being. Gave the ring = gave part of himself. Badly wounded
+  in Zone 1. Returns once post-cave (ring path, graveyard).
+- Ring/no-ring is a full-game narrative thread: no-ring = family discovery, no deaths from Ares's
+  choices; ring = Ares eventually kills his father unknowingly, people die as collateral.
 - Ares's father: left Vinemore, joined Royal Guard of Aethion. Ms. Kathy knows. Exact story TBD.
 - 8-12 zones planned. Year 1: Zone 1 (Deep Forest) + Zone 2 (Meadow/Plains) only.
-- Resonance: Verdant/Ember/Stone accessible at school Year 1. Void NOT school-accessible — ring is the only path, slow passive attunement.
-- Technology: pre-industrial, magic fills gaps common people can't access. Mine powder exists as exception to no-explosives rule.
+- Resonance: Verdant/Ember/Stone accessible at school Year 1. Void NOT school-accessible — ring
+  is the only path, slow passive attunement.
+- Technology: pre-industrial, magic fills gaps common people can't access. Mine powder exists as
+  exception to no-explosives rule.
 - Predefined named characters, not a character creator. Year 1: Ares only.
 - Future playable characters must appear in Ares's story first before becoming selectable.
 - Villain rule: every antagonist must have a worldview containing genuine truth.
@@ -60,20 +69,20 @@ type: reference
 
 ### World Zones (Target: 8–12, Year 1: 2 fully playable)
 Planned biomes — names TBD, serve as design anchors:
-| Zone | Biome | Water | Notes |
-|---|---|---|---|
-| 1 | Deep Forest | Rivers, small pools | Starting zone. Mystic Forest Village. |
-| 2 | Meadow / Plains | Lakes, wide river | Opens after Zone 1. Other villages near water. |
-| 3 | Mountain / Highland | Mountain streams | High altitude, vertical terrain feel. |
-| 4 | Swamp / Marsh | Stagnant water, bogs | Dark, overgrown, visibility reduced. |
-| 5 | Desert | Rare oasis | Harsh, exposed, heat mechanic potential. |
-| 6 | Coastal / Shore | Sea, tidal zones | Near ocean. Sea Bottom dungeon entry point. |
-| 7 | Tropical / Jungle | Dense rivers | Hot, lush, ruins buried in growth. |
-| 8 | Ice / Snow | Frozen lakes | Cold mechanic potential. Frost Resonance. |
-| 9 | Volcanic / Ember | Lava flows | Ember Resonance. Extreme hazard tiles. |
-| 10 | Underground Network | Underground rivers | Cave system connecting zones. |
-| 11 | Storm Peak / Sky | Clouds, wind | Tempest Resonance. Late game. |
-| 12 | Void Sanctum | Absence | Final area. Void Resonance. |
+| Zone | Biome               | Water               | Notes                                          |
+|------|---------------------|---------------------|------------------------------------------------|
+| 1    | Deep Forest         | Rivers, small pools | Starting zone. Mystic Forest Village.          |
+| 2    | Meadow / Plains     | Lakes, wide river   | Opens after Zone 1. Other villages near water. |
+| 3    | Mountain / Highland | Mountain streams    | High altitude, vertical terrain feel.          |
+| 4    | Swamp / Marsh       | Stagnant water, bogs | Dark, overgrown, visibility reduced.          |
+| 5    | Desert              | Rare oasis          | Harsh, exposed, heat mechanic potential.       |
+| 6    | Coastal / Shore     | Sea, tidal zones    | Near ocean. Sea Bottom dungeon entry point.    |
+| 7    | Tropical / Jungle   | Dense rivers        | Hot, lush, ruins buried in growth.             |
+| 8    | Ice / Snow          | Frozen lakes        | Cold mechanic potential. Frost Resonance.      |
+| 9    | Volcanic / Ember    | Lava flows          | Ember Resonance. Extreme hazard tiles.         |
+| 10   | Underground Network | Underground rivers  | Cave system connecting zones.                  |
+| 11   | Storm Peak / Sky    | Clouds, wind        | Tempest Resonance. Late game.                  |
+| 12   | Void Sanctum        | Absence             | Final area. Void Resonance.                    |
 
 Year 1 scope: Zone 1 (Deep Forest) + Zone 2 (Meadow/Plains). All others: design only.
 
@@ -93,12 +102,12 @@ Single shop in Mystic Forest Village. No gold at game start — player must bart
 first. Once barter economy is established, gold flows from bounty quests and can be spent here.
 
 **Stock:**
-| Item | Type | Notes |
-|---|---|---|
-| Small Dagger | Weapon | Requires barter magical item to be traded with |
-| Wooden Shield | Equipment | Active blocking item — reduces incoming damage |
-| Rations | Consumable | Restores HP + Energy out of combat (see Ration Mechanics below) |
-| Rope | Key Item | Used for the broken bridge puzzle in the woods |
+| Item          | Type        | Notes                                                          |
+|---------------|-------------|----------------------------------------------------------------|
+| Small Dagger  | Weapon      | Requires barter magical item to be traded with                 |
+| Wooden Shield | Equipment   | Active blocking item — reduces incoming damage                 |
+| Rations       | Consumable  | Restores HP + Energy out of combat (see Ration Mechanics below)|
+| Rope          | Key Item    | Used for the broken bridge puzzle in the woods                 |
 
 **Ration Mechanics:**
 - Player uses a ration → sits down animation plays, HP and Energy restore over a few seconds.
@@ -240,16 +249,16 @@ this attunement can be developed. Void is the most powerful and most dangerous R
 The consuming race's power is rooted in Void. This path is intentionally difficult to reach
 and has consequences the player does not fully understand until much later.
 
-| Resonance | Sustains | When Disrupted |
-|---|---|---|
-| **Verdant** | Growth, forests, living things | Wild uncontrolled growth, creature mutation |
-| **Ember** | Heat, light, transformation | Uncontrolled burning, volcanic activity |
-| **Tide** | Water, cycles, flow | Floods, pressure, deep-sea emergence |
-| **Gale** | Wind, sky, movement | Storms, disorienting currents, creatures of air |
-| **Stone** | Earth, stability, mass | Collapses, earthquakes, creatures of living rock |
-| **Frost** | Cold, stillness, preservation | Frozen spread, re-awakened preserved things |
-| **Tempest** | Storm, electricity, violent change | Lightning arcs, electromagnetic distortion |
-| **Void** | Silence, absence, space between | Things that shouldn't exist emerging |
+| Resonance   | Sustains                       | When Disrupted                                  |
+|-------------|--------------------------------|-------------------------------------------------|
+| **Verdant** | Growth, forests, living things | Wild uncontrolled growth, creature mutation     |
+| **Ember**   | Heat, light, transformation    | Uncontrolled burning, volcanic activity         |
+| **Tide**    | Water, cycles, flow            | Floods, pressure, deep-sea emergence            |
+| **Gale**    | Wind, sky, movement            | Storms, disorienting currents, creatures of air |
+| **Stone**   | Earth, stability, mass         | Collapses, earthquakes, creatures of living rock|
+| **Frost**   | Cold, stillness, preservation  | Frozen spread, re-awakened preserved things     |
+| **Tempest** | Storm, electricity, violent change | Lightning arcs, electromagnetic distortion  |
+| **Void**    | Silence, absence, space between | Things that shouldn't exist emerging           |
 
 ### Races & Resonance
 Every living thing is composed of Resonances. The number and combination shapes the being.
@@ -322,22 +331,24 @@ the entire story, not just Zone 1.
 
 **Future additions (scope TBD — not Year 1):**
 - A second human character (female, different name, different starting situation) is the most
-  realistic next addition — same race means no new resonance/weapon framework, just a new story.
-- Non-human characters require the race's resonance efficiency modifiers and weapon access rules
-  to be fully designed first — do not add a non-human playable character until their race is
-  well-defined mechanically.
+  realistic next addition — same race means no new resonance/weapon framework, just a new
+  story.
+- Non-human characters require the race's resonance efficiency modifiers and weapon access
+  rules to be fully designed first — do not add a non-human playable character until their
+  race is well-defined mechanically.
 
 **Future characters appear in Ares's story first (standing rule):**
-Every future playable character must exist as a named NPC in Ares's journey before they become
-selectable. They have a role, a personality, a moment that matters — a quest chain intersection,
-a shared objective, a conflict, or a help that costs something. Players form a real relationship
-with them through Ares's eyes before ever playing as them.
-When the character is added to the roster, the payoff is: players already know her, already have
-feelings about her, and now get to see the same events from the inside. Her starting situation
-and opening area flows from what was already established in Ares's story — reducing the design
-work and deepening the narrative connection simultaneously.
-Design consequence: future character NPCs must be written with weight from the start. They cannot
-be throwaway encounters. The moment Ares meets them should be one the player remembers.
+Every future playable character must exist as a named NPC in Ares's journey before they
+become selectable. They have a role, a personality, a moment that matters — a quest chain
+intersection, a shared objective, a conflict, or a help that costs something. Players form
+a real relationship with them through Ares's eyes before ever playing as them.
+When the character is added to the roster, the payoff is: players already know her, already
+have feelings about her, and now get to see the same events from the inside. Her starting
+situation and opening area flows from what was already established in Ares's story — reducing
+the design work and deepening the narrative connection simultaneously.
+Design consequence: future character NPCs must be written with weight from the start. They
+cannot be throwaway encounters. The moment Ares meets them should be one the player
+remembers.
 
 **Race resonance efficiency (framework — TBD when races are defined):**
 The design intent: non-human races are NOT locked out of resonances, they are more or less
@@ -441,16 +452,30 @@ the world back at them without judging. The lessons are embedded in outcomes, no
 
 **Moral threads established in Zone 1 (the bridge chain):**
 
-| Choice | What the game teaches (without saying it) |
-|---|---|
-| Steal the staff | Easy gain, social cost. NPCs who don't know don't judge. Those who find out do. |
-| Steal + tell truth | Admitting wrong restores trust. Better outcome than lying. |
-| Steal + lie consistently | Doors close. You are left alone. But ambition still finds its own path. |
-| Return the sword (didn't have to) | Voluntary good deed compounds. Affinity, clothes, help later. |
-| Accept the cursed ring | Self-sacrifice for the people has a personal cost. Heroism isn't free. |
-| Refuse ring + forced honesty | Losing something you took is the natural end of that road. |
-| Sword person: love swords but return it | The path leads you to something different (axe) — not worse, just different. You trusted the process. |
-| Persistent bad-path player | Eventually someone who shares your nature will understand your goal and help. |
+**Steal the staff**
+Easy gain, social cost. NPCs who don't know don't judge. Those who find out do.
+
+**Steal + tell truth**
+Admitting wrong restores trust. Better outcome than lying.
+
+**Steal + lie consistently**
+Doors close. You are left alone. But ambition still finds its own path.
+
+**Return the sword (didn't have to)**
+Voluntary good deed compounds. Affinity, clothes, help later.
+
+**Accept the cursed ring**
+Self-sacrifice for the people has a personal cost. Heroism isn't free.
+
+**Refuse ring + forced honesty**
+Losing something you took is the natural end of that road.
+
+**Sword person: love swords but return it**
+The path leads you to something different (axe) — not worse, just different. You trusted
+the process.
+
+**Persistent bad-path player**
+Eventually someone who shares your nature will understand your goal and help.
 
 **Intended player archetypes and what they experience:**
 - *"Stealing is fine"*: Game never argues. But NPCs reflect it. Doors close quietly. The player
