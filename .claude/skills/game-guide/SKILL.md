@@ -1,54 +1,63 @@
 # Echoes of the Void — Design Guide
 
-Master index for all game design and implementation-spec files.
-Console portability is a hard constraint — every mechanic must map to both
-keyboard+mouse and a standard controller (Xbox/PS/Switch layout).
+Master index. Console portability is a hard constraint — every mechanic must
+map to both keyboard+mouse and a standard controller (Xbox/PS/Switch).
 
 ---
 
-## Meta
+## File Tree
 
-**roadmap.md** — pre-production documentation roadmap: what files exist, what needs to be
-created, phases and order, dependencies, parallelism notes. Read this to know where we are
-and what to work on next.
+```
+SKILL.md                   hub index
+├── roadmap.md             file plan, phases, build order
+│
+├── Game Overview
+│   └── game_overview.md       concept, pillars, loops, scope       ✓
+│
+├── Gameplay
+│   ├── player_mechanic.md     all mechanics by category            ✓
+│   └── player_input.md        input mapping, console layout        ✓
+│
+├── Narrative
+│   ├── world_design.md        world lore, Resonance, races, arc    [P1]
+│   ├── zone1_story.md         Zone 1 NPCs, quests, choices         [P1]
+│   └── story_book.md          canonical prose narrative            [P1]
+│
+├── Characters
+│   ├── character_sheet.md     Ares + future playable characters    [P1]
+│   ├── npc_roster.md          all NPCs: schedules, tone, relations [P1]
+│   └── enemy_roster.md        enemy types, AI states, variants     [P1]
+│
+├── Systems
+│   └── systems_design.md      resources, class, combat, save       [P1]
+│
+├── UI/UX
+│   └── ui_design.md           HUD, all screens, targeting          [P1]
+│
+├── Level Design
+│   ├── dungeon_design.md      dungeon rules, AI, traps, puzzles    [P1]
+│   └── levels/zone1/
+│       ├── vinemore.md        village layout, NPCs, triggers       [P4]
+│       ├── woods.md           farming + bridge road areas          [P4]
+│       └── mine_cave.md       Old Mine + River Cave room layouts   [P4]
+│
+├── Data Specs
+│   ├── dialogue_spec.md       dialogue tree, branch log format     [P2]
+│   ├── quest_spec.md          quest data, triggers, save link      [P2]
+│   ├── talent_spec.md         talent tree, scrolls, activation     [P2]
+│   ├── map_spec.md            zone/room structure, spawn format    [P2]
+│   └── save_spec.md           serialized state, autosave flow      [P2]
+│
+├── Technical
+│   ├── architecture.md        scripts, signals, data pipeline      [P3]
+│   └── asset_spec.md          sprite names, folders, import cfg    [P3]
+│
+└── reference/             old project files — mine for content
+```
+
+**Legend:** `✓` done | `[P1]` Phase 1 — Design | `[P2]` Phase 2 — Spec |
+`[P3]` Phase 3 — Architecture | `[P4]` Phase 4 — Level Layouts
 
 ---
 
-## Player
-
-**player_mechanic.md** — all mechanics: what Ares can do and how it works,
-grouped by category (Presence, Resources, Movement, Camera, Combat, Abilities,
-World Interaction, Equipment, Status Effects, Lifecycle, Expressive).
-
-**player_input.md** — all input mapping: input modes, named button groups,
-console mapping, context rules (key→behavior), and Mechanic Map
-(every mechanic cross-referenced to its input action and trigger condition).
-
----
-
-## World & Story
-
-**world_design.md** — world lore, main quest arc, resonance framework, races, zones,
-narrative philosophy, technology level.
-
-**zone1_design.md** — Zone 1 full story: NPCs, weapon chain, spellcaster school,
-bridge puzzle, companion system, player choice log, Chapter 3 post-cave beats.
-
-**story_book.md** — canonical prose narrative (Chapters 1–3 complete).
-
----
-
-## Systems
-
-**systems_design.md** — resources (Energy/Flow/Focus), emergent class system,
-EXP and talent system, combat system, save system, gear and durability, progression.
-
----
-
-## Dungeons
-
-**dungeon_design.md** — general dungeon rules, AI and trap systems, props standards,
-puzzle design, creature roster, art TODO.
-
-**dungeon_oldmine.md** — Old Mine + River Cave full design: rooms, progression,
-bosses, blasting powder, post-cave road back.
+See **roadmap.md** for dependency graph, build order, and current position.
