@@ -1,12 +1,12 @@
 ---
-name: GDD Roadmap
+name: GDD Documentation Guide
 description: >
   Every design file that must exist before coding. Phases, build order,
   content standards per file type, and reference sources.
 type: project
 ---
 
-# GDD Roadmap — Echoes of the Void
+# GDD Documentation Guide — Echoes of the Void
 
 What needs to exist on paper before a line of game code is written.
 Order to work through it, what goes inside each file, where to mine content.
@@ -346,4 +346,4 @@ story_book.md             last — prose reflects all locked decisions
 | `systems_design.md`      | systems_design.md (full rewrite to standard)    |
 | `dungeon_design.md`      | dungeon_design.md, enemy_roster.md              |
 | `dungeon_oldmine.md`     | dungeon_design.md Zone 1 section, mine_cave.md  |
-| `roadmap.md`             | historical context only — superseded by this    |
+| `roadmap.md`             | historical context only — superseded by doc_guide |

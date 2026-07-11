@@ -9,7 +9,7 @@ type: project
 # Echoes of the Void — Game Overview
 
 **See also**: player_mechanic.md (mechanics), world_design.md (lore),
-systems_design.md (progression + combat), SKILL.md (full file index)
+systems_design.md (progression + combat), doc_guide.md (build order)
 
 ## TL;DR
 

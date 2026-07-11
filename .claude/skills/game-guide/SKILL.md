@@ -9,7 +9,7 @@ map to both keyboard+mouse and a standard controller (Xbox/PS/Switch).
 
 ```
 SKILL.md                   hub index
-├── roadmap.md             file plan, phases, build order
+├── doc_guide.md           file plan, phases, content standards
 │
 ├── Game Overview
 │   └── game_overview.md       concept, pillars, loops, scope       ✓
@@ -60,4 +60,4 @@ SKILL.md                   hub index
 
 ---
 
-See **roadmap.md** for dependency graph, build order, and current position.
+See **doc_guide.md** for dependency graph, build order, and current position.
